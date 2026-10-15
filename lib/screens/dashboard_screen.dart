@@ -1,8 +1,9 @@
-// ignore_for_file: use_build_context_synchronously, unused_element, curly_braces_in_flow_control_structures
+// ignore_for_file: depend_on_referenced_packages, use_build_context_synchronously, unused_element, curly_braces_in_flow_control_structures
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../main.dart'; 
 
 // PRESERVED: UserAccount Model
@@ -46,13 +47,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<dynamic> _menuStructure = [];
   bool _isLoading = true;
 
-  // Local state to store fetched profile values if passed as empty/N/A
+  // Local state to store live profile values
   late String _fullName;
   late String _userName;
   late String _phoneNumber;
   late String _email;
   late String _currentRole;
   late String _accountType;
+  String? _avatarUrl;
+  String _bio = "Master Administration Official User";
 
   @override
   void initState() {
@@ -68,27 +71,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _fetchLiveProfile();
   }
 
+  // ==========================================
+  // FETCH LIVE PROFILE (SAFE SELECT * QUERY)
+  // ==========================================
   Future<void> _fetchLiveProfile() async {
     try {
-      final res = await _supabase
-          .from('profiles')
-          .select('full_name, username, phone, email, role, account_type')
-          .eq('email', widget.email)
-          .maybeSingle();
+      final user = _supabase.auth.currentUser;
+      Map<String, dynamic>? res;
+
+      // 1. Primary lookup by user ID
+      if (user != null) {
+        res = await _supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+      }
+
+      // 2. Fallback to case-insensitive email if ID lookup returns null
+      if (res == null && widget.email.isNotEmpty) {
+        res = await _supabase
+            .from('profiles')
+            .select('*')
+            .ilike('email', widget.email.trim())
+            .maybeSingle();
+      }
 
       if (res != null && mounted) {
         setState(() {
-          if (res['full_name'] != null && res['full_name'].toString().isNotEmpty) {
-            _fullName = res['full_name'];
+          // full_name
+          if (res!['full_name'] != null && res['full_name'].toString().trim().isNotEmpty) {
+            _fullName = res['full_name'].toString().trim();
           }
-          if (res['username'] != null && res['username'].toString().isNotEmpty) {
-            _userName = res['username'];
+
+          // username (matches Supabase column strictly)
+          if (res['username'] != null && res['username'].toString().trim().isNotEmpty) {
+            _userName = res['username'].toString().trim();
           }
-          if (res['phone'] != null && res['phone'].toString().isNotEmpty) {
-            _phoneNumber = res['phone'];
+
+          // phone
+          if (res['phone'] != null && res['phone'].toString().trim().isNotEmpty) {
+            _phoneNumber = res['phone'].toString().trim();
           }
-          if (res['role'] != null) _currentRole = res['role'];
-          if (res['account_type'] != null) _accountType = res['account_type'];
+
+          // email
+          if (res['email'] != null && res['email'].toString().trim().isNotEmpty) {
+            _email = res['email'].toString().trim();
+          }
+
+          // role & account_type
+          if (res['role'] != null) _currentRole = res['role'].toString();
+          if (res['account_type'] != null) _accountType = res['account_type'].toString();
+
+          // avatar_url & bio
+          if (res['avatar_url'] != null && res['avatar_url'].toString().trim().isNotEmpty) {
+            _avatarUrl = res['avatar_url'].toString().trim();
+          }
+          if (res['bio'] != null && res['bio'].toString().trim().isNotEmpty) {
+            _bio = res['bio'].toString().trim();
+          }
         });
       }
     } catch (e) {
@@ -150,7 +191,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         backgroundColor: const Color(0xFFFBFBFE),
         body: Column(
           children: [
-            // 1. FULLY CENTERED PREMIUM HEADER
+            // Centered Profile Header
             _buildCenteredHeader(context, isDesktop, primaryPurple),
             
             Expanded(
@@ -159,8 +200,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               : SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
                 padding: EdgeInsets.symmetric(
-                  horizontal: isDesktop ? width * 0.15 : 20,
-                  vertical: 20
+                  horizontal: isDesktop ? width * 0.15 : 18,
+                  vertical: 18
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,21 +222,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           _sectionHeader(section['title']),
                           const SizedBox(height: 8),
                           _buildResponsiveGrid(context, items, isDesktop, primaryPurple),
-                          const SizedBox(height: 25),
+                          const SizedBox(height: 20),
                         ],
                       );
                     }),
 
-                    const SizedBox(height: 30),
+                    const SizedBox(height: 14),
                     Center(
                       child: TextButton.icon(
                         onPressed: () => Navigator.pop(context),
                         icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 18),
-                        label: Text("Close Dashboard", 
-                          style: GoogleFonts.merriweather(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 15)),
+                        label: Text(
+                          "Close Dashboard", 
+                          style: GoogleFonts.merriweather(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 50),
+                    const SizedBox(height: 35),
                   ],
                 ),
               ),
@@ -206,86 +249,145 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // --- HEADER: SIDE-BY-SIDE LAYOUT WITH UPDATED POPUP MENU ---
+  // --- CENTER-ALIGNED PROFILE HEADER ---
   Widget _buildCenteredHeader(BuildContext context, bool isDesktop, Color p1) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(25, isDesktop ? 40 : 35, 25, 25), 
+      padding: EdgeInsets.fromLTRB(16, isDesktop ? 30 : 20, 16, 22), 
       decoration: BoxDecoration(
         color: p1,
         borderRadius: const BorderRadius.only(
-            bottomRight: Radius.circular(50), bottomLeft: Radius.circular(50)),
+          bottomRight: Radius.circular(40), 
+          bottomLeft: Radius.circular(40),
+        ),
         boxShadow: [
           BoxShadow(
-              color: p1.withValues(alpha: 0.25),
-              blurRadius: 20,
-              offset: const Offset(0, 10))
+            color: p1.withValues(alpha: 0.25),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
       child: SafeArea(
         bottom: false,
         child: Stack(
           children: [
-            Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  CircleAvatar(
-                    radius: isDesktop ? 45 : 38,
-                    backgroundColor: Colors.white.withValues(alpha: 0.15),
-                    child: const Icon(Icons.person_rounded, size: 40, color: Colors.white),
-                  ),
-                  const SizedBox(width: 25),
-                  
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_fullName,
-                          style: GoogleFonts.merriweather(
-                              color: Colors.white,
-                              fontSize: isDesktop ? 26 : 22,
-                              fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 4),
-                      Text("@${_userName.toLowerCase()} • $_phoneNumber",
-                          style: GoogleFonts.merriweather(
-                              color: Colors.white70,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400)),
-                      Text(_email,
-                          style: GoogleFonts.merriweather(
-                              color: Colors.white60,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400)),
-                      const SizedBox(height: 10),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                            color: Colors.orangeAccent,
-                            borderRadius: BorderRadius.circular(15)),
-                        child: Text(
-                            "${_toTitleCase(_accountType)}: ${_toTitleCase(_currentRole.replaceAll('_', ' '))}",
-                            style: GoogleFonts.merriweather(
-                                color: Colors.black,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.5)),
+            Align(
+              alignment: Alignment.center,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 36),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Tap avatar to open Edit Profile
+                    GestureDetector(
+                      onTap: _showEditProfileModal,
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          CircleAvatar(
+                            radius: isDesktop ? 38 : 32,
+                            backgroundColor: Colors.white.withValues(alpha: 0.2),
+                            backgroundImage: (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                                ? NetworkImage(_avatarUrl!)
+                                : null,
+                            child: (_avatarUrl == null || _avatarUrl!.isEmpty)
+                                ? Icon(Icons.person_rounded, size: isDesktop ? 38 : 30, color: Colors.white)
+                                : null,
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.orangeAccent,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: p1, width: 2),
+                            ),
+                            child: const Icon(Icons.camera_alt_rounded, size: 12, color: Colors.black87),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Full Name
+                    Text(
+                      _fullName,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.merriweather(
+                        color: Colors.white,
+                        fontSize: isDesktop ? 22 : 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+
+                    // Username & Phone
+                    Text(
+                      "@${_userName.toLowerCase()} • $_phoneNumber",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.merriweather(
+                        color: Colors.white70,
+                        fontSize: isDesktop ? 12.5 : 11,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+
+                    // Email
+                    Text(
+                      _email,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.merriweather(
+                        color: Colors.white60,
+                        fontSize: isDesktop ? 12 : 10.5,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Role Badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.orangeAccent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        "${_toTitleCase(_accountType)}: ${_toTitleCase(_currentRole.replaceAll('_', ' '))}",
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.merriweather(
+                          color: Colors.black,
+                          fontSize: isDesktop ? 10 : 9.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.4,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            // TOP RIGHT OPTIONS MENU (WITH ADD ACCOUNT)
+
+            // Top-Right 3-Dotted Menu
             Positioned(
-              right: 0,
               top: 0,
+              right: 0,
               child: PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert_rounded, color: Colors.white70),
+                icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 24),
+                splashRadius: 20,
                 onSelected: (val) => _handleMenuAction(val),
                 itemBuilder: (context) => [
                   _popItem(Icons.account_circle_outlined, "View Profile", 'profile'),
+                  _popItem(Icons.edit_outlined, "Edit Profile", 'edit_profile'),
                   _popItem(Icons.switch_account_outlined, "Switch Account", 'switch'),
                   _popItem(Icons.person_add_alt_1_outlined, "Add Account", 'add_account'),
                   const PopupMenuDivider(height: 8),
@@ -303,12 +405,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   PopupMenuItem<String> _popItem(IconData icon, String label, String val) {
     return PopupMenuItem(
       value: val,
-      height: 28,
+      height: 34,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Row(children: [
         Icon(icon, size: 17, color: const Color(0xFF4A148C)),
         const SizedBox(width: 10),
-        Text(label, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w600))
+        Text(label, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w600)),
       ]),
     );
   }
@@ -318,7 +420,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Text(
         _toTitleCase(title), 
-        style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.blueGrey[900]),
+        style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.blueGrey[900]),
       ),
     );
   }
@@ -326,35 +428,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildResponsiveGrid(BuildContext context, List<dynamic> items, bool isDesktop, Color pColor) {
     return GridView.builder(
       shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(), // FIXED: NeverScrollableScrollPhysics
+      physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: isDesktop ? 3 : 1,
         mainAxisSpacing: 10,
         crossAxisSpacing: 12,
-        childAspectRatio: isDesktop ? 7.5 : 10.0, 
+        childAspectRatio: isDesktop ? 7.5 : 9.5, 
       ),
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
         return InkWell(
-          onTap: () { Navigator.pop(context); widget.onNavigate(item['navigation_key']); },
+          onTap: () { 
+            Navigator.pop(context); 
+            widget.onNavigate(item['navigation_key']); 
+          },
           borderRadius: BorderRadius.circular(15),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
             decoration: BoxDecoration(
               color: Colors.white, 
               borderRadius: BorderRadius.circular(15), 
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))], 
-              border: Border.all(color: Colors.black.withValues(alpha: 0.05))
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03), 
+                  blurRadius: 8, 
+                  offset: const Offset(0, 3),
+                ),
+              ], 
+              border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
             ),
             child: Row(children: [
-              Icon(_getIcon(item['icon_name']), color: pColor, size: 22),
-              const SizedBox(width: 18), 
+              Icon(_getIcon(item['icon_name']), color: pColor, size: 20),
+              const SizedBox(width: 16), 
               Expanded(
-                child: Text(_toTitleCase(item['label']), 
-                  style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87))
+                child: Text(
+                  _toTitleCase(item['label']), 
+                  style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                ),
               ), 
-              const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.black12)
+              const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.black26),
             ]),
           ),
         );
@@ -365,10 +478,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ==========================================
   // LOGIC: MENU ACTIONS
   // ==========================================
-
   void _handleMenuAction(String action) {
     if (action == 'profile') {
       _showProfileDetails();
+    } else if (action == 'edit_profile') {
+      _showEditProfileModal();
     } else if (action == 'switch') {
       _showSwitchAccountDialog(context);
     } else if (action == 'add_account') {
@@ -386,6 +500,334 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  // ==========================================
+  // EDIT PROFILE MODAL (WITH GALLERY UPLOAD)
+  // ==========================================
+  void _showEditProfileModal() {
+    final nameCtrl = TextEditingController(text: _fullName);
+    final userCtrl = TextEditingController(text: _userName);
+    final phoneCtrl = TextEditingController(text: _phoneNumber);
+    final bioCtrl = TextEditingController(text: _bio);
+    final avatarCtrl = TextEditingController(text: _avatarUrl ?? '');
+
+    bool isSaving = false;
+    bool isUploadingImage = false;
+    String? errorText;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+      builder: (modalCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          // Picks an image from phone gallery and uploads it to Supabase Storage 'avatars' bucket
+          Future<void> pickAndUploadImage() async {
+            try {
+              final picker = ImagePicker();
+              final XFile? pickedFile = await picker.pickImage(
+                source: ImageSource.gallery,
+                maxWidth: 800,
+                maxHeight: 800,
+                imageQuality: 85,
+              );
+
+              if (pickedFile == null) return;
+
+              setModalState(() {
+                isUploadingImage = true;
+                errorText = null;
+              });
+
+              final user = _supabase.auth.currentUser;
+              final uid = user?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
+              final fileExt = pickedFile.name.split('.').last.toLowerCase();
+              final fileName = 'avatar_${uid}_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+
+              final imageBytes = await pickedFile.readAsBytes();
+
+              await _supabase.storage.from('avatars').uploadBinary(
+                fileName,
+                imageBytes,
+                fileOptions: FileOptions(contentType: 'image/$fileExt', upsert: true),
+              );
+
+              final publicUrl = _supabase.storage.from('avatars').getPublicUrl(fileName);
+
+              setModalState(() {
+                avatarCtrl.text = publicUrl;
+                isUploadingImage = false;
+              });
+            } catch (e) {
+              setModalState(() {
+                isUploadingImage = false;
+                errorText = "Gallery upload error: $e";
+              });
+            }
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 20,
+              bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 5,
+                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Text(
+                      "Edit Profile",
+                      style: GoogleFonts.merriweather(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF4A148C),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Avatar preview with Gallery Upload action
+                  Center(
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: isUploadingImage ? null : pickAndUploadImage,
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              CircleAvatar(
+                                radius: 38,
+                                backgroundColor: const Color(0xFF4A148C).withValues(alpha: 0.1),
+                                backgroundImage: avatarCtrl.text.trim().isNotEmpty
+                                    ? NetworkImage(avatarCtrl.text.trim())
+                                    : (_avatarUrl != null && _avatarUrl!.isNotEmpty)
+                                        ? NetworkImage(_avatarUrl!)
+                                        : null,
+                                child: isUploadingImage
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4A148C)),
+                                      )
+                                    : (avatarCtrl.text.trim().isEmpty && (_avatarUrl == null || _avatarUrl!.isEmpty))
+                                        ? const Icon(Icons.person_rounded, size: 38, color: Color(0xFF4A148C))
+                                        : null,
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: const BoxDecoration(color: Color(0xFF4A148C), shape: BoxShape.circle),
+                                child: const Icon(Icons.camera_alt_rounded, size: 14, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: isUploadingImage ? null : pickAndUploadImage,
+                          icon: const Icon(Icons.photo_library_outlined, size: 16, color: Color(0xFF4A148C)),
+                          label: Text(
+                            isUploadingImage ? "Uploading Photo..." : "Choose from Gallery",
+                            style: GoogleFonts.merriweather(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF4A148C),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  _editFieldLabel("Profile Picture URL"),
+                  TextField(
+                    controller: avatarCtrl,
+                    style: GoogleFonts.merriweather(fontSize: 13),
+                    onChanged: (_) => setModalState(() {}),
+                    decoration: _editInputDecoration("https://... or choose from gallery above", Icons.image_outlined),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _editFieldLabel("Full / Display Name"),
+                  TextField(
+                    controller: nameCtrl,
+                    style: GoogleFonts.merriweather(fontSize: 13),
+                    decoration: _editInputDecoration("e.g. John Doe", Icons.badge_outlined),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _editFieldLabel("Username"),
+                  TextField(
+                    controller: userCtrl,
+                    style: GoogleFonts.merriweather(fontSize: 13),
+                    decoration: _editInputDecoration("e.g. johndoe", Icons.alternate_email_rounded),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _editFieldLabel("Phone Number"),
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    style: GoogleFonts.merriweather(fontSize: 13),
+                    decoration: _editInputDecoration("e.g. +256 700 000000", Icons.phone_outlined),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _editFieldLabel("Bio / Status"),
+                  TextField(
+                    controller: bioCtrl,
+                    maxLines: 2,
+                    style: GoogleFonts.merriweather(fontSize: 13),
+                    decoration: _editInputDecoration("Brief note about your role or duty", Icons.notes_rounded),
+                  ),
+                  const SizedBox(height: 14),
+
+                  if (errorText != null) ...[
+                    Text(
+                      errorText!,
+                      style: GoogleFonts.merriweather(color: Colors.red.shade800, fontSize: 11.5, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: isSaving ? null : () => Navigator.pop(modalCtx),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: Text("Cancel", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4A148C),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: isSaving
+                              ? null
+                              : () async {
+                                  final newName = nameCtrl.text.trim();
+                                  final newUsername = userCtrl.text.trim();
+                                  final newPhone = phoneCtrl.text.trim();
+                                  final newBio = bioCtrl.text.trim();
+                                  final newAvatar = avatarCtrl.text.trim();
+
+                                  if (newName.isEmpty) {
+                                    setModalState(() => errorText = "Full name cannot be empty.");
+                                    return;
+                                  }
+
+                                  setModalState(() {
+                                    isSaving = true;
+                                    errorText = null;
+                                  });
+
+                                  try {
+                                    final user = _supabase.auth.currentUser;
+                                    
+                                    // Strictly updates profiles table columns
+                                    final updateData = {
+                                      'full_name': newName,
+                                      'username': newUsername,
+                                      'phone': newPhone,
+                                      'bio': newBio,
+                                      if (newAvatar.isNotEmpty) 'avatar_url': newAvatar,
+                                      'updated_at': DateTime.now().toIso8601String(),
+                                    };
+
+                                    if (user != null) {
+                                      await _supabase.from('profiles').update(updateData).eq('id', user.id);
+                                    } else {
+                                      await _supabase.from('profiles').update(updateData).ilike('email', _email.trim());
+                                    }
+
+                                    if (mounted) {
+                                      setState(() {
+                                        _fullName = newName;
+                                        _userName = newUsername;
+                                        _phoneNumber = newPhone;
+                                        _bio = newBio;
+                                        if (newAvatar.isNotEmpty) _avatarUrl = newAvatar;
+                                      });
+                                    }
+
+                                    Navigator.pop(modalCtx);
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text("Profile updated successfully!"),
+                                        backgroundColor: Color(0xFF4A148C),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    setModalState(() {
+                                      isSaving = false;
+                                      errorText = "Failed to update profile: $e";
+                                    });
+                                  }
+                                },
+                          child: isSaving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : Text("Save Changes", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _editFieldLabel(String label) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          label,
+          style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+        ),
+      );
+
+  InputDecoration _editInputDecoration(String hint, IconData icon) => InputDecoration(
+        hintText: hint,
+        hintStyle: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey),
+        prefixIcon: Icon(icon, size: 18, color: const Color(0xFF4A148C)),
+        filled: true,
+        fillColor: const Color(0xFFFBFBFE),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF4A148C), width: 1.5)),
+      );
+
+  // --- VIEW PROFILE DOSSIER ---
   void _showProfileDetails() {
     showModalBottomSheet(
       context: context,
@@ -393,27 +835,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
       builder: (context) => Padding(
-        padding: const EdgeInsets.all(30),
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
-            const SizedBox(height: 25),
-            Text("Account Dossier", style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: const Color(0xFF4A148C))),
-            const Divider(height: 40),
+            const SizedBox(height: 22),
+            Text("Account Dossier", style: GoogleFonts.merriweather(fontSize: 19, fontWeight: FontWeight.w900, color: const Color(0xFF4A148C))),
+            const Divider(height: 36),
             _dossierRow("Full name", _fullName),
             _dossierRow("Contact", _phoneNumber.isNotEmpty ? _phoneNumber : "Not Set"),
             _dossierRow("Username", _userName.isNotEmpty ? _userName : "Not Set"),
             _dossierRow("Email", _email),
             _dossierRow("Duty", _currentRole.replaceAll('_', ' ')),
-            _dossierRow("Bio", "Master Administration Official User"),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-              child: Text("Done", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold)),
+            _dossierRow("Bio", _bio),
+            const SizedBox(height: 25),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _showEditProfileModal();
+                    },
+                    icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF4A148C)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF4A148C), width: 1.2),
+                      minimumSize: const Size(double.infinity, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    label: Text("Edit Profile", style: GoogleFonts.merriweather(color: const Color(0xFF4A148C), fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4A148C),
+                      minimumSize: const Size(double.infinity, 48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text("Done", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 15),
           ],
         ),
       ),
@@ -421,12 +889,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _dossierRow(String label, String value) => Padding(
-    padding: const EdgeInsets.only(bottom: 15),
+    padding: const EdgeInsets.only(bottom: 14),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 100, child: Text(label, style: GoogleFonts.merriweather(fontSize: 13, color: Colors.blueGrey, fontWeight: FontWeight.bold))),
-        Expanded(child: Text(_toTitleCase(value), style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87))),
+        SizedBox(width: 95, child: Text(label, style: GoogleFonts.merriweather(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold))),
+        Expanded(child: Text(_toTitleCase(value), style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87))),
       ],
     ),
   );
@@ -437,11 +905,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: const Color(0xFFFBFBFE),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text("Switch account", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18)),
+            Text("Switch account", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17)),
             IconButton(
               icon: const Icon(Icons.person_add_alt_1_rounded, size: 20, color: Color(0xFF4A148C)),
               tooltip: "Add Account",
@@ -459,7 +927,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   child: Center(
                     child: Text("No other accounts registered on this device.", 
-                      style: GoogleFonts.merriweather(fontSize: 13, color: Colors.grey)),
+                      style: GoogleFonts.merriweather(fontSize: 12.5, color: Colors.grey)),
                   ),
                 )
               : ListView.builder(
@@ -468,13 +936,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   itemBuilder: (context, index) {
                     final acc = widget.otherAccounts[index];
                     return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                       leading: CircleAvatar(
                         backgroundColor: const Color(0xFF4A148C), 
                         child: Text(acc.fullName.isNotEmpty ? acc.fullName[0].toUpperCase() : "U", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
                       ), 
-                      title: Text(acc.fullName, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 16)), 
-                      subtitle: Text(acc.email, style: GoogleFonts.merriweather(fontSize: 13)),
+                      title: Text(acc.fullName, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14)), 
+                      subtitle: Text(acc.email, style: GoogleFonts.merriweather(fontSize: 12)),
                       onTap: () async { 
                         Navigator.pop(dialogCtx);
                         if (!mounted) return;
@@ -492,11 +960,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _showAddAccountDialog(context);
             },
             icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF4A148C)),
-            label: Text("Add Account", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: const Color(0xFF4A148C))),
+            label: Text("Add Account", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: const Color(0xFF4A148C), fontSize: 12)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx), 
-            child: Text("Close", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey)),
+            child: Text("Close", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
           ),
         ],
       ),
@@ -527,12 +995,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   color: const Color(0xFF4A148C).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF4A148C), size: 22),
+                child: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF4A148C), size: 20),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Text(
                 "Add Account",
-                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: const Color(0xFF4A148C)),
+                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: const Color(0xFF4A148C)),
               ),
             ],
           ),
@@ -545,13 +1013,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   Text(
                     "Sign in to an existing account to access it on this device without logging out your current session.",
-                    style: GoogleFonts.merriweather(fontSize: 12, color: Colors.blueGrey[700], height: 1.4),
+                    style: GoogleFonts.merriweather(fontSize: 11.5, color: Colors.blueGrey[700], height: 1.4),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
 
-                  // Email Input
-                  Text("Email Address", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  const SizedBox(height: 6),
+                  Text("Email Address", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  const SizedBox(height: 5),
                   TextField(
                     controller: emailCtrl,
                     keyboardType: TextInputType.emailAddress,
@@ -562,17 +1029,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       prefixIcon: const Icon(Icons.mail_outline_rounded, size: 18, color: Color(0xFF4A148C)),
                       filled: true,
                       fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF4A148C), width: 1.5)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF4A148C), width: 1.5)),
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
 
-                  // Password Input
-                  Text("Password", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  const SizedBox(height: 6),
+                  Text("Password", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  const SizedBox(height: 5),
                   TextField(
                     controller: passwordCtrl,
                     obscureText: obscurePassword,
@@ -587,18 +1053,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       filled: true,
                       fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF4A148C), width: 1.5)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF4A148C), width: 1.5)),
                     ),
                   ),
 
-                  // Error notification if any
                   if (errorMessage != null) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.red.shade50,
                         borderRadius: BorderRadius.circular(8),
@@ -606,12 +1071,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.error_outline_rounded, size: 16, color: Colors.red.shade700),
-                          const SizedBox(width: 8),
+                          Icon(Icons.error_outline_rounded, size: 15, color: Colors.red.shade700),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               errorMessage!,
-                              style: GoogleFonts.merriweather(fontSize: 11, color: Colors.red.shade900, fontWeight: FontWeight.w600),
+                              style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.red.shade900, fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
@@ -625,13 +1090,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           actions: [
             TextButton(
               onPressed: isVerifying ? null : () => Navigator.pop(dialogCtx),
-              child: Text("Cancel", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey)),
+              child: Text("Cancel", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF4A148C),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               ),
               onPressed: isVerifying ? null : () async {
                 final email = emailCtrl.text.trim();
@@ -648,15 +1113,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 });
 
                 try {
-                  // 1. Check if the account exists in Supabase profiles
                   final profileCheck = await _supabase
                       .from('profiles')
                       .select('id, full_name, email, role, account_type, username, phone')
-                      .eq('email', email)
+                      .ilike('email', email)
                       .maybeSingle();
 
                   if (profileCheck == null) {
-                    // User does NOT exist in Supabase
                     if (mounted) {
                       Navigator.pop(dialogCtx);
                       _showAccountNotFoundDialog(context, email);
@@ -664,7 +1127,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     return;
                   }
 
-                 // 2. Authenticate the account with Supabase Auth
                   final authRes = await _supabase.auth.signInWithPassword(
                     email: email,
                     password: password,
@@ -672,7 +1134,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                   final user = authRes.user;
                   if (user != null) {
-                    // 3. Construct UserAccount object FIRST
                     final loadedAccount = UserAccount(
                       fullName: profileCheck['full_name'] ?? "User",
                       userName: profileCheck['username'] ?? "user",
@@ -682,7 +1143,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       accountType: profileCheck['account_type'] ?? "Saint",
                     );
 
-                    // 4. Save to SharedPreferences (ONCE) and set active
                     final prefs = await SharedPreferences.getInstance();
                     List<String> savedIds = prefs.getStringList('device_account_ids') ?? [];
                     if (!savedIds.contains(user.id)) {
@@ -692,8 +1152,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     await prefs.setString('active_account_email', loadedAccount.email);
 
                     if (mounted) {
-                      Navigator.pop(dialogCtx); // Close dialog
-                      Navigator.pop(context);   // Close drawer
+                      Navigator.pop(dialogCtx); 
+                      Navigator.pop(context);   
                       await widget.onSwitchAccount(loadedAccount);
 
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -727,7 +1187,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       height: 16,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                     )
-                  : Text("Confirm & Load", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  : Text("Confirm & Load", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
             ),
           ],
         ),
@@ -746,36 +1206,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: Row(
           children: [
-            const Icon(Icons.person_off_rounded, color: Colors.orange, size: 24),
-            const SizedBox(width: 10),
+            const Icon(Icons.person_off_rounded, color: Colors.orange, size: 22),
+            const SizedBox(width: 8),
             Text(
               "Account Not Found",
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: const Color(0xFF4A148C)),
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: const Color(0xFF4A148C)),
             ),
           ],
         ),
         content: Text(
           "No registered account was found with the email \"$enteredEmail\".\n\nWould you like to register and create a new account now?",
-          style: GoogleFonts.merriweather(fontSize: 13, height: 1.5, color: Colors.black87),
+          style: GoogleFonts.merriweather(fontSize: 12.5, height: 1.45, color: Colors.black87),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text("Not Now", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey)),
+            child: Text("Not Now", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF4A148C),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
-              Navigator.pop(ctx);      // Close alert dialog
-              Navigator.pop(context);  // Close drawer
-              widget.onNavigate('registration'); // Navigate to AddAccountScreen
+              Navigator.pop(ctx);      
+              Navigator.pop(context);  
+              widget.onNavigate('registration'); 
             },
             child: Text(
               "Create Account",
-              style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
             ),
           ),
         ],

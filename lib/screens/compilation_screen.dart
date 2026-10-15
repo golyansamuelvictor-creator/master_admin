@@ -1,10 +1,10 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:master_admin/compilation_modules/evangelism_results_module.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
-// --- ALL 11 MODULES IMPORTED ---
 import '../compilation_modules/service_attendance_module.dart';
 import '../compilation_modules/cell_service_module.dart';
 import '../compilation_modules/workers_education_module.dart';
@@ -47,15 +47,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
   
   String _timePeriod = 'Weekly status';
   String _analyticsMode = 'Summary'; 
-  String _groupBy = 'Loc'; 
-  String _currentLevel = '';
+  String _groupBy = 'Church'; 
+  String _currentLevel = 'Church status';
   DateTimeRange? _customRange;
   late List<String> _hierarchy;
   bool _isLoading = true;
   List<dynamic> _logs = [];
   double _growthTrend = 0.0;
 
-  // Master relational collections
   List<Map<String, dynamic>> _locationData = [];
   List<Map<String, dynamic>> _subLocationData = [];
   List<Map<String, dynamic>> _deptData = [];
@@ -72,7 +71,19 @@ class _CompilationEngineState extends State<CompilationEngine> {
   String? _selectedTeam;
 
   // --- ROLE IDENTIFIERS ---
+  bool get _isGroupLeader {
+    String r = widget.role.toLowerCase();
+    String d = widget.dept.trim().toLowerCase();
+    return r.contains('group') || 
+           r.contains('general_dept') ||
+           r.contains('new_saints') ||
+           d.contains('새신자') ||
+           ((widget.loc.isEmpty || widget.loc.toLowerCase() == 'church') && 
+            (d.contains('장년') || d.contains('부녀') || d.contains('청년') || d.contains('신학')));
+  }
+
   bool get _isChurchWideCompiler {
+    if (_isGroupLeader) return false;
     String r = widget.role.toLowerCase();
     String l = widget.loc.trim().toLowerCase();
     return l == 'church' ||
@@ -86,22 +97,22 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   bool get _isLocationLeader {
     String r = widget.role.toLowerCase();
-    return !_isChurchWideCompiler && (r.contains('location') || r.contains('loc_')) && !r.contains('sub_loc');
+    return !_isChurchWideCompiler && !_isGroupLeader && (r.contains('location') || r.contains('loc_')) && !r.contains('sub_loc');
   }
 
   bool get _isSubLocationLeader {
     String r = widget.role.toLowerCase();
-    return !_isChurchWideCompiler && (r.contains('sub_location') || r.contains('sub_loc') || r.contains('sublocation'));
+    return !_isChurchWideCompiler && !_isGroupLeader && (r.contains('sub_location') || r.contains('sub_loc') || r.contains('sublocation'));
   }
 
   bool get _isDeptLeader {
     String r = widget.role.toLowerCase();
-    return !_isChurchWideCompiler && !_isLocationLeader && !_isSubLocationLeader && (r.contains('dept') || r.contains('department'));
+    return !_isChurchWideCompiler && !_isGroupLeader && !_isLocationLeader && !_isSubLocationLeader && (r.contains('dept') || r.contains('department'));
   }
 
   bool get _isTeamLeader {
     String r = widget.role.toLowerCase();
-    return !_isChurchWideCompiler && !_isLocationLeader && !_isSubLocationLeader && !_isDeptLeader && r.contains('team');
+    return !_isChurchWideCompiler && !_isGroupLeader && !_isLocationLeader && !_isSubLocationLeader && !_isDeptLeader && r.contains('team');
   }
 
   @override
@@ -118,7 +129,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   void _setHierarchy() {
-    if (_isChurchWideCompiler) {
+    if (_isGroupLeader) {
+      _hierarchy = ['Group status', 'Location status', 'Sub location status', 'Team status', 'Cell status'];
+    } else if (_isChurchWideCompiler) {
       _hierarchy = ['Church status', 'Group status', 'Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isLocationLeader) {
       _hierarchy = ['Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
@@ -138,9 +151,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
   void _updateGroupByFromLevel(String level) {
     if (level.contains('Cell')) _groupBy = 'Cell';
     else if (level.contains('Team')) _groupBy = 'Team';
-    else if (level.contains('Dept') || level.contains('Group')) _groupBy = 'Dept';
+    else if (level.contains('Dept')) _groupBy = 'Dept';
     else if (level.contains('Sub location')) _groupBy = 'Sub-loc';
     else if (level.contains('Location')) _groupBy = 'Loc';
+    else if (level.contains('Group')) _groupBy = 'Group';
     else _groupBy = 'Church';
   }
 
@@ -155,8 +169,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
             .where((l) => l.toLowerCase() != 'church')
             .toList();
 
-        // Lock to login scope if not church-wide
-        if (!_isChurchWideCompiler && widget.loc.isNotEmpty && widget.loc != 'Church') {
+        if (!_isChurchWideCompiler && !_isGroupLeader && widget.loc.isNotEmpty && widget.loc != 'Church') {
           _selectedLocation = widget.loc;
         } else if (_locations.isNotEmpty) {
           _selectedLocation = _locations.first;
@@ -168,14 +181,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
       });
 
       if (_selectedLocation != null) {
-        await _fetchSubLocations(_selectedLocation!);
+        await _fetchSubLocations(_selectedLocation!, triggerFetch: false);
       }
     } catch (e) {
       debugPrint("Compilation Location Fetch Error: $e");
     }
   }
 
-  Future<void> _fetchSubLocations(String locName) async {
+  Future<void> _fetchSubLocations(String locName, {bool triggerFetch = true}) async {
     try {
       final match = _locationData.firstWhere((e) => e['location'] == locName, orElse: () => {});
       if (match.isEmpty || match['id'] == null) return;
@@ -195,15 +208,23 @@ class _CompilationEngineState extends State<CompilationEngine> {
       });
 
       if (_selectedSubLocation != null) {
-        await _fetchDepartments(_selectedSubLocation!);
+        await _fetchDepartments(_selectedSubLocation!, triggerFetch: false);
       }
+      if (triggerFetch) _fetchData();
     } catch (e) {
       debugPrint("Compilation Sub-loc Fetch Error: $e");
     }
   }
 
-  Future<void> _fetchDepartments(String subName) async {
+  Future<void> _fetchDepartments(String subName, {bool triggerFetch = true}) async {
     try {
+      if (_isGroupLeader || _isDeptLeader || _isTeamLeader) {
+        setState(() => _selectedDepartment = widget.dept);
+        if (_selectedDepartment != null) await _fetchTeams(_selectedDepartment!, triggerFetch: false);
+        if (triggerFetch) _fetchData();
+        return;
+      }
+
       final match = _subLocationData.firstWhere((e) => e['name'] == subName, orElse: () => {});
       if (match.isEmpty || match['id'] == null) return;
       final subId = match['id'];
@@ -214,7 +235,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         _deptData = List<Map<String, dynamic>>.from(data);
         _departments = _deptData.map((e) => e['name'].toString()).toList();
         if (_departments.isEmpty) {
-          _departments = ["장년회", "부녀회", "청년회", "신학부", "새신자부"];
+          _departments = ["장년회", "부녀회", "청년회", "신학부", "새신자"];
         }
         
         if (widget.dept.isNotEmpty && _departments.contains(widget.dept)) {
@@ -225,18 +246,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
       });
 
       if (_selectedDepartment != null) {
-        await _fetchTeams(_selectedDepartment!);
+        await _fetchTeams(_selectedDepartment!, triggerFetch: false);
       }
+      if (triggerFetch) _fetchData();
     } catch (e) {
       debugPrint("Compilation Dept Fetch Error: $e");
     }
   }
 
-  Future<void> _fetchTeams(String deptName) async {
+  Future<void> _fetchTeams(String deptName, {bool triggerFetch = true}) async {
     try {
       final match = _deptData.firstWhere((e) => e['name'] == deptName, orElse: () => {});
       if (match.isEmpty || match['id'] == null) {
         setState(() => _teams = ["팀1", "팀2", "팀3"]);
+        if (triggerFetch) _fetchData();
         return;
       }
       final deptId = match['id'];
@@ -254,6 +277,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           _selectedTeam = _teams.isNotEmpty ? _teams.first : null;
         }
       });
+      if (triggerFetch) _fetchData();
     } catch (e) {
       debugPrint("Compilation Team Fetch Error: $e");
     }
@@ -261,12 +285,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   Future<void> _loadUIConfig() async {
     try {
-      final res = await _supabase
-          .from('compilation_ui_config')
-          .select()
-          .eq('is_active', true)
-          .order('sort_order');
-
+      final res = await _supabase.from('compilation_ui_config').select().eq('is_active', true).order('sort_order');
       if (res.isNotEmpty && mounted) {
         final List<dynamic> list = res as List<dynamic>;
         final times = list.where((e) => e['config_type'] == 'time_period').map((e) => e['label'].toString()).toList();
@@ -277,8 +296,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
           if (times.isNotEmpty) _timeOptions = times;
           if (modes.isNotEmpty) _modeOptions = modes;
           if (vis.isNotEmpty) _visitationCategories = vis;
-          if (!_timeOptions.contains(_timePeriod)) _timePeriod = _timeOptions.first;
-          if (!_modeOptions.contains(_analyticsMode)) _analyticsMode = _modeOptions.first;
         });
       }
     } catch (e) {
@@ -304,45 +321,107 @@ class _CompilationEngineState extends State<CompilationEngine> {
   Future<void> _fetchData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
+
     try {
-      String table = _getTargetTable();
-      var query = _supabase.from(table).select('*, members!inner(*)');
-      DateTime now = DateTime.now();
-      DateTime bStart; DateTime bEnd;
+      final String table = _getTargetTable();
+      final DateTime now = DateTime.now();
+      final DateFormat df = DateFormat('yyyy-MM-dd');
+
+      DateTime bStart;
+      DateTime bEnd;
 
       if (_timePeriod == "Custom period" && _customRange != null) {
-        query = query.gte('report_date', DateFormat('yyyy-MM-dd').format(_customRange!.start)).lte('report_date', DateFormat('yyyy-MM-dd').format(_customRange!.end));
-        bStart = _customRange!.start.subtract(_customRange!.duration); 
+        bStart = _customRange!.start.subtract(_customRange!.duration);
         bEnd = _customRange!.start.subtract(const Duration(days: 1));
       } else if (_timePeriod == "Weekly status") {
-        query = query.gte('report_date', DateFormat('yyyy-MM-dd').format(now.subtract(const Duration(days: 7))));
-        bStart = now.subtract(const Duration(days: 14)); 
+        bStart = now.subtract(const Duration(days: 14));
         bEnd = now.subtract(const Duration(days: 8));
       } else if (_timePeriod == "Current status") {
-        query = query.eq('report_date', DateFormat('yyyy-MM-dd').format(now));
-        bStart = now.subtract(const Duration(days: 1)); 
+        bStart = now.subtract(const Duration(days: 1));
         bEnd = now.subtract(const Duration(days: 1));
       } else {
-        query = query.gte('report_date', DateFormat('yyyy-MM-dd').format(DateTime(now.year, now.month, 1)));
-        bStart = DateTime(now.year, now.month - 1, 1); 
+        bStart = DateTime(now.year, now.month - 1, 1);
         bEnd = DateTime(now.year, now.month, 0);
       }
 
-      if (!_isChurchWideCompiler) {
-        String r = widget.role.toLowerCase();
-        if (r.contains('cell')) query = query.eq('unit_name', widget.userUnit);
-        else if (r.contains('team')) query = query.eq('members.team', widget.userUnit);
-        else if (r.contains('dept')) query = query.eq('members.department', widget.userUnit);
-        else if (r.contains('sub_loc')) query = query.eq('members.sub_location', widget.userUnit);
-        else if (r.contains('loc')) query = query.eq('members.location', widget.userUnit);
-      }
-      
-      final currentLogs = await query;
-      final prevRes = await _supabase.from(table).select('id').gte('report_date', DateFormat('yyyy-MM-dd').format(bStart)).lte('report_date', DateFormat('yyyy-MM-dd').format(bEnd));
+      final lvl = _currentLevel.toLowerCase();
 
-      if (mounted) setState(() { 
-        _logs = currentLogs as List<dynamic>; 
-        int pCount = (prevRes as List).length;
+      dynamic buildQuery(DateTime? start, DateTime? end, {bool isPrev = false}) {
+        dynamic q = _supabase.from(table).select('*, members!inner(*)');
+        if (_timePeriod == "Custom period" && _customRange != null) {
+          String s = isPrev ? df.format(bStart) : df.format(_customRange!.start);
+          String e = isPrev ? df.format(bEnd) : df.format(_customRange!.end);
+          q = q.gte('report_date', s).lte('report_date', e);
+        } else if (_timePeriod == "Weekly status") {
+          String s = isPrev ? df.format(bStart) : df.format(now.subtract(const Duration(days: 7)));
+          String e = isPrev ? df.format(bEnd) : df.format(now);
+          q = q.gte('report_date', s).lte('report_date', e);
+        } else if (_timePeriod == "Current status") {
+          String s = isPrev ? df.format(bStart) : df.format(now);
+          q = q.eq('report_date', s);
+        } else {
+          String s = isPrev ? df.format(bStart) : df.format(DateTime(now.year, now.month, 1));
+          String e = isPrev ? df.format(bEnd) : df.format(now);
+          q = q.gte('report_date', s).lte('report_date', e);
+        }
+
+        // GROUP LEADER LOCK: Restrict data strictly to their group
+        if (_isGroupLeader && widget.dept.isNotEmpty) {
+          q = q.eq('members.department', widget.dept);
+        }
+
+        // ROLE CONSTRAINTS FOR LOCAL WORKERS
+        if (!_isChurchWideCompiler && !_isGroupLeader) {
+          String r = widget.role.toLowerCase();
+          if (r.contains('cell')) q = q.eq('unit_name', widget.userUnit);
+          else if (r.contains('team')) q = q.eq('members.team', widget.userUnit);
+          else if (r.contains('dept')) q = q.eq('members.department', widget.userUnit);
+          else if (r.contains('sub_loc')) q = q.eq('members.sub_location', widget.userUnit);
+          else if (r.contains('loc')) q = q.eq('members.location', widget.userUnit);
+        }
+
+        // DRILL-DOWN FILTERS
+        if (lvl.contains('sub location') || lvl.contains('sub-location') || lvl.contains('team') || lvl.contains('cell')) {
+          if (_selectedLocation != null && _selectedLocation!.isNotEmpty && _selectedLocation != 'Church') {
+            q = q.eq('members.location', _selectedLocation!);
+          }
+        }
+        if (lvl.contains(RegExp(r'dept|team|cell'))) {
+          if (_selectedSubLocation != null && _selectedSubLocation!.isNotEmpty) {
+            q = q.eq('members.sub_location', _selectedSubLocation!);
+          }
+        }
+        if (!_isGroupLeader && lvl.contains(RegExp(r'team|cell'))) {
+          if (_selectedDepartment != null && _selectedDepartment!.isNotEmpty) {
+            q = q.eq('members.department', _selectedDepartment!);
+          }
+        }
+        if (lvl.contains('cell')) {
+          if (_selectedTeam != null && _selectedTeam!.isNotEmpty) {
+            q = q.eq('members.team', _selectedTeam!);
+          }
+        }
+        return q;
+      }
+
+      List<dynamic> allCurrentLogs = [];
+      int offset = 0;
+      const int pageSize = 1000;
+      while (true) {
+        final chunk = await buildQuery(null, null, isPrev: false).range(offset, offset + pageSize - 1);
+        final list = chunk as List<dynamic>;
+        allCurrentLogs.addAll(list);
+        if (list.length < pageSize) break;
+        offset += pageSize;
+      }
+
+      final prevChunk = await buildQuery(bStart, bEnd, isPrev: true).limit(5000);
+      final int pCount = (prevChunk as List).length;
+
+      if (!mounted) return;
+
+      setState(() { 
+        _logs = allCurrentLogs; 
         _growthTrend = pCount > 0 ? ((_logs.length - pCount) / pCount) * 100 : 0.0;
         _isLoading = false; 
       });
@@ -354,31 +433,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   String _getActiveUnitDisplayLabel() {
     final lvl = _currentLevel.toLowerCase();
-    if (_isChurchWideCompiler) {
-      if (lvl.contains('church')) return 'Church';
-      if (lvl.contains('group')) return 'Group';
+    if (_isGroupLeader) {
+      if (lvl.contains('group')) return widget.dept;
       if (lvl.contains('location')) return 'Location';
       if (lvl.contains('sub location')) return _selectedLocation ?? 'Sub-locations';
-      if (lvl.contains('dept')) return _selectedSubLocation ?? 'Dept';
-    } else if (_isLocationLeader) {
-      if (lvl.contains('location')) return 'Location';
-      if (lvl.contains('sub location')) return 'Sub-locations';
-      if (lvl.contains('dept')) return _selectedSubLocation ?? 'Dept';
-      if (lvl.contains('team')) return _selectedDepartment ?? 'Team';
-      if (lvl.contains('cell')) return _selectedTeam ?? 'Cell groups';
-    } else if (_isSubLocationLeader) {
-      if (lvl.contains('sub location')) return widget.sub;
-      if (lvl.contains('dept')) return 'Dept';
-      if (lvl.contains('team')) return _selectedDepartment ?? 'Team';
-      if (lvl.contains('cell')) return _selectedTeam ?? 'Cell groups';
-    } else if (_isDeptLeader) {
-      if (lvl.contains('dept')) return widget.dept;
-      if (lvl.contains('team')) return 'Team';
-      if (lvl.contains('cell')) return _selectedTeam ?? 'Cell groups';
-    } else if (_isTeamLeader) {
-      if (lvl.contains('team')) return widget.team;
-      if (lvl.contains('cell')) return 'Cell groups';
+      if (lvl.contains('team')) return _selectedSubLocation ?? 'Team';
+      if (lvl.contains('cell')) return _selectedTeam ?? 'Cell group';
     }
+    if (lvl.contains('church')) return 'Church';
+    if (lvl.contains('group')) return 'Book of Life';
+    if (lvl.contains('location')) return 'Location';
+    if (lvl.contains('sub location')) return _selectedLocation ?? 'Sub-locations';
+    if (lvl.contains('dept')) return _selectedSubLocation ?? 'Department';
+    if (lvl.contains('team')) return _selectedDepartment ?? 'Team';
+    if (lvl.contains('cell')) return _selectedTeam ?? 'Cell group';
     return 'Unit';
   }
 
@@ -402,23 +470,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
         iconTheme: IconThemeData(color: pPurple),
         title: Text(
           widget.selectedDuty, 
-          style: GoogleFonts.merriweather(
-            fontWeight: FontWeight.w900, 
-            color: pPurple, 
-            fontSize: 17.5,
-            letterSpacing: 0.4,
-          ),
+          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 17.5, letterSpacing: 0.4),
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(color: Colors.black, height: 1.0),
-        ),
+        bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: Colors.black, height: 1.0)),
         actions: [
           if (isMobile) 
-            Builder(builder: (ctx) => IconButton(
-              icon: const Icon(Icons.filter_list_rounded), 
-              onPressed: () => Scaffold.of(ctx).openEndDrawer()
-            )),
+            Builder(builder: (ctx) => IconButton(icon: const Icon(Icons.filter_list_rounded), onPressed: () => Scaffold.of(ctx).openEndDrawer())),
         ],
       ),
       endDrawer: isMobile ? Drawer(child: _buildSidebarContent()) : null,
@@ -426,12 +483,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
         if (!isMobile) _buildSidebarContent(),
         Expanded(
           child: _isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
-          : SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.all(isMobile ? 12 : 20), 
-              child: _buildMainContent()
-            )
+            ? const Center(child: CircularProgressIndicator()) 
+            : SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.all(isMobile ? 12 : 20), 
+                child: _buildMainContent()
+              )
         ),
       ]),
     );
@@ -467,17 +524,283 @@ class _CompilationEngineState extends State<CompilationEngine> {
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
       );
     }
-    if (d == 'Cell Group Service') return CellServiceModule(logs: _logs, timePeriod: _timePeriod, level: _currentLevel, analyticsMode: _analyticsMode, groupBy: _groupBy, targetValue: 80.0);
-    if (d == 'All Saints Education') return AllSaintsEducationModule(logs: _logs, timePeriod: _timePeriod, level: _currentLevel, analyticsMode: _analyticsMode, groupBy: _groupBy, targetValue: 80.0);
-    if (d == 'Offering Status') return OfferingModule(logs: _logs, timePeriod: _timePeriod, level: _currentLevel, analyticsMode: _analyticsMode, groupBy: _groupBy);
-    if (d == 'Evangelism' || d == 'Evangelism Part') return EvangelismModule(logs: _logs, timePeriod: _timePeriod, level: _currentLevel, analyticsMode: _analyticsMode, groupBy: _groupBy);
-    if (d == 'Morning Light') return MorningLightModule(logs: _logs, timePeriod: _timePeriod, level: _currentLevel, analyticsMode: _analyticsMode, groupBy: _groupBy);
-    if (d == 'Workers Education') return WorkersEducationModule(logs: _logs, timePeriod: _timePeriod, level: _currentLevel, analyticsMode: _analyticsMode, groupBy: _groupBy, targetValue: 80.0);
-    if (d == 'Workers Daily Participation') return DailyParticipationModule(logs: _logs, timePeriod: _timePeriod, level: _currentLevel, analyticsMode: _analyticsMode, groupBy: _groupBy);
-    if (d == 'Visitations and Counselling') return VisitationsModule(logs: _logs, level: _currentLevel, category: _visitationCategories.isNotEmpty ? _visitationCategories.first : 'General');
-    if (d == 'Growth Tracking') return GrowthTrackingModule(logs: _logs, level: _currentLevel, analyticsMode: _analyticsMode, groupBy: _groupBy);
+    if (d == 'Cell Group Service') {
+      return CellServiceModule(
+        logs: _logs, 
+        timePeriod: _timePeriod, 
+        level: _currentLevel, 
+        analyticsMode: _analyticsMode, 
+        groupBy: _groupBy, 
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+    }
+    if (d == 'All Saints Education') {
+      return AllSaintsEducationModule(
+        logs: _logs, 
+        timePeriod: _timePeriod, 
+        level: _currentLevel, 
+        analyticsMode: _analyticsMode, 
+        groupBy: _groupBy, 
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+         isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+    );
+    }
+    if (d == 'Offering') {
+      return OfferingModule(
+        logs: _logs,
+        timePeriod: _timePeriod,
+        level: _currentLevel,
+        analyticsMode: _analyticsMode,
+        groupBy: _groupBy,
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+      }
+    if (d == 'Evangelism' || d == 'Evangelism Part') {
+      return EvangelismModule(
+         logs: _logs,
+        timePeriod: _timePeriod,
+        level: _currentLevel,
+        analyticsMode: _analyticsMode,
+        groupBy: _groupBy,
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+      }
+
+    if (d == 'Morning Light') {
+      return MorningLightModule(
+        logs: _logs,
+        timePeriod: _timePeriod,
+        level: _currentLevel,
+        analyticsMode: _analyticsMode,
+        groupBy: _groupBy,
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+    }
+    if (d == 'Workers Education') {
+  return WorkersEducationModule(
+    logs: _logs,
+    timePeriod: _timePeriod,
+    level: _currentLevel,
+    analyticsMode: _analyticsMode,
+    groupBy: _groupBy,
+    targetValue: 80.0,
+    selectedLocation: _selectedLocation ?? '',
+    selectedSubLocation: _selectedSubLocation ?? '',
+    selectedDepartment: _selectedDepartment ?? '',
+    selectedTeam: _selectedTeam ?? '',
+    activeUnitLabel: _getActiveUnitDisplayLabel(),
+    isChurchWide: _isChurchWideCompiler,
+    isLocationLeader: _isLocationLeader,
+    isSubLocationLeader: _isSubLocationLeader,
+    isDeptLeader: _isDeptLeader,
+    isTeamLeader: _isTeamLeader,
+    isGroupLeader: _isGroupLeader,
+    userRole: widget.role,
+    userDept: widget.dept,
+    userSub: widget.sub,
+    userLoc: widget.loc,
+    userTeam: widget.team,
+  );
+  }
+    if (d == 'Workers Daily Participation') {
+      return DailyParticipationModule(
+        logs: _logs,
+        timePeriod: _timePeriod,
+        level: _currentLevel,
+        analyticsMode: _analyticsMode,
+        groupBy: _groupBy,
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+    }
+
+    if (d == 'Visitations and Counselling') {
+      return VisitationsModule(
+        logs: _logs,
+        timePeriod: _timePeriod,
+        level: _currentLevel,
+        category: _visitationCategories.isNotEmpty ? _visitationCategories.first : 'All',
+        analyticsMode: _analyticsMode,
+        groupBy: _groupBy,
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+      }
+
+    if (d == 'Evangelism Results' || d == 'BB Results') {
+      return EvangelismResultsModule(
+        bbData: _logs,
+         logs: _logs,
+        timePeriod: _timePeriod,
+        level: _currentLevel,
+        analyticsMode: _analyticsMode,
+        groupBy: _groupBy,
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+      }
+    if (d == 'Growth Tracking') {
+      return GrowthTrackingModule(
+        category: d,
+        logs: _logs,
+        timePeriod: _timePeriod,
+        level: _currentLevel,
+        analyticsMode: _analyticsMode,
+        groupBy: _groupBy,
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+      }
     return const Center(child: Text("Module logic pending..."));
   }
 
@@ -597,6 +920,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                         _currentLevel = levelName;
                         _updateGroupByFromLevel(levelName);
                       });
+                      _fetchData();
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -626,7 +950,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
-  // --- PRECISE DRILL-DOWN LOGIC ACCORDING TO ROLE LEVEL (Points 2, 3, & 4) ---
   Widget _buildCascadingPicker(String levelName) {
     final lvl = levelName.toLowerCase();
 
@@ -644,60 +967,91 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
     final locPicker = pick("Select location:", _locations, _selectedLocation, (v) {
       setState(() => _selectedLocation = v);
-      _fetchSubLocations(v);
+      _fetchSubLocations(v, triggerFetch: true);
     });
 
     final subPicker = pick("Select sub-location:", _subLocations, _selectedSubLocation, (v) {
       setState(() => _selectedSubLocation = v);
-      _fetchDepartments(v);
+      _fetchDepartments(v, triggerFetch: true);
     });
 
     final deptPicker = pick("Select department:", _departments, _selectedDepartment, (v) {
       setState(() => _selectedDepartment = v);
-      _fetchTeams(v);
+      _fetchTeams(v, triggerFetch: true);
     });
 
     final teamPicker = pick("Select team:", _teams, _selectedTeam, (v) {
       setState(() => _selectedTeam = v);
+      _fetchData();
     });
 
-    // 1. TEAM LEADERS (Point 3)
-    if (_isTeamLeader) {
-      if (lvl.contains('team')) return _infoText("Displaying summary for your team (${widget.team})");
-      if (lvl.contains('cell')) return _infoText("Displaying all cell groups under your team");
+    // ─────────────────────────────────────────────────────────────────────────
+    // 1. GROUP LEADER / NEW SAINTS
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_isGroupLeader) {
+      if (lvl.contains('group')) {
+        return _infoText("Displaying general summary for ${widget.dept}");
+      }
+      if (lvl.contains('location status')) {
+        return _infoText("Displaying ${widget.dept} performance across all locations");
+      }
+      if (lvl.contains('sub location') || lvl.contains('sub-location')) {
+        return _pickerContainer([locPicker]);
+      }
+      if (lvl.contains('team')) {
+        return _pickerContainer([locPicker, subPicker]);
+      }
+      if (lvl.contains('cell')) {
+        return _pickerContainer([locPicker, subPicker, teamPicker]);
+      }
     }
 
-    // 2. DEPARTMENT LEADERS (Point 2)
-    if (_isDeptLeader) {
-      if (lvl.contains('dept')) return _infoText("Displaying summary for your department (${widget.dept})");
-      if (lvl.contains('team')) return _infoText("Displaying all teams under your department");
-      // Only drill down for Team when Cell status is selected!
-      if (lvl.contains('cell')) return _pickerContainer([teamPicker]);
-    }
-
-    // 3. SUB-LOCATION LEADERS (Point 4)
-    if (_isSubLocationLeader) {
-      if (lvl.contains('sub location')) return _infoText("Displaying summary for your sub-location (${widget.sub})");
-      if (lvl.contains('dept')) return _infoText("Displaying all departments under your sub-location");
-      if (lvl.contains('team')) return _pickerContainer([deptPicker]);
-      if (lvl.contains('cell')) return _pickerContainer([deptPicker, teamPicker]);
-    }
-
-    // 4. LOCATION LEADERS
+    // ─────────────────────────────────────────────────────────────────────────
+    // 2. LOCATION LEADER (Restricted to widget.loc)
+    // ─────────────────────────────────────────────────────────────────────────
     if (_isLocationLeader) {
-      if (lvl.contains('location status')) return _infoText("Displaying summary for this location");
-      if (lvl.contains('sub location')) return _infoText("Displaying all sub-locations under this location");
+      if (lvl.contains('location status')) return _infoText("Displaying summary for your location (${widget.loc})");
+      if (lvl.contains('sub location') || lvl.contains('sub-location')) return _infoText("Displaying all sub-locations under ${widget.loc}");
       if (lvl.contains('dept')) return _pickerContainer([subPicker]);
       if (lvl.contains('team')) return _pickerContainer([subPicker, deptPicker]);
       if (lvl.contains('cell')) return _pickerContainer([subPicker, deptPicker, teamPicker]);
     }
 
-    // 5. CHURCH WIDE / 24 DEPTS WORKER (Point 1)
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3. SUB-LOCATION LEADER
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_isSubLocationLeader) {
+      if (lvl.contains('sub location') || lvl.contains('sub-location')) return _infoText("Displaying summary for ${widget.sub}");
+      if (lvl.contains('dept')) return _infoText("Displaying departments under ${widget.sub}");
+      if (lvl.contains('team')) return _pickerContainer([deptPicker]);
+      if (lvl.contains('cell')) return _pickerContainer([deptPicker, teamPicker]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 4. DEPT LEADER
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_isDeptLeader) {
+      if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept}");
+      if (lvl.contains('team')) return _infoText("Displaying teams under ${widget.dept}");
+      if (lvl.contains('cell')) return _pickerContainer([teamPicker]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 5. TEAM LEADER
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_isTeamLeader) {
+      if (lvl.contains('team')) return _infoText("Displaying summary for your team (${widget.team})");
+      if (lvl.contains('cell')) return _infoText("Displaying cell groups under ${widget.team}");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 6. CHURCH-WIDE COMPILER
+    // ─────────────────────────────────────────────────────────────────────────
     if (_isChurchWideCompiler) {
-      if (lvl.contains('church')) return _infoText("Displaying general church summary");
-      if (lvl.contains('group')) return _infoText("Displaying all groups (장년회, 부녀회, etc.)");
-      if (lvl.contains('location status')) return _infoText("Displaying all church locations");
-      if (lvl.contains('sub location')) return _pickerContainer([locPicker]);
+      if (lvl.contains('church')) return _infoText("Displaying general church summary (All Locations, MOU, Church Workers)");
+      if (lvl.contains('group')) return _infoText("Displaying groups based on Book of Life (교역자, 자문회, 장년회, 부녀회, 청년회)");
+      if (lvl.contains('sub location') || lvl.contains('sub-location')) return _pickerContainer([locPicker]);
+      if (lvl.contains('location status')) return _infoText("Displaying all church locations including MOU and 24 Dept");
       if (lvl.contains('dept')) return _pickerContainer([locPicker, subPicker]);
       if (lvl.contains('team')) return _pickerContainer([locPicker, subPicker, deptPicker]);
       if (lvl.contains('cell')) return _pickerContainer([locPicker, subPicker, deptPicker, teamPicker]);
@@ -727,23 +1081,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
       height: 32,
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white, 
-        borderRadius: BorderRadius.circular(6), 
-        border: Border.all(color: Colors.purple.shade200)
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.purple.shade200)),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           isDense: true,
           isExpanded: true,
           value: val,
-          items: items.map((u) => DropdownMenuItem(
-            value: u, 
-            child: Text(u, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87))
-          )).toList(),
-          onChanged: (v) {
-            if (v != null) onChanged(v);
-          },
+          items: items.map((u) => DropdownMenuItem(value: u, child: Text(u, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)))).toList(),
+          onChanged: (v) { if (v != null) onChanged(v); },
         ),
       ),
     );

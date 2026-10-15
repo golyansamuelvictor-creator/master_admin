@@ -1,228 +1,999 @@
-// ignore_for_file: curly_braces_in_flow_control_structures
+// ignore_for_file: curly_braces_in_flow_control_structures, unused_element
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'dart:math';
+import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class EvangelismModule extends StatelessWidget {
-  final List<dynamic> logs;
-  final String timePeriod, level;
-  final String analyticsMode;
-  final String groupBy;
+class _EvangelismUnitStat {
+  final String unitName;
+  final int totalSaints;
+  final int mon;
+  final int tue;
+  final int wed;
+  final int thu;
+  final int fri;
+  final int sat;
+  final int sun;
 
-  const EvangelismModule({
-    super.key, 
-    required this.logs, 
-    required this.timePeriod, 
-    required this.level,
-    required this.analyticsMode,
-    required this.groupBy
+  _EvangelismUnitStat({
+    required this.unitName,
+    required this.totalSaints,
+    required this.mon,
+    required this.tue,
+    required this.wed,
+    required this.thu,
+    required this.fri,
+    required this.sat,
+    required this.sun,
   });
 
-  // --- LOGIC: DATA AGGREGATION ---
-  Map<String, List<dynamic>> _groupDataBySelection() {
-    Map<String, List<dynamic>> map = {};
-    String k = 'cell_number';
-    if (groupBy == 'Team') k = 'team_number';
-    if (groupBy == 'Dept') k = 'current_dept';
-    if (groupBy == 'Sub-loc') k = 'sub_location';
-    if (groupBy == 'Loc') k = 'location';
+  double get weeklyAvg => (mon + tue + wed + thu + fri + sat + sun) / 7.0;
+  double get weeklyAvgPct => totalSaints > 0 ? (weeklyAvg / totalSaints * 100.0) : 0.0;
+  double get monPct => totalSaints > 0 ? (mon / totalSaints * 100.0) : 0.0;
+  double get tuePct => totalSaints > 0 ? (tue / totalSaints * 100.0) : 0.0;
+  double get wedPct => totalSaints > 0 ? (wed / totalSaints * 100.0) : 0.0;
+  double get thuPct => totalSaints > 0 ? (thu / totalSaints * 100.0) : 0.0;
+  double get friPct => totalSaints > 0 ? (fri / totalSaints * 100.0) : 0.0;
+  double get satPct => totalSaints > 0 ? (sat / totalSaints * 100.0) : 0.0;
+  double get sunPct => totalSaints > 0 ? (sun / totalSaints * 100.0) : 0.0;
+}
 
-    for (var log in logs) {
-      String val = log['members'][k]?.toString() ?? "Unassigned";
-      map.putIfAbsent(val, () => []).add(log);
+class EvangelismModule extends StatefulWidget {
+  final List<dynamic> logs;
+  final String timePeriod;
+  final String level;
+  final String analyticsMode;
+  final String groupBy;
+  final double targetValue;
+
+  // Hierarchical scope & drill-down filters
+  final String selectedLocation;
+  final String selectedSubLocation;
+  final String selectedDepartment;
+  final String selectedTeam;
+  final String activeUnitLabel;
+
+  // Role booleans
+  final bool isChurchWide;
+  final bool isLocationLeader;
+  final bool isSubLocationLeader;
+  final bool isDeptLeader;
+  final bool isTeamLeader;
+  final bool isGroupLeader;
+
+  // User metadata
+  final String userRole;
+  final String userDept;
+  final String userSub;
+  final String userLoc;
+  final String userTeam;
+
+  const EvangelismModule({
+    super.key,
+    required this.logs,
+    required this.timePeriod,
+    required this.level,
+    required this.analyticsMode,
+    required this.groupBy,
+    this.targetValue = 80.0,
+    this.selectedLocation = '',
+    this.selectedSubLocation = '',
+    this.selectedDepartment = '',
+    this.selectedTeam = '',
+    this.activeUnitLabel = 'Unit name',
+    this.isChurchWide = false,
+    this.isLocationLeader = false,
+    this.isSubLocationLeader = false,
+    this.isDeptLeader = false,
+    this.isTeamLeader = false,
+    this.isGroupLeader = false,
+    this.userRole = '',
+    this.userDept = '',
+    this.userSub = '',
+    this.userLoc = '',
+    this.userTeam = '',
+  });
+
+  @override
+  State<EvangelismModule> createState() => _EvangelismModuleState();
+}
+
+class _EvangelismModuleState extends State<EvangelismModule> {
+  static const Color pPurple = Color(0xFF4A148C);
+
+  List<Map<String, dynamic>> _masterMembers = [];
+  bool _isLoadingMembers = false;
+  String _selectedChartUnit = 'General total';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMasterMembers();
+  }
+
+  @override
+  void didUpdateWidget(covariant EvangelismModule oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedLocation != widget.selectedLocation ||
+        oldWidget.selectedSubLocation != widget.selectedSubLocation ||
+        oldWidget.selectedDepartment != widget.selectedDepartment ||
+        oldWidget.selectedTeam != widget.selectedTeam ||
+        oldWidget.groupBy != widget.groupBy) {
+      _selectedChartUnit = 'General total';
     }
-    return map;
+  }
+
+  // --- SUPABASE CAPACITY FETCHING (ALL SAINTS) ---
+  Future<void> _fetchMasterMembers() async {
+    try {
+      setState(() => _isLoadingMembers = true);
+      final res = await Supabase.instance.client
+          .from('members')
+          .select('id, name, location, sub_location, current_dept, dept, team_number, team, cell_number, cell');
+
+      if (mounted) {
+        setState(() {
+          _masterMembers = List<Map<String, dynamic>>.from(res as List);
+          _isLoadingMembers = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingMembers = false);
+      }
+      debugPrint('EvangelismModule: members query notice: $e');
+    }
+  }
+
+  // --- STRICT CASCADING FILTER ---
+  bool _matchesCascade(Map<String, dynamic> item) {
+    Map<String, dynamic> m = {};
+    if (item['members'] is Map) {
+      m = Map<String, dynamic>.from(item['members']);
+    }
+
+    String loc = item['location']?.toString() ?? m['location']?.toString() ?? '';
+    String sub = item['sub_location']?.toString() ?? m['sub_location']?.toString() ?? '';
+    String dept = item['current_dept']?.toString() ?? item['dept']?.toString() ?? m['current_dept']?.toString() ?? m['dept']?.toString() ?? '';
+    String team = item['team_number']?.toString() ?? item['team']?.toString() ?? m['team_number']?.toString() ?? m['team']?.toString() ?? '';
+
+    if (widget.selectedLocation.isNotEmpty &&
+        widget.selectedLocation != 'All' &&
+        widget.selectedLocation != 'Church Wide') {
+      if (loc.isNotEmpty && loc.toLowerCase() != widget.selectedLocation.toLowerCase()) {
+        return false;
+      }
+    }
+
+    if (widget.selectedSubLocation.isNotEmpty &&
+        widget.selectedSubLocation != 'All' &&
+        widget.selectedSubLocation != 'Sub-location status') {
+      if (sub.isNotEmpty && sub.toLowerCase() != widget.selectedSubLocation.toLowerCase()) {
+        return false;
+      }
+    }
+
+    if (widget.selectedDepartment.isNotEmpty &&
+        widget.selectedDepartment != 'All' &&
+        widget.selectedDepartment != 'Dept status') {
+      if (dept.isNotEmpty && dept.toLowerCase() != widget.selectedDepartment.toLowerCase()) {
+        return false;
+      }
+    }
+
+    if (widget.selectedTeam.isNotEmpty &&
+        widget.selectedTeam != 'All' &&
+        widget.selectedTeam != 'Team status') {
+      if (team.isNotEmpty && team.toLowerCase() != widget.selectedTeam.toLowerCase()) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // --- UNIT GROUPING KEY ---
+  String _getUnitKey(Map<String, dynamic> item) {
+    Map<String, dynamic> m = {};
+    if (item['members'] is Map) {
+      m = Map<String, dynamic>.from(item['members']);
+    }
+
+    String k = 'cell_number';
+    String gb = widget.groupBy.toLowerCase().trim();
+    if (gb.contains('team')) k = 'team_number';
+    else if (gb.contains('dept')) k = 'current_dept';
+    else if (gb.contains('sub')) k = 'sub_location';
+    else if (gb.contains('loc')) k = 'location';
+
+    String val = item[k]?.toString() ?? m[k]?.toString() ?? '';
+    if (val.isEmpty) {
+      if (k == 'cell_number') val = item['cell']?.toString() ?? m['cell']?.toString() ?? '';
+      if (k == 'team_number') val = item['team']?.toString() ?? m['team']?.toString() ?? '';
+      if (k == 'current_dept') val = item['dept']?.toString() ?? m['dept']?.toString() ?? '';
+      if (k == 'sub_location') val = item['sub']?.toString() ?? m['sub']?.toString() ?? '';
+      if (k == 'location') val = item['loc']?.toString() ?? m['loc']?.toString() ?? '';
+    }
+    return val.trim().isNotEmpty ? val.trim() : 'Unassigned';
+  }
+
+  // --- CHECK IF EVANGELISED ---
+  bool _isEvangelised(dynamic val) {
+    if (val == null) return false;
+    final s = val.toString().trim().toLowerCase();
+    return s == 'evangelised' || s == 'evangelized' || s == 'yes' || s == 'done' || s == 'true' || s == '1';
+  }
+
+  // --- AGGREGATION PIPELINE ---
+  List<_EvangelismUnitStat> _calculateStats() {
+    // 1. Cascaded logs
+    final cascadedLogs = widget.logs.where((l) {
+      if (l is! Map) return false;
+      return _matchesCascade(Map<String, dynamic>.from(l));
+    }).toList();
+
+    // 2. Cascaded master members (Saints capacity)
+    final cascadedMembers = _masterMembers.where((m) => _matchesCascade(m)).toList();
+
+    // Group members by unit for official capacity
+    final Map<String, int> unitSaintsCount = {};
+    for (var m in cascadedMembers) {
+      final u = _getUnitKey(m);
+      if (u != 'Unassigned') {
+        unitSaintsCount[u] = (unitSaintsCount[u] ?? 0) + 1;
+      }
+    }
+
+    // Group logs by unit
+    final Map<String, List<dynamic>> unitLogs = {};
+    for (var l in cascadedLogs) {
+      final u = _getUnitKey(Map<String, dynamic>.from(l));
+      if (u != 'Unassigned') {
+        unitLogs.putIfAbsent(u, () => []).add(l);
+      }
+    }
+
+    final Set<String> allUnits = {...unitSaintsCount.keys, ...unitLogs.keys};
+    final sortedUnits = allUnits.toList()..sort((a, b) => a.compareTo(b));
+
+    List<_EvangelismUnitStat> stats = [];
+
+    for (var u in sortedUnits) {
+      final uLogs = unitLogs[u] ?? [];
+      int saints = unitSaintsCount[u] ?? 0;
+
+      // Fallback if master member list is not loaded
+      if (saints == 0) {
+        final distinctIds = <dynamic>{};
+        for (var l in uLogs) {
+          final mid = l['member_id'] ?? l['members']?['id'] ?? l['id'];
+          if (mid != null) distinctIds.add(mid);
+        }
+        saints = distinctIds.isNotEmpty ? distinctIds.length : uLogs.length;
+      }
+
+      int mon = uLogs.where((l) => _isEvangelised(l['mon_part'])).length;
+      int tue = uLogs.where((l) => _isEvangelised(l['tue_part'])).length;
+      int wed = uLogs.where((l) => _isEvangelised(l['wed_part'])).length;
+      int thu = uLogs.where((l) => _isEvangelised(l['thu_part'])).length;
+      int fri = uLogs.where((l) => _isEvangelised(l['fri_part'])).length;
+      int sat = uLogs.where((l) => _isEvangelised(l['sat_part'])).length;
+      int sun = uLogs.where((l) => _isEvangelised(l['sun_part'])).length;
+
+      // Ensure total saints is at least equal to maximum daily attendance
+      int maxDay = math.max(mon, math.max(tue, math.max(wed, math.max(thu, math.max(fri, math.max(sat, sun))))));
+      saints = math.max(saints, maxDay);
+
+      stats.add(_EvangelismUnitStat(
+        unitName: u,
+        totalSaints: saints,
+        mon: mon,
+        tue: tue,
+        wed: wed,
+        thu: thu,
+        fri: fri,
+        sat: sat,
+        sun: sun,
+      ));
+    }
+
+    return stats;
+  }
+
+  _EvangelismUnitStat _calculateTotalStat(List<_EvangelismUnitStat> stats) {
+    int totalSaints = 0;
+    int mon = 0;
+    int tue = 0;
+    int wed = 0;
+    int thu = 0;
+    int fri = 0;
+    int sat = 0;
+    int sun = 0;
+
+    for (var s in stats) {
+      totalSaints += s.totalSaints;
+      mon += s.mon;
+      tue += s.tue;
+      wed += s.wed;
+      thu += s.thu;
+      fri += s.fri;
+      sat += s.sat;
+      sun += s.sun;
+    }
+
+    return _EvangelismUnitStat(
+      unitName: 'General total',
+      totalSaints: totalSaints,
+      mon: mon,
+      tue: tue,
+      wed: wed,
+      thu: thu,
+      fri: fri,
+      sat: sat,
+      sun: sun,
+    );
   }
 
   // --- UI: TABLE SUMMARY (17 Columns) ---
-  Widget _buildEvangelismTable(Map<String, List<dynamic>> groupedData, Color pPurple) {
-    List<String> h = [
-      "Unit name", "Saints", "Weekly avg", 
-      "Mon", "Mon %", "Tue", "Tue %", "Wed", "Wed %", 
+  Widget _buildEvangelismTable(List<_EvangelismUnitStat> stats, _EvangelismUnitStat totalStat) {
+    const double rh = 24.0;
+    const double hh = 28.0;
+
+    final Map<int, TableColumnWidth> colWidths = {
+      0: const FixedColumnWidth(125), // Unit name
+      1: const FixedColumnWidth(60),  // Saints
+      2: const FixedColumnWidth(68),  // Weekly avg
+      3: const FixedColumnWidth(50),  // Mon
+      4: const FixedColumnWidth(48),  // Mon %
+      5: const FixedColumnWidth(50),  // Tue
+      6: const FixedColumnWidth(48),  // Tue %
+      7: const FixedColumnWidth(50),  // Wed
+      8: const FixedColumnWidth(48),  // Wed %
+      9: const FixedColumnWidth(50),  // Thu
+      10: const FixedColumnWidth(48), // Thu %
+      11: const FixedColumnWidth(50), // Fri
+      12: const FixedColumnWidth(48), // Fri %
+      13: const FixedColumnWidth(50), // Sat
+      14: const FixedColumnWidth(48), // Sat %
+      15: const FixedColumnWidth(50), // Sun
+      16: const FixedColumnWidth(48), // Sun %
+    };
+
+    List<String> headers = [
+      widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : "Unit name",
+      "Saints", "Weekly avg",
+      "Mon", "Mon %", "Tue", "Tue %", "Wed", "Wed %",
       "Thu", "Thu %", "Fri", "Fri %", "Sat", "Sat %", "Sun", "Sun %"
     ];
 
-    return LayoutBuilder(builder: (context, constraints) {
-      // FIXED: cellW is now used to maintain a professional, dense horizontal scroll
-      double cellW = max(70.0, constraints.maxWidth / 7);
-      
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal, 
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minWidth: constraints.maxWidth),
-          child: DataTable(
-            headingRowHeight: 48, horizontalMargin: 10, columnSpacing: 0,
-            headingRowColor: WidgetStateProperty.all(const Color(0xFF1E293B)),
-            columns: h.map((s) => DataColumn(
-              label: SizedBox(width: cellW, child: Center(child: Text(s, style: GoogleFonts.merriweather(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))))
-            )).toList(),
-            rows: groupedData.entries.toList().asMap().entries.map((entry) {
-              int idx = entry.key; 
-              var data = entry.value;
-              int tot = data.value.length;
-              
-              // Count "Evangelised" status
-              int mon = data.value.where((l) => l['mon_part'] == "Evangelised").length;
-              int tue = data.value.where((l) => l['tue_part'] == "Evangelised").length;
-              int wed = data.value.where((l) => l['wed_part'] == "Evangelised").length;
-              int thu = data.value.where((l) => l['thu_part'] == "Evangelised").length;
-              int fri = data.value.where((l) => l['fri_part'] == "Evangelised").length;
-              int sat = data.value.where((l) => l['sat_part'] == "Evangelised").length;
-              int sun = data.value.where((l) => l['sun_part'] == "Evangelised").length;
-              
-              double avg = (mon + tue + wed + thu + fri + sat + sun) / 7;
-
-              return DataRow(
-                color: WidgetStateProperty.all(idx.isEven ? Colors.white : const Color(0xFFF8FAFC)),
-                cells: [
-                  _cell(data.key, cellW, isBold: true), 
-                  _cell("$tot", cellW),
-                  _cell(avg.toStringAsFixed(1), cellW, color: pPurple, isBold: true),
-                  _cell("$mon", cellW), _pCell(mon, tot, cellW, pPurple),
-                  _cell("$tue", cellW), _pCell(tue, tot, cellW, pPurple),
-                  _cell("$wed", cellW), _pCell(wed, tot, cellW, pPurple),
-                  _cell("$thu", cellW), _pCell(thu, tot, cellW, pPurple),
-                  _cell("$fri", cellW), _pCell(fri, tot, cellW, pPurple),
-                  _cell("$sat", cellW), _pCell(sat, tot, cellW, pPurple),
-                  _cell("$sun", cellW), _pCell(sun, tot, cellW, pPurple),
-                ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Table(
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        columnWidths: colWidths,
+        border: TableBorder.all(color: Colors.black87, width: 1.0),
+        children: [
+          // Header Row
+          TableRow(
+            decoration: const BoxDecoration(color: Color(0xFF1E293B)),
+            children: headers.map((title) {
+              return SizedBox(
+                height: hh,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                    child: Text(
+                      title,
+                      style: GoogleFonts.merriweather(
+                        color: Colors.white,
+                        fontSize: 9.0,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
               );
             }).toList(),
           ),
-        ),
-      );
-    });
+
+          // Data Rows
+          ...stats.asMap().entries.map((entry) {
+            int idx = entry.key;
+            _EvangelismUnitStat u = entry.value;
+            final isEven = idx.isEven;
+            final rowColor = isEven ? Colors.white : const Color(0xFFF8FAFC);
+
+            return TableRow(
+              decoration: BoxDecoration(color: rowColor),
+              children: [
+                _cellText(u.unitName, rh, isBold: true, align: TextAlign.left, padLeft: 6),
+                _cellText("${u.totalSaints}", rh),
+                _cellText(u.weeklyAvg.toStringAsFixed(1), rh, color: pPurple, isBold: true),
+                _cellText("${u.mon}", rh),
+                _cellPercent(u.monPct, rh, pPurple),
+                _cellText("${u.tue}", rh),
+                _cellPercent(u.tuePct, rh, pPurple),
+                _cellText("${u.wed}", rh),
+                _cellPercent(u.wedPct, rh, pPurple),
+                _cellText("${u.thu}", rh),
+                _cellPercent(u.thuPct, rh, pPurple),
+                _cellText("${u.fri}", rh),
+                _cellPercent(u.friPct, rh, pPurple),
+                _cellText("${u.sat}", rh),
+                _cellPercent(u.satPct, rh, Colors.blue[800]!),
+                _cellText("${u.sun}", rh),
+                _cellPercent(u.sunPct, rh, Colors.blue[800]!),
+              ],
+            );
+          }),
+
+          // General Total Summary Row
+          TableRow(
+            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
+            children: [
+              _cellText("General total", 26.0, isBold: true, color: pPurple, align: TextAlign.left, padLeft: 6),
+              _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
+              _cellText(totalStat.weeklyAvg.toStringAsFixed(1), 26.0, isBold: true, color: pPurple),
+              _cellText("${totalStat.mon}", 26.0, isBold: true),
+              _cellPercent(totalStat.monPct, 26.0, pPurple, isBold: true),
+              _cellText("${totalStat.tue}", 26.0, isBold: true),
+              _cellPercent(totalStat.tuePct, 26.0, pPurple, isBold: true),
+              _cellText("${totalStat.wed}", 26.0, isBold: true),
+              _cellPercent(totalStat.wedPct, 26.0, pPurple, isBold: true),
+              _cellText("${totalStat.thu}", 26.0, isBold: true),
+              _cellPercent(totalStat.thuPct, 26.0, pPurple, isBold: true),
+              _cellText("${totalStat.fri}", 26.0, isBold: true),
+              _cellPercent(totalStat.friPct, 26.0, pPurple, isBold: true),
+              _cellText("${totalStat.sat}", 26.0, isBold: true),
+              _cellPercent(totalStat.satPct, 26.0, Colors.blue[900]!, isBold: true),
+              _cellText("${totalStat.sun}", 26.0, isBold: true),
+              _cellPercent(totalStat.sunPct, 26.0, Colors.blue[900]!, isBold: true),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   // --- UI: RANKING LIST ---
-  Widget _buildRankingList(Map<String, List<dynamic>> groupedData, bool isTop) {
-    List<Map<String, dynamic>> stats = groupedData.entries.map((e) {
-      int tot = e.value.length;
-      int m = e.value.where((l) => l['mon_part'] == "Evangelised").length;
-      return {'name': e.key, 'pct': tot > 0 ? (m / tot * 100) : 0.0};
-    }).toList();
+  Widget _buildRankingList(List<_EvangelismUnitStat> stats, bool isTop) {
+    if (stats.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Text("No ranking data found", style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
 
-    stats.sort((a, b) => isTop ? b['pct'].compareTo(a['pct']) : a['pct'].compareTo(b['pct']));
-    var displayList = stats.take(5).toList();
+    final sorted = List<_EvangelismUnitStat>.from(stats);
+    sorted.sort((a, b) => isTop ? b.weeklyAvgPct.compareTo(a.weeklyAvgPct) : a.weeklyAvgPct.compareTo(b.weeklyAvgPct));
+    final displayList = sorted.take(5).toList();
 
-    return Column(children: displayList.map((item) => ListTile(
-      leading: CircleAvatar(
-        backgroundColor: isTop ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1), 
-        radius: 18, 
-        child: Icon(isTop ? Icons.trending_up : Icons.priority_high, size: 16, color: isTop ? Colors.green : Colors.red)
-      ),
-      title: Text(item['name'], style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
-      trailing: Text("${item['pct'].toStringAsFixed(1)}%", 
-        style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: isTop ? Colors.green[700] : Colors.red[700])),
-    )).toList());
+    return Column(
+      children: displayList.asMap().entries.map((entry) {
+        int rank = entry.key + 1;
+        _EvangelismUnitStat item = entry.value;
+        final color = isTop ? Colors.green[700]! : Colors.red[700]!;
+
+        return ListTile(
+          dense: true,
+          leading: CircleAvatar(
+            backgroundColor: isTop ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12),
+            radius: 16,
+            child: Text(
+              "#$rank",
+              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+            ),
+          ),
+          title: Row(
+            children: [
+              Icon(isTop ? Icons.trending_up_rounded : Icons.priority_high_rounded, size: 14, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(item.unitName, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
+            ],
+          ),
+          subtitle: Text(
+            "Saints: ${item.totalSaints} | Wkly Avg: ${item.weeklyAvg.toStringAsFixed(1)}",
+            style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+          ),
+          trailing: Text(
+            "${item.weeklyAvgPct.toStringAsFixed(1)}%",
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: color),
+          ),
+        );
+      }).toList(),
+    );
   }
 
-  // --- UI: CHART ---
-  Widget _buildEvangelismChart(Map<String, List<dynamic>> groupedData, Color pPurple) {
-    if (groupedData.isEmpty) return const SizedBox(height: 100, child: Center(child: Text("Data not found")));
-    
-    var allLogs = groupedData.values.expand((x) => x).toList();
-    int tot = allLogs.length;
-    if (tot == 0) return const SizedBox(height: 100);
-
-    List<String> keys = ['mon_part', 'tue_part', 'wed_part', 'thu_part', 'fri_part', 'sat_part', 'sun_part'];
-    List<String> days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  // --- UI: DYNAMIC UNIT SELECTOR PILLS ---
+  Widget _buildUnitPillBar(List<_EvangelismUnitStat> stats) {
+    final List<String> units = ['General total', ...stats.map((s) => s.unitName)];
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 30, 10, 10), 
-      height: 350, 
-      child: BarChart(
-        BarChartData(
-          maxY: 100,
-          gridData: const FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (val, meta) {
-                  if (val.toInt() >= days.length) return const SizedBox();
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(days[val.toInt()], style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-                  );
-                }
-              )
-            )
-          ),
-          barGroups: List.generate(7, (i) {
-            int count = allLogs.where((l) => l[keys[i]] == "Evangelised").length;
-            double pct = (count / tot * 100);
-            return BarChartGroupData(
-              x: i, 
-              barRods: [BarChartRodData(toY: pct, color: pPurple, width: 18, borderRadius: const BorderRadius.vertical(top: Radius.circular(6)))]
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: units.map((u) {
+            final isSelected = _selectedChartUnit == u;
+            return Padding(
+              padding: const EdgeInsets.only(right: 6.0),
+              child: ChoiceChip(
+                label: Text(
+                  u,
+                  style: GoogleFonts.merriweather(
+                    fontSize: 11,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected ? Colors.white : Colors.black87,
+                  ),
+                ),
+                selected: isSelected,
+                selectedColor: pPurple,
+                backgroundColor: const Color(0xFFF1F5F9),
+                visualDensity: VisualDensity.compact,
+                onSelected: (selected) {
+                  if (selected) {
+                    setState(() => _selectedChartUnit = u);
+                  }
+                },
+              ),
             );
-          }),
-        )
-      )
+          }).toList(),
+        ),
+      ),
     );
   }
 
-  // --- HELPERS ---
-  DataCell _cell(String t, double w, {Color? color, bool isBold = false}) => DataCell(
-    SizedBox(width: w, child: Center(child: Text(t, style: GoogleFonts.merriweather(fontSize: 10, color: color, fontWeight: isBold ? FontWeight.bold : FontWeight.normal))))
-  );
-  
-  DataCell _pCell(int c, int t, double w, Color clr) {
-    double pct = t > 0 ? (c / t * 100) : 0;
-    return DataCell(
-      SizedBox(width: w, child: Center(child: Text("${pct.toStringAsFixed(0)}%", 
-        style: GoogleFonts.merriweather(color: clr, fontWeight: FontWeight.w900, fontSize: 9))))
+  // --- UI: DYNAMIC 7-DAY BREAKDOWN CHART ---
+  Widget _buildEvangelismChart(List<_EvangelismUnitStat> stats, _EvangelismUnitStat totalStat) {
+    if (stats.isEmpty) {
+      return const SizedBox(height: 120, child: Center(child: Text("No evangelism data available")));
+    }
+
+    _EvangelismUnitStat active = totalStat;
+    if (_selectedChartUnit != 'General total') {
+      active = stats.firstWhere((s) => s.unitName == _selectedChartUnit, orElse: () => totalStat);
+    }
+
+    final List<double> percentages = [
+      active.monPct,
+      active.tuePct,
+      active.wedPct,
+      active.thuPct,
+      active.friPct,
+      active.satPct,
+      active.sunPct,
+    ];
+
+    final List<int> counts = [
+      active.mon,
+      active.tue,
+      active.wed,
+      active.thu,
+      active.fri,
+      active.sat,
+      active.sun,
+    ];
+
+    const List<String> days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildUnitPillBar(stats),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Displaying: ${active.unitName} (${active.totalSaints} Saints)",
+                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.redAccent, width: 0.5),
+                ),
+                child: Text(
+                  "Target: ${widget.targetValue.toInt()}%",
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
+          height: 320,
+          child: BarChart(
+            BarChartData(
+              maxY: 100,
+              minY: 0,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: 20,
+                getDrawingHorizontalLine: (val) => FlLine(
+                  color: Colors.grey.withValues(alpha: 0.18),
+                  strokeWidth: 1,
+                ),
+              ),
+              borderData: FlBorderData(
+                show: true,
+                border: const Border(
+                  bottom: BorderSide(color: Colors.black45, width: 1),
+                  left: BorderSide(color: Colors.black45, width: 1),
+                ),
+              ),
+              extraLinesData: ExtraLinesData(
+                horizontalLines: [
+                  HorizontalLine(
+                    y: widget.targetValue,
+                    color: Colors.redAccent,
+                    strokeWidth: 1.5,
+                    dashArray: [5, 4],
+                    label: HorizontalLineLabel(
+                      show: true,
+                      alignment: Alignment.topRight,
+                      labelResolver: (_) => '${widget.targetValue.toInt()}% Target',
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 9.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 32,
+                    interval: 20,
+                    getTitlesWidget: (val, meta) => Text(
+                      "${val.toInt()}%",
+                      style: GoogleFonts.merriweather(fontSize: 9, color: Colors.blueGrey),
+                    ),
+                  ),
+                ),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 30,
+                    getTitlesWidget: (val, meta) {
+                      int idx = val.toInt();
+                      if (idx < 0 || idx >= days.length) return const SizedBox();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          days[idx],
+                          style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              barTouchData: BarTouchData(
+                touchTooltipData: BarTouchTooltipData(
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    final day = days[group.x.toInt()];
+                    final count = counts[group.x.toInt()];
+                    final pct = rod.toY.toStringAsFixed(1);
+                    return BarTooltipItem(
+                      "$day\n$count Evangelised ($pct%)",
+                      const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                    );
+                  },
+                ),
+              ),
+              barGroups: List.generate(7, (i) {
+                final pct = percentages[i];
+                final isAboveTarget = pct >= widget.targetValue;
+                return BarChartGroupData(
+                  x: i,
+                  barRods: [
+                    BarChartRodData(
+                      toY: pct,
+                      color: isAboveTarget ? pPurple : const Color(0xFF7E57C2),
+                      width: 22,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
+                    ),
+                  ],
+                );
+              }),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _section(String title, Widget content, BuildContext context) {
+  // --- PDF REPORT EXPORT ---
+  Future<void> _exportPdf(List<_EvangelismUnitStat> stats, _EvangelismUnitStat totalStat) async {
+    final pdf = pw.Document();
+    final font = await PdfGoogleFonts.merriweatherRegular();
+    final fontBold = await PdfGoogleFonts.merriweatherBold();
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(24),
+        build: (pw.Context context) {
+          return [
+            pw.Header(
+              level: 0,
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Evangelism Daily Participation Report (All Saints)',
+                      style: pw.TextStyle(font: fontBold, fontSize: 15, color: PdfColors.purple900)),
+                  pw.Text(
+                    'Generated: ${DateTime.now().toLocal().toString().split(' ')[0]}',
+                    style: pw.TextStyle(font: font, fontSize: 9, color: PdfColors.grey700),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
+              '${widget.selectedLocation.isNotEmpty ? ' | Loc: ${widget.selectedLocation}' : ''}'
+              '${widget.selectedSubLocation.isNotEmpty ? ' | Sub: ${widget.selectedSubLocation}' : ''}'
+              '${widget.selectedDepartment.isNotEmpty ? ' | Dept: ${widget.selectedDepartment}' : ''}'
+              '${widget.selectedTeam.isNotEmpty ? ' | Team: ${widget.selectedTeam}' : ''}',
+              style: pw.TextStyle(font: font, fontSize: 8.5, color: PdfColors.grey800),
+            ),
+            pw.SizedBox(height: 10),
+            pw.TableHelper.fromTextArray(
+              headers: [
+                widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : 'Unit',
+                'Saints',
+                'Wkly Avg',
+                'Mon',
+                'Mon %',
+                'Tue',
+                'Tue %',
+                'Wed',
+                'Wed %',
+                'Thu',
+                'Thu %',
+                'Fri',
+                'Fri %',
+                'Sat',
+                'Sat %',
+                'Sun',
+                'Sun %',
+              ],
+              data: [
+                ...stats.map((u) => [
+                      u.unitName,
+                      '${u.totalSaints}',
+                      u.weeklyAvg.toStringAsFixed(1),
+                      '${u.mon}',
+                      '${u.monPct.toStringAsFixed(0)}%',
+                      '${u.tue}',
+                      '${u.tuePct.toStringAsFixed(0)}%',
+                      '${u.wed}',
+                      '${u.wedPct.toStringAsFixed(0)}%',
+                      '${u.thu}',
+                      '${u.thuPct.toStringAsFixed(0)}%',
+                      '${u.fri}',
+                      '${u.friPct.toStringAsFixed(0)}%',
+                      '${u.sat}',
+                      '${u.satPct.toStringAsFixed(0)}%',
+                      '${u.sun}',
+                      '${u.sunPct.toStringAsFixed(0)}%',
+                    ]),
+                [
+                  'General Total',
+                  '${totalStat.totalSaints}',
+                  totalStat.weeklyAvg.toStringAsFixed(1),
+                  '${totalStat.mon}',
+                  '${totalStat.monPct.toStringAsFixed(0)}%',
+                  '${totalStat.tue}',
+                  '${totalStat.tuePct.toStringAsFixed(0)}%',
+                  '${totalStat.wed}',
+                  '${totalStat.wedPct.toStringAsFixed(0)}%',
+                  '${totalStat.thu}',
+                  '${totalStat.thuPct.toStringAsFixed(0)}%',
+                  '${totalStat.fri}',
+                  '${totalStat.friPct.toStringAsFixed(0)}%',
+                  '${totalStat.sat}',
+                  '${totalStat.satPct.toStringAsFixed(0)}%',
+                  '${totalStat.sun}',
+                  '${totalStat.sunPct.toStringAsFixed(0)}%',
+                ],
+              ],
+              headerStyle: pw.TextStyle(font: fontBold, fontSize: 7.0, color: PdfColors.white),
+              headerDecoration: const pw.BoxDecoration(color: PdfColors.purple900),
+              cellStyle: pw.TextStyle(font: font, fontSize: 7.0),
+              cellAlignment: pw.Alignment.center,
+              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+              rowDecoration: const pw.BoxDecoration(),
+            ),
+          ];
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+  }
+
+  // --- CELL HELPERS ---
+  Widget _cellText(String text, double height, {
+    Color? color,
+    bool isBold = false,
+    TextAlign align = TextAlign.center,
+    double padLeft = 0,
+  }) {
+    return SizedBox(
+      height: height,
+      child: Container(
+        alignment: align == TextAlign.left ? Alignment.centerLeft : Alignment.center,
+        padding: EdgeInsets.only(left: padLeft, right: 2),
+        child: Text(
+          text,
+          style: GoogleFonts.merriweather(
+            fontSize: 9.5,
+            color: color ?? Colors.black87,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+          ),
+          overflow: TextOverflow.ellipsis,
+          textAlign: align,
+        ),
+      ),
+    );
+  }
+
+  Widget _cellPercent(double pct, double height, Color color, {bool isBold = false}) {
+    return SizedBox(
+      height: height,
+      child: Center(
+        child: Text(
+          "${pct.toStringAsFixed(0)}%",
+          style: GoogleFonts.merriweather(
+            fontSize: 9.0,
+            color: color,
+            fontWeight: isBold ? FontWeight.w900 : FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- SECTION CONTAINER WITH DARK BORDER ---
+  Widget _section(String title, Widget content, BuildContext context, {VoidCallback? onPdf}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 8))]
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black, width: 1.0),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        ListTile(
-          title: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: const Color(0xFF4A148C))), 
-          trailing: IconButton(icon: const Icon(Icons.open_in_full_rounded, size: 20, color: Colors.blueGrey), onPressed: () => _showFull(context, title, content))
-        ),
-        const Divider(height: 1),
-        content,
-      ]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Colors.black12, width: 1.0)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: GoogleFonts.merriweather(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13,
+                      color: pPurple,
+                    ),
+                  ),
+                ),
+                if (onPdf != null)
+                  IconButton(
+                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 20, color: pPurple),
+                    tooltip: 'Export PDF Report',
+                    onPressed: onPdf,
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.open_in_full_rounded, size: 19, color: Colors.blueGrey),
+                  tooltip: 'Fullscreen View',
+                  onPressed: () => _showFull(context, title, content),
+                ),
+              ],
+            ),
+          ),
+          content,
+        ],
+      ),
     );
   }
 
-  void _showFull(BuildContext ctx, String t, Widget c) {
-    Navigator.push(ctx, MaterialPageRoute(
-      fullscreenDialog: true, 
-      builder: (context) => Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
-        appBar: AppBar(title: Text(t, style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold)), centerTitle: true), 
-        body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(20), child: c))
-      )
-    ));
+  void _showFull(BuildContext ctx, String title, Widget content) {
+    Navigator.push(
+      ctx,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: AppBar(
+            backgroundColor: pPurple,
+            foregroundColor: Colors.white,
+            title: Text(title, style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold)),
+            centerTitle: true,
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: content,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    const pPurple = Color(0xFF4A148C);
-    Map<String, List<dynamic>> processedData = _groupDataBySelection();
-    return Column(children: [
-      if (analyticsMode == 'Ranking') ...[
-        _section("Top performing evangelism units", _buildRankingList(processedData, true), context),
-        _section("Units requiring evangelism support", _buildRankingList(processedData, false), context),
-      ] else ...[
-        _section("Evangelism daily summary", _buildEvangelismTable(processedData, pPurple), context),
-        const SizedBox(height: 10),
-        _section("7-day breakdown (%)", _buildEvangelismChart(processedData, pPurple), context),
+    final List<_EvangelismUnitStat> unitStats = _calculateStats();
+    final _EvangelismUnitStat totalStat = _calculateTotalStat(unitStats);
+
+    if (_isLoadingMembers && _masterMembers.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: CircularProgressIndicator(color: pPurple),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        if (widget.analyticsMode == 'Ranking') ...[
+          _section(
+            "Top performing evangelism units",
+            _buildRankingList(unitStats, true),
+            context,
+          ),
+          _section(
+            "Units requiring evangelism support",
+            _buildRankingList(unitStats, false),
+            context,
+          ),
+        ] else ...[
+          _section(
+            "Evangelism daily summary",
+            _buildEvangelismTable(unitStats, totalStat),
+            context,
+            onPdf: () => _exportPdf(unitStats, totalStat),
+          ),
+          const SizedBox(height: 10),
+          _section(
+            "7-day breakdown (%)",
+            _buildEvangelismChart(unitStats, totalStat),
+            context,
+          ),
+        ],
       ],
-    ]);
+    );
   }
 }

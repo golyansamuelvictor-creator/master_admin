@@ -20,14 +20,19 @@ import '../entry_modules/bb_file_entry.dart';
 
 class EntryFormScreen extends StatefulWidget {
   final String sheetName, cellName, location, subLocation, dept, team;
+  final DateTime? selectedDate; // Date selected from ReportsScreen (max 5 days ago)
+  final String? initialMode;
+
   const EntryFormScreen({
-    super.key, 
-    required this.sheetName, 
-    required this.cellName, 
-    required this.location, 
-    required this.subLocation, 
-    required this.dept, 
-    required this.team
+    super.key,
+    required this.sheetName,
+    required this.cellName,
+    required this.location,
+    required this.subLocation,
+    required this.dept,
+    required this.team,
+    this.selectedDate,
+    this.initialMode,
   });
 
   @override
@@ -36,24 +41,25 @@ class EntryFormScreen extends StatefulWidget {
 
 class _EntryFormScreenState extends State<EntryFormScreen> {
   final supabase = Supabase.instance.client;
-  DateTime selectedDate = DateTime.now();
+  late DateTime selectedDate;
   List<dynamic> members = [];
   Map<String, Map<String, dynamic>> reportData = {};
-  Map<String, List<String>> dynamicOptions = {}; 
+  Map<String, List<String>> dynamicOptions = {};
   bool isLoading = true;
   int groupEvidenceCount = 0;
   final Color pPurple = const Color(0xFF4A148C);
 
   // --- EXCEL PRO STATE ---
-  String _saveStatus = "Save"; 
+  String _saveStatus = "Save";
   final List<String> _undoStack = [];
   final List<String> _redoStack = [];
-
   bool get _isChurchLocation => widget.location.trim().toLowerCase() == 'church';
 
   @override
   void initState() {
     super.initState();
+    // Initializes with the selected previous date if provided, otherwise today
+    selectedDate = widget.selectedDate ?? DateTime.now();
     _loadInitialData();
   }
 
@@ -109,6 +115,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     return 'member_logs';
   }
 
+  // Loads data for the selected date (including existing past reports from Supabase)
   Future<void> _loadInitialData() async {
     if (!mounted) return;
     setState(() => isLoading = true);
@@ -116,7 +123,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       bool isBB = widget.sheetName == "BB File";
       var query = supabase.from(isBB ? 'bb_students' : 'members').select();
 
-      // Safe scoping: prevents null query crashes when location is Church
       if (_isChurchLocation) {
         if (widget.dept.isNotEmpty && widget.dept != 'N/A') {
           query = query.eq('department', widget.dept);
@@ -137,7 +143,12 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       }
 
       final res = await query.order(isBB ? 'student_name' : 'english_name');
-      final logs = await supabase.from(_getTargetTable()).select().eq('report_date', DateFormat('yyyy-MM-dd').format(selectedDate));
+      
+      // Queries logs for the specific selectedDate (pre-populating existing data for editing)
+      final logs = await supabase
+          .from(_getTargetTable())
+          .select()
+          .eq('report_date', DateFormat('yyyy-MM-dd').format(selectedDate));
 
       String dbLookupName = widget.sheetName.trim() == "Evangelism Part" ? "Evangelism" : widget.sheetName.trim();
       final optionsRes = await supabase.from('entry_field_options').select().eq('sheet_name', dbLookupName).eq('is_active', true);
@@ -152,6 +163,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           members = res;
           dynamicOptions = tempOpts;
           reportData = {for (var m in members) m['id'].toString(): {}};
+          // Pre-fills existing report data so the user can edit it
           for (var log in logs) {
             String mid = log['member_id'].toString();
             if (reportData.containsKey(mid)) reportData[mid] = Map<String, dynamic>.from(log);
@@ -165,36 +177,136 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     }
   }
 
+  // Saves/upserts edits directly into Supabase under the selected report_date
+  // Saves/upserts edits directly into Supabase under the selected report_date
   Future<void> _save() async {
+    final currentUser = supabase.auth.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.red,
+          content: Text("Error: You are not logged in. Please sign in first."),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     setState(() => _saveStatus = "Saving...");
     List<Map<String, dynamic>> logRows = [];
     String dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
-    
+
     String unitName = widget.cellName.isNotEmpty && widget.cellName != "N/A"
         ? widget.cellName
         : (widget.team.isNotEmpty && widget.team != "N/A" ? widget.team : widget.dept);
 
+    // Fast lookup map to match member_id with full member record
+    final Map<String, dynamic> memberLookup = {
+      for (var m in members) m['id'].toString(): m
+    };
+
+    // Check if current sheet is Service Attendance Status
+    final bool isServiceAttendance = widget.sheetName == 'Service Attendance Status';
+
     reportData.forEach((mid, data) {
       if (data.isNotEmpty) {
+        final member = memberLookup[mid];
+
         Map<String, dynamic> row = {
-          'member_id': mid, 
-          'leader_id': supabase.auth.currentUser!.id, 
+          'member_id': int.tryParse(mid) ?? mid,
+          'leader_id': currentUser.id,
           'report_date': dateStr,
           'unit_name': unitName,
-          'verification_status': 'pending'
+          'verification_status': 'pending',
+
+          // Hierarchy columns for all tables
+          'location': member?['location'] ?? (widget.location != 'N/A' ? widget.location : null),
+          'sub_location': member?['sub_location'] ?? (widget.subLocation != 'N/A' ? widget.subLocation : null),
+          'department': member?['department'] ?? (widget.dept != 'N/A' ? widget.dept : null),
+          'team': member?['team'] ?? (widget.team != 'N/A' ? widget.team : null),
+          'cell_group': member?['cell_group'] ?? (widget.cellName != 'N/A' ? widget.cellName : null),
         };
-        row.addAll(data); 
+
+        // ONLY attach reg_status and geo_category for Service Attendance Status
+        if (isServiceAttendance) {
+          row['reg_status'] = member?['reg_status'];
+          row['geo_category'] = member?['geo_category'];
+        }
+
+        // Adds module-specific inputs
+        row.addAll(data);
         logRows.add(row);
       }
     });
+
+    if (logRows.isEmpty) {
+      setState(() => _saveStatus = "Save");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.orange,
+          content: Text("No entries to save! Please fill in data before saving."),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     try {
+      debugPrint("Saving ${logRows.length} rows to ${_getTargetTable()}");
       await supabase.from(_getTargetTable()).upsert(logRows);
-      setState(() => _saveStatus = "Saved");
-      await Future.delayed(const Duration(seconds: 2));
-      if (mounted) setState(() => _saveStatus = "Save");
-    } catch (e) { 
+
+      if (mounted) {
+        setState(() => _saveStatus = "Saved");
+        await Future.delayed(const Duration(seconds: 1));
+        if (mounted) {
+          setState(() => _saveStatus = "Save");
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.green[800],
+              content: Text("Report for $dateStr saved successfully!"),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
       debugPrint("Entry Save Error: $e");
-      setState(() => _saveStatus = "Save"); 
+      if (mounted) {
+        setState(() => _saveStatus = "Save");
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red[800],
+            content: Text("Save failed: $e"),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+  
+  // Quick date change restricted to max 5 days back
+  Future<void> _pickAnotherDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final minDate = today.subtract(const Duration(days: 5));
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: minDate,
+      lastDate: today,
+      helpText: "SELECT REPORT DATE (MAX 5 DAYS AGO)",
+      builder: (c, child) => Theme(
+        data: Theme.of(c).copyWith(
+          colorScheme: ColorScheme.light(primary: pPurple),
+        ),
+        child: child!,
+      ),
+    );
+
+    if (picked != null && picked != selectedDate) {
+      setState(() => selectedDate = picked);
+      _loadInitialData();
     }
   }
 
@@ -218,8 +330,11 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   @override
   Widget build(BuildContext context) {
     double width = MediaQuery.of(context).size.width;
-    bool isDesktop = width > 900;
-    double sideMargin = isDesktop ? 40 : 15; 
+    bool isDesktop = width > 850;
+    double sideMargin = isDesktop ? 30 : 12;
+
+    String displayTitle = widget.sheetName == "Evangelism Part" ? "Evangelism" : widget.sheetName;
+    bool isPastReport = !DateUtils.isSameDay(selectedDate, DateTime.now());
 
     return CallbackShortcuts(
       bindings: {
@@ -231,64 +346,111 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0.5,
-          automaticallyImplyLeading: false, // Prevents default padding offset
-          titleSpacing: 0,
-          leadingWidth: isDesktop ? 260 : 210, // Adjusted width for left cluster
-          leading: Padding(
-            padding: EdgeInsets.only(left: sideMargin), // Matches the exact left edge of the table!
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
+          automaticallyImplyLeading: false,
+          titleSpacing: isDesktop ? 0 : 8,
+          leadingWidth: isDesktop ? 240 : 48,
+          leading: isDesktop
+              ? Padding(
+                  padding: EdgeInsets.only(left: sideMargin),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new, size: 18), 
+                        onPressed: () => Navigator.pop(context, true),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 8),
+                      const VerticalDivider(indent: 14, endIndent: 14, width: 14),
+                      IconButton(
+                        icon: const Icon(Icons.undo, size: 20), 
+                        onPressed: _undo,
+                        tooltip: "Undo (Ctrl+Z)",
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        constraints: const BoxConstraints(),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.redo, size: 20), 
+                        onPressed: _redo,
+                        tooltip: "Redo",
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: _save, 
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: Text(
+                          _saveStatus, 
+                          style: GoogleFonts.merriweather(
+                            fontWeight: FontWeight.bold, 
+                            color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : IconButton(
                   icon: const Icon(Icons.arrow_back_ios_new, size: 18), 
-                  onPressed: () => Navigator.pop(context),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  onPressed: () => Navigator.pop(context, true),
                 ),
-                const SizedBox(width: 8),
-                const VerticalDivider(indent: 12, endIndent: 12, width: 15),
-                IconButton(
-                  icon: const Icon(Icons.undo, size: 20), 
-                  onPressed: _undo,
-                  tooltip: "Undo (Ctrl+Z)",
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  constraints: const BoxConstraints(),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.redo, size: 20), 
-                  onPressed: _redo,
-                  tooltip: "Redo",
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  constraints: const BoxConstraints(),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: _save, 
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    _saveStatus, 
-                    style: GoogleFonts.merriweather(
-                      fontWeight: FontWeight.bold, 
-                      color: _saveStatus == "Saved" ? Colors.green : pPurple,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
           title: Text(
-            widget.sheetName == "Evangelism Part" ? "Evangelism" : widget.sheetName, 
-            style: GoogleFonts.merriweather(fontSize: isDesktop ? 22 : 18, fontWeight: FontWeight.w900, color: pPurple),
+            displayTitle, 
+            style: GoogleFonts.merriweather(
+              fontSize: isDesktop ? 20 : 16,
+              fontWeight: FontWeight.w900,
+              color: pPurple,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           centerTitle: true,
           actions: [
+            // Date Switcher in AppBar on Desktop
+            if (isDesktop)
+              InkWell(
+                onTap: _pickAnotherDate,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isPastReport ? Colors.orange.shade50 : pPurple.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isPastReport ? Colors.orange.shade300 : pPurple.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isPastReport ? Icons.history_rounded : Icons.calendar_today_rounded,
+                        size: 14,
+                        color: isPastReport ? Colors.orange[900] : pPurple,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        DateFormat('MMM d, yyyy').format(selectedDate),
+                        style: GoogleFonts.merriweather(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isPastReport ? Colors.orange[900] : pPurple,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             Padding(
-              padding: EdgeInsets.only(right: sideMargin), // Matches the exact right edge of the table!
+              padding: EdgeInsets.only(right: sideMargin),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -312,30 +474,283 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
             ),
           ],
         ),
-        body: isLoading ? const Center(child: CircularProgressIndicator()) : Column(children: [
-          const SizedBox(height: 8), 
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: sideMargin),
-            child: Row(children: [
-              _statCardSmall("Total members", "${members.length}", pPurple),
-              const SizedBox(width: 10),
-              _uploadCard(),
-              const SizedBox(width: 10),
-              _statCardSmall("Pending entries", "$_pendingCount", Colors.orange[800]!),
-            ]),
-          ),
-          const SizedBox(height: 12),
-          Expanded(child: Container(
-            width: double.infinity, margin: EdgeInsets.fromLTRB(sideMargin, 0, sideMargin, 20),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey.withValues(alpha: 0.2))),
-            child: ClipRRect(borderRadius: BorderRadius.circular(15), child: _buildSelectedModule()),
-          )),
-        ]),
+        body: isLoading 
+          ? Center(child: CircularProgressIndicator(color: pPurple)) 
+          : Column(
+              children: [
+                // Quick Action strip (Undo, Redo, Save, Date Selector)
+                if (!isDesktop)
+                  Container(
+                    margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.18)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.undo, size: 19), 
+                              onPressed: _undo,
+                              tooltip: "Undo",
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(),
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              icon: const Icon(Icons.redo, size: 19), 
+                              onPressed: _redo,
+                              tooltip: "Redo",
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              height: 18,
+                              width: 1,
+                              color: Colors.grey.shade300,
+                            ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: _save,
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _saveStatus == "Saved" 
+                                      ? Colors.green.withValues(alpha: 0.1) 
+                                      : pPurple.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: _saveStatus == "Saved" 
+                                        ? Colors.green 
+                                        : pPurple.withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _saveStatus == "Saved" ? Icons.check_circle : Icons.save_rounded,
+                                      size: 14,
+                                      color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _saveStatus, 
+                                      style: GoogleFonts.merriweather(
+                                        fontWeight: FontWeight.bold, 
+                                        color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Tap to switch date on mobile (max 5 days back)
+                        InkWell(
+                          onTap: _pickAnotherDate,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isPastReport ? Icons.history_rounded : Icons.calendar_today_rounded,
+                                  size: 13,
+                                  color: isPastReport ? Colors.orange[900] : pPurple,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  DateFormat('MMM d, yyyy').format(selectedDate),
+                                  style: GoogleFonts.merriweather(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isPastReport ? Colors.orange[900] : pPurple,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 8),
+
+                // Responsive Stats Row
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: sideMargin),
+                  child: Row(
+                    children: [
+                      _statCardSmall("Total members", "${members.length}", pPurple, isDesktop),
+                      const SizedBox(width: 8),
+                      _uploadCard(isDesktop),
+                      const SizedBox(width: 8),
+                      _statCardSmall("Pending entries", "$_pendingCount", Colors.orange[800]!, isDesktop),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // Module Grid Container
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    margin: EdgeInsets.fromLTRB(sideMargin, 0, sideMargin, 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: _buildSelectedModule(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
       ),
     );
   }
 
-  Widget _statCardSmall(String l, String v, Color c) => Expanded(child: Container(height: 45, padding: const EdgeInsets.symmetric(horizontal: 15), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: c.withValues(alpha: 0.2), width: 1.5)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Row(children: [Text(l, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)), const SizedBox(width: 8), Text(v, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: c))]), Icon(Icons.info_outline, size: 16, color: c.withValues(alpha: 0.5))])));
-  Widget _uploadCard() => Expanded(child: InkWell(onTap: _handleUpload, child: Container(height: 45, padding: const EdgeInsets.symmetric(horizontal: 15), decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.blue)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(groupEvidenceCount > 0 ? "$groupEvidenceCount Photos" : "Add evidence", style: GoogleFonts.merriweather(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.bold)), const Icon(Icons.camera_alt_outlined, color: Colors.blue, size: 18)]))));
-  Future<void> _handleUpload() async { FilePickerResult? r = await FilePicker.platform.pickFiles(allowMultiple: true, type: FileType.image); if (r != null) setState(() => groupEvidenceCount = r.files.length); }
+  Widget _statCardSmall(String l, String v, Color c, bool isDesktop) {
+    return Expanded(
+      child: Container(
+        height: isDesktop ? 46 : 50,
+        padding: EdgeInsets.symmetric(horizontal: isDesktop ? 12 : 6, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: c.withValues(alpha: 0.22), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 4,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: isDesktop
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Text(l, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 8),
+                      Text(v, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: c)),
+                    ],
+                  ),
+                  Icon(Icons.info_outline, size: 16, color: c.withValues(alpha: 0.5)),
+                ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      v,
+                      style: GoogleFonts.merriweather(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: c,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      l,
+                      style: GoogleFonts.merriweather(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey.shade700,
+                      ),
+                      maxLines: 1,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _uploadCard(bool isDesktop) {
+    return Expanded(
+      child: InkWell(
+        onTap: _handleUpload,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          height: isDesktop ? 46 : 50,
+          padding: EdgeInsets.symmetric(horizontal: isDesktop ? 12 : 6, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.blue.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.blue.withValues(alpha: 0.3), width: 1.2),
+          ),
+          child: isDesktop
+              ? Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      groupEvidenceCount > 0 ? "$groupEvidenceCount Photos" : "Add evidence",
+                      style: GoogleFonts.merriweather(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.bold),
+                    ),
+                    const Icon(Icons.camera_alt_outlined, color: Colors.blue, size: 18),
+                  ],
+                )
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.camera_alt_outlined, color: Colors.blue, size: 16),
+                    const SizedBox(height: 1),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        groupEvidenceCount > 0 ? "$groupEvidenceCount Photos" : "Add evidence",
+                        style: GoogleFonts.merriweather(
+                          fontSize: 10,
+                          color: Colors.blue,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleUpload() async { 
+    FilePickerResult? r = await FilePicker.platform.pickFiles(allowMultiple: true, type: FileType.image); 
+    if (r != null) setState(() => groupEvidenceCount = r.files.length); 
+  }
 }

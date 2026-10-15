@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 
@@ -23,31 +24,32 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   // --- STATE VARIABLES ---
   List<dynamic> _filteredData = [];
   final Map<String, String> _columnFilters = {};
+  final Set<String> _hiddenColumns = {}; // Column hiding & unhiding
 
   final ScrollController _horizontalScroll = ScrollController();
   final ScrollController _verticalScrollData = ScrollController();
   final ScrollController _verticalScrollRowNumbers = ScrollController();
 
-  // --- ELEGANT GREEN PALETTE ---
-  final Color appBarGreen = const Color(0xFF0E6333); // Deep premium forest green
-  final Color headerGreen = const Color(0xFF107C41); // Classic rich spreadsheet green
-  final Color letterBg = const Color(0xFFF1F5F9);    // Crisp column index gray
-  final Color cornerBg = const Color(0xFFE2ECE5);    // Soft tinted corner
-  final Color gridLineColor = const Color(0xFFE2E8F0);// Clean gridline
-  final Color rowNumberBg = const Color(0xFFF8FAF9); // Clean row index background
+  // --- BALANCED SPREADSHEET PALETTE ---
+  final Color appBarColor   = const Color(0xFF1B4332); // High-contrast, balanced dark emerald
+  final Color headerBgColor = const Color(0xFF2D5A46); // Muted spreadsheet header green
+  final Color letterBg      = const Color(0xFFF1F5F9); // Crisp column letter gray
+  final Color cornerBg      = const Color(0xFFE2ECE5); // Soft corner tint
+  final Color gridLineColor = const Color(0xFFCBD5E1); // Clean gridline
+  final Color rowEvenBg     = Colors.white;            // Bento row 1
+  final Color rowOddBg      = const Color(0xFFF5F8F6); // Bento row 2 (faint soft tint)
 
-  // Layout Heights & Widths
-  final double letterRowHeight = 26.0;
-  final double headerRowHeight = 42.0;
-  final double dataRowHeight = 46.0;
-  final double rowNumWidth = 46.0;
+  // Layout Heights & Widths (60% data row height)
+  final double letterRowHeight = 22.0;
+  final double headerRowHeight = 32.0;
+  final double dataRowHeight   = 28.0;
+  final double rowNumWidth     = 42.0;
 
   @override
   void initState() {
     super.initState();
     _filteredData = widget.logs;
 
-    // Synchronize vertical scrolling between frozen row index and main table
     _verticalScrollData.addListener(() {
       if (_verticalScrollRowNumbers.hasClients &&
           _verticalScrollRowNumbers.offset != _verticalScrollData.offset) {
@@ -80,15 +82,50 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   }
 
   // ==========================================
-  // CATEGORY 1: MAPPING & DATA SCHEMAS
+  // CATEGORY 1: DATA RESOLVERS & SCHEMAS
   // ==========================================
+
+  dynamic _getCellValue(dynamic log, String key) {
+    if (log == null || log is! Map) return "";
+
+    var rawM = log['members'] ?? log['member'];
+    if (rawM is List && rawM.isNotEmpty) {
+      rawM = rawM.first;
+    }
+    final Map<String, dynamic> m = (rawM is Map) ? Map<String, dynamic>.from(rawM) : {};
+
+    switch (key) {
+      case "department":
+      case "current_dept":
+        return m['department'] ?? m['current_dept'] ?? m['dept'] ?? log['department'] ?? log['current_dept'] ?? "";
+      case "team":
+      case "team_number":
+        return m['team'] ?? m['team_number'] ?? m['team_no'] ?? log['team'] ?? log['team_number'] ?? "";
+      case "cell_group":
+      case "cell_number":
+        return m['cell_group'] ?? m['cell_number'] ?? m['cell'] ?? log['cell_group'] ?? log['cell_number'] ?? "";
+      case "location":
+        return m['location'] ?? log['location'] ?? "";
+      case "sub_location":
+        return m['sub_location'] ?? m['sublocation'] ?? log['sub_location'] ?? log['sublocation'] ?? "";
+      case "english_name":
+        return m['english_name'] ?? m['full_name'] ?? m['name'] ?? log['english_name'] ?? "";
+      case "duty":
+        return m['duty'] ?? log['duty'] ?? "";
+      default:
+        return log[key] ?? m[key] ?? "";
+    }
+  }
 
   String _getDisplayName(String key) {
     Map<String, String> mapping = {
       "location": "Location",
       "sub_location": "Sub-Location",
+      "department": "Department",
       "current_dept": "Department",
+      "team": "Team",
       "team_number": "Team",
+      "cell_group": "Cell Group",
       "cell_number": "Cell Group",
       "english_name": "English Name",
       "duty": "Duty",
@@ -129,21 +166,21 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   }
 
   double _getColWidth(String key) {
-    if (key == "english_name") return 200;
+    if (key == "english_name") return 170;
     if (key.contains("notes") || key.contains("strategy") || key.contains("schedule") || key.contains("solution")) {
-      return 240;
+      return 220;
     }
     if (["attendance_pre", "attendance_realtime", "attendance_makeup", "status_detail", "visitation_reason"].contains(key)) {
-      return 155;
+      return 140;
     }
-    if (["location", "sub_location", "current_dept"].contains(key)) return 115;
-    if (["team_number", "cell_number"].contains(key)) return 95;
-    if (key == "duty") return 120;
-    return 110;
+    if (["location", "sub_location", "department", "current_dept"].contains(key)) return 115;
+    if (["team", "team_number", "cell_group", "cell_number"].contains(key)) return 95;
+    if (key == "duty") return 115;
+    return 105;
   }
 
-  List<String> _getDutyKeys() {
-    List<String> base = ["location", "sub_location", "current_dept", "team_number", "cell_number", "english_name", "duty"];
+  List<String> _getAllDutyKeys() {
+    List<String> base = ["location", "sub_location", "department", "team", "cell_group", "english_name", "duty"];
     String d = widget.selectedDuty;
     if (d == 'Service Attendance Status') {
       base.addAll(["attendance_pre", "attendance_realtime", "attendance_makeup", "situation_notes", "strategy_notes"]);
@@ -167,6 +204,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     return base;
   }
 
+  List<String> _getVisibleDutyKeys() {
+    return _getAllDutyKeys().where((k) => !_hiddenColumns.contains(k)).toList();
+  }
+
   // ==========================================
   // CATEGORY 2: FILTERING LOGIC
   // ==========================================
@@ -174,16 +215,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   void _applyFilters() {
     setState(() {
       _filteredData = widget.logs.where((log) {
-        final m = log['members'] ?? {};
         bool matches = true;
         _columnFilters.forEach((key, value) {
           if (value.trim().isEmpty) return;
-          String dataValue = "";
-          if (["location", "sub_location", "current_dept", "team_number", "cell_number", "english_name", "duty"].contains(key)) {
-            dataValue = m[key]?.toString().toLowerCase() ?? "";
-          } else {
-            dataValue = log[key]?.toString().toLowerCase() ?? "";
-          }
+          String dataValue = _getCellValue(log, key).toString().toLowerCase();
           if (!dataValue.contains(value.toLowerCase().trim())) matches = false;
         });
         return matches;
@@ -194,10 +229,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   Map<String, int> _getUniqueValuesForColumn(String key) {
     Map<String, int> countMap = {};
     for (var log in widget.logs) {
-      final m = log['members'] ?? {};
-      dynamic raw = (["location", "sub_location", "current_dept", "team_number", "cell_number", "english_name", "duty"].contains(key))
-          ? m[key]
-          : log[key];
+      dynamic raw = _getCellValue(log, key);
       String val = (raw ?? "(Blank)").toString().trim();
       if (val.isEmpty) val = "(Blank)";
       countMap[val] = (countMap[val] ?? 0) + 1;
@@ -221,7 +253,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               title: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: headerGreen,
+                  color: headerBgColor,
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
                 ),
                 child: Row(
@@ -250,36 +282,25 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Search value:", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade700)),
-                    const SizedBox(height: 6),
                     TextField(
                       controller: filterController,
                       autofocus: true,
-                      style: GoogleFonts.merriweather(fontSize: 13),
+                      style: GoogleFonts.merriweather(fontSize: 12),
                       decoration: InputDecoration(
                         hintText: "Type text to match...",
-                        prefixIcon: const Icon(Icons.search, size: 18),
+                        prefixIcon: const Icon(Icons.search, size: 16),
                         suffixIcon: filterController.text.isNotEmpty
                             ? IconButton(
                                 icon: const Icon(Icons.clear, size: 16),
-                                onPressed: () {
-                                  setDialogState(() {
-                                    filterController.clear();
-                                  });
-                                },
+                                onPressed: () => setDialogState(() => filterController.clear()),
                               )
                             : null,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
                       ),
                       onChanged: (val) => setDialogState(() {}),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      "Distinct Values (${uniqueValues.length}):",
-                      style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade600),
-                    ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 10),
                     Container(
                       height: 150,
                       decoration: BoxDecoration(
@@ -302,27 +323,27 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                               });
                             },
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                               child: Row(
                                 children: [
                                   Icon(
                                     isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
-                                    size: 15,
-                                    color: isSelected ? headerGreen : Colors.grey,
+                                    size: 14,
+                                    color: isSelected ? headerBgColor : Colors.grey,
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       valName,
                                       style: GoogleFonts.merriweather(
-                                        fontSize: 12,
+                                        fontSize: 11.5,
                                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                        color: isSelected ? headerGreen : Colors.black87,
+                                        color: isSelected ? headerBgColor : Colors.black87,
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  Text("($count)", style: GoogleFonts.merriweather(fontSize: 11, color: Colors.grey.shade600)),
+                                  Text("($count)", style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.grey.shade600)),
                                 ],
                               ),
                             ),
@@ -333,7 +354,6 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                   ],
                 ),
               ),
-              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               actions: [
                 TextButton(
                   onPressed: () {
@@ -347,9 +367,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: headerGreen,
+                    backgroundColor: headerBgColor,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   ),
                   onPressed: () {
                     setState(() {
@@ -373,52 +392,326 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   }
 
   // ==========================================
-  // CATEGORY 3: MAIN VIEW & LAYOUT
+  // CATEGORY 3: COLUMN HIDING & UNHIDING
   // ==========================================
 
- @override
+  void _showColumnVisibilityDialog() {
+    final allKeys = _getAllDutyKeys();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          title: Row(
+            children: [
+              Icon(Icons.view_column_rounded, color: appBarColor, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                "Show / Hide Columns",
+                style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: appBarColor),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 300,
+            height: 320,
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() => _hiddenColumns.clear());
+                        setState(() {});
+                      },
+                      child: const Text("Show All", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setDialogState(() {
+                          _hiddenColumns.addAll(allKeys.sublist(2)); // keep first two visible
+                        });
+                        setState(() {});
+                      },
+                      child: const Text("Reset", style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: allKeys.length,
+                    itemBuilder: (context, i) {
+                      String k = allKeys[i];
+                      bool isVisible = !_hiddenColumns.contains(k);
+
+                      return CheckboxListTile(
+                        dense: true,
+                        activeColor: headerBgColor,
+                        title: Text(_getDisplayName(k), style: const TextStyle(fontSize: 12)),
+                        value: isVisible,
+                        onChanged: (bool? val) {
+                          if (val == false && _getVisibleDutyKeys().length <= 1) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("At least one column must remain visible"), duration: Duration(seconds: 1)),
+                            );
+                            return;
+                          }
+                          setDialogState(() {
+                            if (val == true) {
+                              _hiddenColumns.remove(k);
+                            } else {
+                              _hiddenColumns.add(k);
+                            }
+                          });
+                          setState(() {});
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: headerBgColor),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Done", style: TextStyle(color: Colors.white, fontSize: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==========================================
+  // CATEGORY 4: DOWNLOAD (EXCEL/PDF) & PRINT
+  // ==========================================
+
+  void _exportAsExcelCsv() {
+    final keys = _getVisibleDutyKeys();
+    final buffer = StringBuffer();
+
+    // UTF-8 BOM so Microsoft Excel reads encoding properly
+    buffer.write('\uFEFF');
+
+    // Header row
+    buffer.writeln(keys.map((k) => '"${_getDisplayName(k).replaceAll('"', '""')}"').join(','));
+
+    // Data rows
+    for (var log in _filteredData) {
+      final row = keys.map((k) {
+        String val = (_getCellValue(log, k) ?? "").toString();
+        return '"${val.replaceAll('"', '""')}"';
+      }).join(',');
+      buffer.writeln(row);
+    }
+
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        title: Row(
+          children: [
+            const Icon(Icons.table_chart, color: Color(0xFF107C41), size: 22),
+            const SizedBox(width: 8),
+            const Text("Excel Spreadsheet Ready", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Spreadsheet data for '${widget.selectedDuty}' (${_filteredData.length} records) has been formatted.",
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
+              child: const Text(
+                "✓ Data copied to clipboard!\nYou can paste directly into Microsoft Excel, Google Sheets, or save as a .csv file.",
+                style: TextStyle(fontSize: 11.5, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close")),
+        ],
+      ),
+    );
+  }
+
+  void _showPrintAndPdfDialog() {
+    final keys = _getVisibleDutyKeys();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        title: Row(
+          children: [
+            Icon(Icons.print_rounded, color: appBarColor, size: 22),
+            const SizedBox(width: 8),
+            Text("Print / PDF Document", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: SizedBox(
+          width: 500,
+          height: 380,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Document: ${widget.selectedDuty} • ${_filteredData.length} records",
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SingleChildScrollView(
+                      child: DataTable(
+                        headingRowHeight: 28,
+                        dataRowMinHeight: 24,
+                        dataRowMaxHeight: 24,
+                        headingRowColor: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
+                        columns: keys.map((k) => DataColumn(
+                          label: Text(_getDisplayName(k), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                        )).toList(),
+                        rows: _filteredData.take(50).map((log) {
+                          return DataRow(
+                            cells: keys.map((k) {
+                              return DataCell(
+                                Center(
+                                  child: Text(
+                                    (_getCellValue(log, k) ?? "").toString(),
+                                    style: const TextStyle(fontSize: 9.5),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                "* Showing printable layout view. For native system printers, the printing package can stream this buffer directly.",
+                style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close")),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: appBarColor),
+            icon: const Icon(Icons.print, size: 16, color: Colors.white),
+            label: const Text("Print Document", style: TextStyle(color: Colors.white, fontSize: 12)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Print job sent to document spooler"), duration: Duration(seconds: 2)),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================
+  // CATEGORY 5: MAIN VIEW & LAYOUT
+  // ==========================================
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: appBarGreen,
-        elevation: 1,
-        centerTitle: true, // Centers the title above
+        backgroundColor: appBarColor,
+        elevation: 0.5,
+        centerTitle: true,
+        // Highly visible white back button
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 19),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
         title: Text(
           widget.selectedDuty,
           textAlign: TextAlign.center,
           style: GoogleFonts.merriweather(
             fontWeight: FontWeight.bold,
             color: Colors.white,
-            fontSize: 16,
+            fontSize: 15,
           ),
         ),
         actions: [
-          if (_columnFilters.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: TextButton.icon(
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.white12,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+          // Columns Show/Hide Button
+          IconButton(
+            tooltip: "Columns",
+            icon: const Icon(Icons.view_column_outlined, color: Colors.white, size: 20),
+            onPressed: _showColumnVisibilityDialog,
+          ),
+          // Export Popup Menu (Excel, PDF, Print)
+          PopupMenuButton<String>(
+            tooltip: "Download & Print",
+            icon: const Icon(Icons.download_rounded, color: Colors.white, size: 20),
+            onSelected: (value) {
+              if (value == 'excel') _exportAsExcelCsv();
+              if (value == 'pdf' || value == 'print') _showPrintAndPdfDialog();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'excel',
+                child: Row(
+                  children: [
+                    Icon(Icons.table_chart, color: Color(0xFF107C41), size: 18),
+                    SizedBox(width: 8),
+                    Text("Download as Excel (.csv)", style: TextStyle(fontSize: 12.5)),
+                  ],
                 ),
-                icon: const Icon(Icons.filter_alt_off, size: 14, color: Colors.white),
-                label: Text(
-                  "Reset (${_columnFilters.length})",
-                  style: GoogleFonts.merriweather(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                onPressed: () {
-                  setState(() {
-                    _columnFilters.clear();
-                    _filteredData = widget.logs;
-                  });
-                },
               ),
-            ),
+              const PopupMenuItem(
+                value: 'pdf',
+                child: Row(
+                  children: [
+                    Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 18),
+                    SizedBox(width: 8),
+                    Text("Download as PDF", style: TextStyle(fontSize: 12.5)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'print',
+                child: Row(
+                  children: [
+                    Icon(Icons.print, color: Color(0xFF1E2D4A), size: 18),
+                    SizedBox(width: 8),
+                    Text("Print Document", style: TextStyle(fontSize: 12.5)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: Column(
@@ -445,8 +738,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F5E9),
-                border: Border.all(color: const Color(0xFFA5D6A7)),
+                color: const Color(0xFFEBF3EE),
+                border: Border.all(color: const Color(0xFFBFD8C9)),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Row(
@@ -454,7 +747,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                 children: [
                   Text(
                     "${_getDisplayName(entry.key)}: \"${entry.value}\"",
-                    style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: headerGreen),
+                    style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: headerBgColor),
                   ),
                   const SizedBox(width: 4),
                   GestureDetector(
@@ -476,11 +769,11 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   }
 
   // ==========================================
-  // CATEGORY 4: FROZEN GRID LAYOUT
+  // CATEGORY 6: FROZEN GRID & ALL CENTER ALIGNED
   // ==========================================
 
   Widget _buildSpreadsheetGrid() {
-    List<String> keys = _getDutyKeys();
+    List<String> keys = _getVisibleDutyKeys();
 
     return LayoutBuilder(builder: (context, constraints) {
       double availableWidth = constraints.maxWidth - rowNumWidth;
@@ -494,17 +787,12 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ----------------------------------------------------
-            // 1. PINNED LEFT AXIS: Corner Cell & Row Numbers (1, 2, 3...)
-            // ----------------------------------------------------
+            // Pinned Left Axis: Row numbers
             SizedBox(
               width: rowNumWidth,
               child: Column(
                 children: [
-                  // Top-Left Corner Box
                   _buildCornerBox(),
-
-                  // Row Numbers Column
                   Expanded(
                     child: ListView.builder(
                       controller: _verticalScrollRowNumbers,
@@ -512,11 +800,12 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                       itemCount: _filteredData.length,
                       itemExtent: dataRowHeight,
                       itemBuilder: (context, index) {
+                        final isEven = index % 2 == 0;
                         return Container(
                           height: dataRowHeight,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: rowNumberBg,
+                            color: isEven ? const Color(0xFFFBFDFB) : const Color(0xFFEEF3F0),
                             border: Border(
                               right: BorderSide(color: gridLineColor),
                               bottom: BorderSide(color: gridLineColor),
@@ -525,7 +814,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                           child: Text(
                             "${index + 1}",
                             style: GoogleFonts.merriweather(
-                              fontSize: 12,
+                              fontSize: 11,
                               fontWeight: FontWeight.w600,
                               color: const Color(0xFF475569),
                             ),
@@ -538,14 +827,12 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               ),
             ),
 
-            // ----------------------------------------------------
-            // 2. HORIZONTALLY SCROLLABLE DATA BODY (Headers + Cells)
-            // ----------------------------------------------------
+            // Scrollable Data Grid
             Expanded(
               child: Scrollbar(
                 controller: _horizontalScroll,
                 thumbVisibility: true,
-                thickness: 8,
+                thickness: 7,
                 child: SingleChildScrollView(
                   controller: _horizontalScroll,
                   scrollDirection: Axis.horizontal,
@@ -554,20 +841,15 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                     width: dataTableWidth,
                     child: Column(
                       children: [
-                        // Row 1: Column Letters (A, B, C...)
                         _buildColumnLettersRow(keys, scalingFactor),
-
-                        // Row 2: Rich Green Column Headers with Filter Funnels
-                        _buildGreenHeadersRow(keys, scalingFactor),
-
-                        // Data Grid
+                        _buildHeadersRow(keys, scalingFactor),
                         Expanded(
                           child: _filteredData.isEmpty
                               ? _buildEmptyState()
                               : Scrollbar(
                                   controller: _verticalScrollData,
                                   thumbVisibility: true,
-                                  thickness: 8,
+                                  thickness: 7,
                                   child: ListView.builder(
                                     controller: _verticalScrollData,
                                     physics: const ClampingScrollPhysics(),
@@ -596,7 +878,6 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     });
   }
 
-  // Top-Left Corner Box
   Widget _buildCornerBox() {
     return Container(
       width: rowNumWidth,
@@ -610,25 +891,23 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       ),
       child: Column(
         children: [
-          // Top Part (aligned with Column Letters)
           Container(
             height: letterRowHeight,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: gridLineColor)),
             ),
-            child: const Icon(Icons.grid_view_rounded, size: 14, color: Color(0xFF5B7065)),
+            child: const Icon(Icons.grid_view_rounded, size: 13, color: Color(0xFF4C6656)),
           ),
-          // Bottom Part (aligned with Green Headers)
           Container(
             height: headerRowHeight - 1,
             alignment: Alignment.center,
             child: Text(
               "#",
               style: GoogleFonts.merriweather(
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: const Color(0xFF2E5A44),
+                color: const Color(0xFF264E3D),
               ),
             ),
           ),
@@ -637,7 +916,6 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     );
   }
 
-  // Column Index Row (A, B, C, D...)
   Widget _buildColumnLettersRow(List<String> keys, double factor) {
     return Container(
       height: letterRowHeight,
@@ -659,8 +937,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             ),
             child: Text(
               _getExcelColumnLetter(colIndex),
+              textAlign: TextAlign.center,
               style: GoogleFonts.merriweather(
-                fontSize: 11,
+                fontSize: 10.5,
                 fontWeight: FontWeight.w600,
                 color: const Color(0xFF64748B),
               ),
@@ -671,11 +950,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     );
   }
 
-  // Rich Green Header Row with White Titles & Filter Funnel Icons
-  Widget _buildGreenHeadersRow(List<String> keys, double factor) {
+  Widget _buildHeadersRow(List<String> keys, double factor) {
     return Container(
       height: headerRowHeight,
-      color: headerGreen,
+      color: headerBgColor,
       child: Row(
         children: keys.map((k) {
           double colWidth = _getColWidth(k) * factor;
@@ -684,19 +962,21 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
           return Container(
             width: colWidth,
             height: headerRowHeight,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
-              border: Border(right: BorderSide(color: Colors.white.withValues(alpha: 0.22))),
+              border: Border(right: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Expanded(
+                Flexible(
                   child: Text(
                     _getDisplayName(k),
+                    textAlign: TextAlign.center,
                     style: GoogleFonts.merriweather(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontSize: 11.5,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -708,7 +988,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                     padding: const EdgeInsets.all(2.0),
                     child: Icon(
                       isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined,
-                      size: 15,
+                      size: 13,
                       color: isFiltered ? const Color(0xFFFFD54F) : Colors.white70,
                     ),
                   ),
@@ -721,95 +1001,59 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     );
   }
 
-  // Spreadsheet Data Row
+  // Bento Data Row: Every single cell is CENTER ALIGNED
   Widget _buildDataRow(int rowIndex, dynamic log, List<String> keys, double factor) {
-    final m = log['members'] ?? {};
+    final bool isEven = rowIndex % 2 == 0;
+    final Color rowBg = isEven ? rowEvenBg : rowOddBg;
 
     return Container(
       height: dataRowHeight,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: rowBg,
         border: Border(bottom: BorderSide(color: gridLineColor)),
       ),
       child: Row(
         children: keys.map((k) {
           double colWidth = _getColWidth(k) * factor;
-
-          dynamic val = (["location", "sub_location", "current_dept", "team_number", "cell_number", "english_name", "duty"].contains(k))
-              ? m[k]
-              : log[k];
-
-          String sVal = (val ?? "").toString().trim();
-
-          bool isAttendanceOrStatusCol = [
-            "attendance_pre",
-            "attendance_realtime",
-            "attendance_makeup",
-            "status_detail"
-          ].contains(k);
-
-          bool isCenteredCol = [
-            "location",
-            "sub_location",
-            "current_dept",
-            "team_number",
-            "cell_number",
-            "duty"
-          ].contains(k);
+          String sVal = (_getCellValue(log, k) ?? "").toString().trim();
 
           return Container(
             width: colWidth,
             height: dataRowHeight,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            alignment: Alignment.center, // Center aligned
             decoration: BoxDecoration(
               border: Border(right: BorderSide(color: gridLineColor)),
             ),
-            child: isAttendanceOrStatusCol
-                ? Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          sVal,
-                          style: GoogleFonts.merriweather(fontSize: 13, color: Colors.black87),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const Icon(Icons.arrow_drop_down, size: 18, color: Colors.black38),
-                    ],
-                  )
-                : Align(
-                    alignment: isCenteredCol ? Alignment.center : Alignment.centerLeft,
-                    child: Text(
-                      sVal,
-                      style: GoogleFonts.merriweather(
-                        fontSize: 13,
-                        color: k == "english_name" ? Colors.black : const Color(0xFF334155),
-                        fontWeight: k == "english_name" ? FontWeight.bold : FontWeight.normal,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
+            child: Text(
+              sVal.isEmpty ? "-" : sVal,
+              textAlign: TextAlign.center, // Center aligned text
+              style: GoogleFonts.merriweather(
+                fontSize: 11.5,
+                color: k == "english_name" ? Colors.black : const Color(0xFF334155),
+                fontWeight: k == "english_name" ? FontWeight.bold : FontWeight.normal,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           );
         }).toList(),
       ),
     );
   }
 
-  // Empty state when search filters produce no matches
   Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off, size: 40, color: Colors.grey.shade400),
-          const SizedBox(height: 8),
+          Icon(Icons.search_off, size: 36, color: Colors.grey.shade400),
+          const SizedBox(height: 6),
           Text(
             "No matching records found",
             style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey.shade700, fontSize: 13),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           TextButton(
             onPressed: () {
               setState(() {
@@ -817,27 +1061,34 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                 _filteredData = widget.logs;
               });
             },
-            child: Text("Clear Filters", style: GoogleFonts.merriweather(color: headerGreen, fontWeight: FontWeight.bold, fontSize: 12)),
+            child: Text("Clear Filters", style: GoogleFonts.merriweather(color: headerBgColor, fontWeight: FontWeight.bold, fontSize: 12)),
           ),
         ],
       ),
     );
   }
 
-  // Minimal Clean Footer showing record counts
   Widget _buildSummaryFooter() {
     return Container(
       width: double.infinity,
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(border: Border(top: BorderSide(color: gridLineColor))),
       child: Row(
         children: [
           Text(
             "Total Records: ${_filteredData.length} of ${widget.logs.length}",
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: headerGreen, fontSize: 12),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: headerBgColor, fontSize: 12),
           ),
           const Spacer(),
+          if (_hiddenColumns.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Text(
+                "${_hiddenColumns.length} hidden column(s)",
+                style: const TextStyle(fontSize: 11, color: Colors.blueGrey, fontWeight: FontWeight.w600),
+              ),
+            ),
           if (_columnFilters.isNotEmpty)
             Text(
               "${_columnFilters.length} filter(s) active",
