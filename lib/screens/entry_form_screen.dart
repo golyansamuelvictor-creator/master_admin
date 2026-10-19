@@ -22,6 +22,7 @@ class EntryFormScreen extends StatefulWidget {
   final String sheetName, cellName, location, subLocation, dept, team;
   final DateTime? selectedDate; // Date selected from ReportsScreen (max 5 days ago)
   final String? initialMode;
+  final String? userRole; // Optional: user role key from caller
 
   const EntryFormScreen({
     super.key,
@@ -33,6 +34,7 @@ class EntryFormScreen extends StatefulWidget {
     required this.team,
     this.selectedDate,
     this.initialMode,
+    this.userRole,
   });
 
   @override
@@ -53,14 +55,59 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   String _saveStatus = "Save";
   final List<String> _undoStack = [];
   final List<String> _redoStack = [];
-  bool get _isChurchLocation => widget.location.trim().toLowerCase() == 'church';
+
+  // --- ROLE METADATA & DUAL MODE ---
+  Map<String, dynamic>? _roleMetadata;
+  bool _iaChurchView = false;
 
   @override
   void initState() {
     super.initState();
-    // Initializes with the selected previous date if provided, otherwise today
     selectedDate = widget.selectedDate ?? DateTime.now();
-    _loadInitialData();
+    _iaChurchView = widget.initialMode?.toLowerCase() == 'church';
+    _initRoleAndData();
+  }
+
+  Future<void> _initRoleAndData() async {
+    if (widget.userRole != null && widget.userRole!.isNotEmpty) {
+      try {
+        final res = await supabase
+            .from('app_roles')
+            .select('role_key, approval_scope, display_name_ko, "Grouping", official_dept_id')
+            .eq('role_key', widget.userRole!)
+            .maybeSingle();
+        _roleMetadata = res;
+      } catch (e) {
+        debugPrint("Error fetching role metadata: $e");
+      }
+    }
+    await _loadInitialData();
+  }
+
+  bool get _isInternalAffairs {
+    final grouping = _roleMetadata?['Grouping'] ?? '';
+    final role = widget.userRole ?? '';
+    return role.contains('internal_affairs') ||
+        role.startsWith('ia_') ||
+        widget.dept == '내무부' ||
+        widget.dept.toLowerCase() == 'internal affairs' ||
+        grouping.toString().startsWith('24-Dept 3');
+  }
+
+  bool get _isChurchWorkerTrack {
+    final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
+    final scope = _roleMetadata?['approval_scope'] ?? '';
+
+    if (scope == 'church' || scope == 'church_department') return true;
+    if (grouping.startsWith('24-Dept') || grouping == 'Church Main') return true;
+    if (widget.location.trim().toLowerCase() == 'church' ||
+        widget.location.trim().toLowerCase() == 'church workers' ||
+        widget.location.trim().toLowerCase() == 'all') {
+      return true;
+    }
+    // Group workers detection by department name
+    const groupDepts = ['장년회', '부녀회', '청년회', '새신자', 'Mou', 'MOU'];
+    return groupDepts.contains(widget.dept.trim());
   }
 
   // --- REAL-TIME PENDING LOGIC ---
@@ -115,7 +162,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     return 'member_logs';
   }
 
-  // Loads data for the selected date (including existing past reports from Supabase)
+  // Loads data for the selected date
   Future<void> _loadInitialData() async {
     if (!mounted) return;
     setState(() => isLoading = true);
@@ -123,35 +170,145 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       bool isBB = widget.sheetName == "BB File";
       var query = supabase.from(isBB ? 'bb_students' : 'members').select();
 
-      if (_isChurchLocation) {
+      final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
+      final scope = _roleMetadata?['approval_scope'] ?? '';
+
+      // ==============================================================
+      // 1. BB FILE SPECIAL BRANCH
+      // ==============================================================
+      if (isBB) {
+        if (widget.location.isNotEmpty && widget.location != 'N/A') query = query.eq('location', widget.location);
+        if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') query = query.eq('sub_location', widget.subLocation);
+      }
+      // ==============================================================
+      // 2. CHURCH WORKERS & GROUP WORKERS TRACK
+      // ==============================================================
+      else if (_isChurchWorkerTrack) {
+        void excludeChurchWorkers() {
+          query = query
+              .neq('location', 'Church Workers')
+              .neq('location', 'Church Main');
+        }
+
+        // A. Church Admin / Church Sec / IA in Church Mode
+        if (scope == 'church' || (_isInternalAffairs && _iaChurchView)) {
+          // No location or department filter: access all members
+        }
+        // B. Men's Group (장년회)
+        else if (grouping == '24-Dept MG' || widget.dept == '장년회') {
+          query = query
+              .eq('department', '장년회')
+              .neq('location', 'Mou')
+              .neq('location', 'New Saints');
+          excludeChurchWorkers();
+        }
+        // C. Women's Group (부녀회)
+        else if (grouping == '24-Dept WG' || widget.dept == '부녀회') {
+          query = query
+              .eq('department', '부녀회')
+              .neq('location', 'Mou')
+              .neq('location', 'New Saints');
+          excludeChurchWorkers();
+        }
+        // D. Young Adults Group (청년회)
+        else if (grouping == '24-Dept YAG' || widget.dept == '청년회') {
+          query = query
+              .eq('department', '청년회')
+              .neq('location', 'Mou')
+              .neq('location', 'New Saints');
+          excludeChurchWorkers();
+        }
+        // E. New Saints (새신자)
+        else if (grouping == '24-Dept New Saints' || widget.dept == '새신자') {
+          query = query
+              .eq('department', '새신자')
+              .neq('location', 'Mou');
+          excludeChurchWorkers();
+        }
+        // F. MOU Department
+        else if (grouping == '24-Dept MOU' || widget.dept.toLowerCase() == 'mou') {
+          query = query
+              .eq('department', 'Mou')
+              .neq('location', 'Mou')
+              .neq('location', 'New Saints');
+          excludeChurchWorkers();
+        }
+        // G. Internal Affairs (Department Mode)
+        else if (_isInternalAffairs && !_iaChurchView) {
+          final officialDeptId = _roleMetadata?['official_dept_id'];
+          if (officialDeptId != null) {
+            query = query.eq('official_dept_id', officialDeptId);
+          } else {
+            query = query.or('department.eq.내무부,department.eq.Internal Affairs');
+          }
+        }
+        // H. Other 24 Departments (Praise, ICT, Culture, etc.)
+        else {
+          final officialDeptId = _roleMetadata?['official_dept_id'];
+          if (officialDeptId != null) {
+            query = query.eq('official_dept_id', officialDeptId);
+          } else if (widget.dept.isNotEmpty && widget.dept != 'N/A') {
+            query = query.eq('department', widget.dept);
+          }
+        }
+
+        // Filter workers if sheet is for Workers Education / Daily Participation
+        if (widget.sheetName.contains('Workers')) {
+          query = query.neq('duty', '구역원').not('duty', 'is', null).neq('duty', '');
+        }
+      }
+      // ==============================================================
+      // 3. LOCATION WORKER HIERARCHY (5-Tier Cascade)
+      // ==============================================================
+      else {
+        // Tier 1: Location
+        if (widget.location.isNotEmpty && widget.location != 'N/A') {
+          query = query.eq('location', widget.location);
+        }
+        // Tier 2: Sub-Location
+        if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') {
+          query = query.eq('sub_location', widget.subLocation);
+        }
+        // Tier 3: Department (within location)
         if (widget.dept.isNotEmpty && widget.dept != 'N/A') {
           query = query.eq('department', widget.dept);
         }
-      } else {
-        if (widget.location.isNotEmpty && widget.location != 'N/A') query = query.eq('location', widget.location);
-        if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') query = query.eq('sub_location', widget.subLocation);
-        if (widget.dept.isNotEmpty && widget.dept != 'N/A') query = query.eq('department', widget.dept);
-        if (widget.team.isNotEmpty && widget.team != 'N/A') query = query.eq('team', widget.team);
-
-        if (!isBB) {
-          if (widget.sheetName.contains('Workers')) {
-            query = query.neq('duty', '구역원'); 
-          } else if (widget.cellName.isNotEmpty && widget.cellName != 'N/A') {
-            query = query.eq('cell_group', widget.cellName); 
-          }
+        // Tier 4: Team
+        if (widget.team.isNotEmpty && widget.team != 'N/A') {
+          query = query.eq('team', widget.team);
+        }
+        // Tier 5: Cell Group
+        if (widget.sheetName.contains('Workers')) {
+          query = query.neq('duty', '구역원').not('duty', 'is', null).neq('duty', '');
+        } else if (widget.cellName.isNotEmpty && widget.cellName != 'N/A') {
+          query = query.eq('cell_group', widget.cellName);
         }
       }
 
       final res = await query.order(isBB ? 'student_name' : 'english_name');
-      
-      // Queries logs for the specific selectedDate (pre-populating existing data for editing)
-      final logs = await supabase
-          .from(_getTargetTable())
-          .select()
-          .eq('report_date', DateFormat('yyyy-MM-dd').format(selectedDate));
+      final memberIds = res.map((m) => m['id'].toString()).toList();
+
+      // Efficiently fetch logs for this date and for loaded members
+      List<dynamic> logs = [];
+      if (memberIds.isNotEmpty) {
+        var logsQuery = supabase
+            .from(_getTargetTable())
+            .select()
+            .eq('report_date', DateFormat('yyyy-MM-dd').format(selectedDate));
+
+        // Use filter if member set is manageable, otherwise rely on date filter
+        if (memberIds.length <= 500) {
+          logsQuery = logsQuery.filter('member_id', 'in', memberIds);
+        }
+        logs = await logsQuery;
+      }
 
       String dbLookupName = widget.sheetName.trim() == "Evangelism Part" ? "Evangelism" : widget.sheetName.trim();
-      final optionsRes = await supabase.from('entry_field_options').select().eq('sheet_name', dbLookupName).eq('is_active', true);
+      final optionsRes = await supabase
+          .from('entry_field_options')
+          .select()
+          .eq('sheet_name', dbLookupName)
+          .eq('is_active', true);
 
       Map<String, List<String>> tempOpts = {};
       for (var opt in optionsRes) {
@@ -163,21 +320,21 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           members = res;
           dynamicOptions = tempOpts;
           reportData = {for (var m in members) m['id'].toString(): {}};
-          // Pre-fills existing report data so the user can edit it
           for (var log in logs) {
             String mid = log['member_id'].toString();
-            if (reportData.containsKey(mid)) reportData[mid] = Map<String, dynamic>.from(log);
+            if (reportData.containsKey(mid)) {
+              reportData[mid] = Map<String, dynamic>.from(log);
+            }
           }
           isLoading = false;
         });
       }
-    } catch (e) { 
+    } catch (e) {
       debugPrint("Entry Initial Load Error: $e");
-      if (mounted) setState(() => isLoading = false); 
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
-  // Saves/upserts edits directly into Supabase under the selected report_date
   // Saves/upserts edits directly into Supabase under the selected report_date
   Future<void> _save() async {
     final currentUser = supabase.auth.currentUser;
@@ -198,14 +355,14 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
     String unitName = widget.cellName.isNotEmpty && widget.cellName != "N/A"
         ? widget.cellName
-        : (widget.team.isNotEmpty && widget.team != "N/A" ? widget.team : widget.dept);
+        : (widget.team.isNotEmpty && widget.team != "N/A"
+            ? widget.team
+            : (widget.dept.isNotEmpty && widget.dept != "N/A" ? widget.dept : widget.location));
 
-    // Fast lookup map to match member_id with full member record
     final Map<String, dynamic> memberLookup = {
       for (var m in members) m['id'].toString(): m
     };
 
-    // Check if current sheet is Service Attendance Status
     final bool isServiceAttendance = widget.sheetName == 'Service Attendance Status';
 
     reportData.forEach((mid, data) {
@@ -219,7 +376,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           'unit_name': unitName,
           'verification_status': 'pending',
 
-          // Hierarchy columns for all tables
+          // Preserves the member's home location details (vital for compiled Church Groups)
           'location': member?['location'] ?? (widget.location != 'N/A' ? widget.location : null),
           'sub_location': member?['sub_location'] ?? (widget.subLocation != 'N/A' ? widget.subLocation : null),
           'department': member?['department'] ?? (widget.dept != 'N/A' ? widget.dept : null),
@@ -227,13 +384,11 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           'cell_group': member?['cell_group'] ?? (widget.cellName != 'N/A' ? widget.cellName : null),
         };
 
-        // ONLY attach reg_status and geo_category for Service Attendance Status
         if (isServiceAttendance) {
           row['reg_status'] = member?['reg_status'];
           row['geo_category'] = member?['geo_category'];
         }
 
-        // Adds module-specific inputs
         row.addAll(data);
         logRows.add(row);
       }
@@ -283,7 +438,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       }
     }
   }
-  
+
   // Quick date change restricted to max 5 days back
   Future<void> _pickAnotherDate() async {
     final now = DateTime.now();
@@ -356,7 +511,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new, size: 18), 
+                        icon: const Icon(Icons.arrow_back_ios_new, size: 18),
                         onPressed: () => Navigator.pop(context, true),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -364,14 +519,14 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       const SizedBox(width: 8),
                       const VerticalDivider(indent: 14, endIndent: 14, width: 14),
                       IconButton(
-                        icon: const Icon(Icons.undo, size: 20), 
+                        icon: const Icon(Icons.undo, size: 20),
                         onPressed: _undo,
                         tooltip: "Undo (Ctrl+Z)",
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         constraints: const BoxConstraints(),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.redo, size: 20), 
+                        icon: const Icon(Icons.redo, size: 20),
                         onPressed: _redo,
                         tooltip: "Redo",
                         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -379,16 +534,16 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       ),
                       const SizedBox(width: 8),
                       TextButton(
-                        onPressed: _save, 
+                        onPressed: _save,
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: Text(
-                          _saveStatus, 
+                          _saveStatus,
                           style: GoogleFonts.merriweather(
-                            fontWeight: FontWeight.bold, 
+                            fontWeight: FontWeight.bold,
                             color: _saveStatus == "Saved" ? Colors.green : pPurple,
                             fontSize: 13,
                           ),
@@ -398,11 +553,11 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                   ),
                 )
               : IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new, size: 18), 
+                  icon: const Icon(Icons.arrow_back_ios_new, size: 18),
                   onPressed: () => Navigator.pop(context, true),
                 ),
           title: Text(
-            displayTitle, 
+            displayTitle,
             style: GoogleFonts.merriweather(
               fontSize: isDesktop ? 20 : 16,
               fontWeight: FontWeight.w900,
@@ -413,7 +568,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           ),
           centerTitle: true,
           actions: [
-            // Date Switcher in AppBar on Desktop
             if (isDesktop)
               InkWell(
                 onTap: _pickAnotherDate,
@@ -455,7 +609,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.print_outlined, size: 20), 
+                    icon: const Icon(Icons.print_outlined, size: 20),
                     onPressed: () {},
                     tooltip: "Print",
                     padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -463,7 +617,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                   ),
                   const SizedBox(width: 4),
                   IconButton(
-                    icon: const Icon(Icons.delete_sweep_outlined, size: 22, color: Colors.red), 
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 22, color: Colors.red),
                     onPressed: _clearGrid,
                     tooltip: "Clear table",
                     padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -474,165 +628,210 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
             ),
           ],
         ),
-        body: isLoading 
-          ? Center(child: CircularProgressIndicator(color: pPurple)) 
-          : Column(
-              children: [
-                // Quick Action strip (Undo, Redo, Save, Date Selector)
-                if (!isDesktop)
-                  Container(
-                    margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.withValues(alpha: 0.18)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.02),
-                          blurRadius: 4,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.undo, size: 19), 
-                              onPressed: _undo,
-                              tooltip: "Undo",
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(),
-                            ),
-                            const SizedBox(width: 6),
-                            IconButton(
-                              icon: const Icon(Icons.redo, size: 19), 
-                              onPressed: _redo,
-                              tooltip: "Redo",
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              height: 18,
-                              width: 1,
-                              color: Colors.grey.shade300,
-                            ),
-                            const SizedBox(width: 8),
-                            InkWell(
-                              onTap: _save,
-                              borderRadius: BorderRadius.circular(6),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: _saveStatus == "Saved" 
-                                      ? Colors.green.withValues(alpha: 0.1) 
-                                      : pPurple.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: _saveStatus == "Saved" 
-                                        ? Colors.green 
-                                        : pPurple.withValues(alpha: 0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      _saveStatus == "Saved" ? Icons.check_circle : Icons.save_rounded,
-                                      size: 14,
-                                      color: _saveStatus == "Saved" ? Colors.green : pPurple,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      _saveStatus, 
-                                      style: GoogleFonts.merriweather(
-                                        fontWeight: FontWeight.bold, 
-                                        color: _saveStatus == "Saved" ? Colors.green : pPurple,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        // Tap to switch date on mobile (max 5 days back)
-                        InkWell(
-                          onTap: _pickAnotherDate,
-                          borderRadius: BorderRadius.circular(6),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  isPastReport ? Icons.history_rounded : Icons.calendar_today_rounded,
-                                  size: 13,
-                                  color: isPastReport ? Colors.orange[900] : pPurple,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  DateFormat('MMM d, yyyy').format(selectedDate),
-                                  style: GoogleFonts.merriweather(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: isPastReport ? Colors.orange[900] : pPurple,
-                                  ),
-                                ),
-                              ],
+        body: isLoading
+            ? Center(child: CircularProgressIndicator(color: pPurple))
+            : Column(
+                children: [
+                  // Internal Affairs View Switcher (Church vs Department)
+                  if (_isInternalAffairs)
+                    Container(
+                      margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.purple.shade200),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _iaChurchView ? "Mode: Church Reports (All Units)" : "Mode: Department Reports (IA Only)",
+                            style: GoogleFonts.merriweather(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: pPurple,
                             ),
                           ),
-                        ),
+                          Row(
+                            children: [
+                              Text(
+                                _iaChurchView ? "Church" : "Dept",
+                                style: GoogleFonts.merriweather(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Switch(
+                                value: _iaChurchView,
+                                activeThumbColor: pPurple,
+                                onChanged: (val) {
+                                  setState(() => _iaChurchView = val);
+                                  _loadInitialData();
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Mobile Quick Action Strip
+                  if (!isDesktop)
+                    Container(
+                      margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.withValues(alpha: 0.18)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.undo, size: 19),
+                                onPressed: _undo,
+                                tooltip: "Undo",
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                              ),
+                              const SizedBox(width: 6),
+                              IconButton(
+                                icon: const Icon(Icons.redo, size: 19),
+                                onPressed: _redo,
+                                tooltip: "Redo",
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                height: 18,
+                                width: 1,
+                                color: Colors.grey.shade300,
+                              ),
+                              const SizedBox(width: 8),
+                              InkWell(
+                                onTap: _save,
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: _saveStatus == "Saved"
+                                        ? Colors.green.withValues(alpha: 0.1)
+                                        : pPurple.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: _saveStatus == "Saved"
+                                          ? Colors.green
+                                          : pPurple.withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _saveStatus == "Saved" ? Icons.check_circle : Icons.save_rounded,
+                                        size: 14,
+                                        color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _saveStatus,
+                                        style: GoogleFonts.merriweather(
+                                          fontWeight: FontWeight.bold,
+                                          color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          InkWell(
+                            onTap: _pickAnotherDate,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    isPastReport ? Icons.history_rounded : Icons.calendar_today_rounded,
+                                    size: 13,
+                                    color: isPastReport ? Colors.orange[900] : pPurple,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    DateFormat('MMM d, yyyy').format(selectedDate),
+                                    style: GoogleFonts.merriweather(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isPastReport ? Colors.orange[900] : pPurple,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 8),
+
+                  // Responsive Stats Row
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: sideMargin),
+                    child: Row(
+                      children: [
+                        _statCardSmall("Total members", "${members.length}", pPurple, isDesktop),
+                        const SizedBox(width: 8),
+                        _uploadCard(isDesktop),
+                        const SizedBox(width: 8),
+                        _statCardSmall("Pending entries", "$_pendingCount", Colors.orange[800]!, isDesktop),
                       ],
                     ),
                   ),
 
-                const SizedBox(height: 8),
+                  const SizedBox(height: 10),
 
-                // Responsive Stats Row
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: sideMargin),
-                  child: Row(
-                    children: [
-                      _statCardSmall("Total members", "${members.length}", pPurple, isDesktop),
-                      const SizedBox(width: 8),
-                      _uploadCard(isDesktop),
-                      const SizedBox(width: 8),
-                      _statCardSmall("Pending entries", "$_pendingCount", Colors.orange[800]!, isDesktop),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-
-                // Module Grid Container
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    margin: EdgeInsets.fromLTRB(sideMargin, 0, sideMargin, 16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.02),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: _buildSelectedModule(),
+                  // Module Grid Container
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      margin: EdgeInsets.fromLTRB(sideMargin, 0, sideMargin, 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: _buildSelectedModule(),
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
       ),
     );
   }
@@ -749,8 +948,8 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     );
   }
 
-  Future<void> _handleUpload() async { 
-    FilePickerResult? r = await FilePicker.platform.pickFiles(allowMultiple: true, type: FileType.image); 
-    if (r != null) setState(() => groupEvidenceCount = r.files.length); 
+  Future<void> _handleUpload() async {
+    FilePickerResult? r = await FilePicker.platform.pickFiles(allowMultiple: true, type: FileType.image);
+    if (r != null) setState(() => groupEvidenceCount = r.files.length);
   }
 }

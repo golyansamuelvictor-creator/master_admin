@@ -11,7 +11,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/add_account_screen.dart';
 import 'services/app_lock_manager.dart';
 import 'services/profile_refresh.dart';
 
@@ -21,10 +20,6 @@ import 'services/profile_refresh.dart';
 const Color kPurple = Color(0xFF4A148C);
 const Color kGold = Color(0xFFB78103);
 const Color kDarkBg = Color(0xFF0F071A);
-
-/// Light-theme scaffold colour. Previously the light theme also used the dark
-/// background, which made dark text unreadable. If your screens are all
-/// designed for a dark background, set this back to [kDarkBg].
 const Color kLightBg = Color(0xFFF6F2FA);
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
@@ -39,7 +34,6 @@ void main() async {
 
   await AppLockManager.instance.init();
 
-  // Restore the theme the user picked last time.
   try {
     final prefs = await SharedPreferences.getInstance();
     themeNotifier.value = prefs.getString('theme_mode') == 'dark' ? ThemeMode.dark : ThemeMode.light;
@@ -81,13 +75,10 @@ class MasterAdminApp extends StatelessWidget {
             FlutterQuillLocalizations.delegate,
           ],
           supportedLocales: const [Locale('en', 'US')],
-          // Routes now require a session so they can't be opened while signed out.
           routes: {
             '/home': (context) => const _SessionGate(child: HomeScreen()),
             '/auth': (context) => const AuthScreen(),
-            '/add-account': (context) => const _SessionGate(child: AddAccountScreen()),
           },
-          // The shell sits above the Navigator so the navigation stack is preserved.
           builder: (context, child) => _AppShell(child: child ?? const SizedBox.shrink()),
           home: const AuthWrapper(),
         );
@@ -113,8 +104,6 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    // Registered before the Navigator (we are its ancestor), so we get the
-    // Android back-button event first.
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -124,19 +113,9 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  /// While locked, swallow the back button so routes underneath can't be popped.
   @override
   Future<bool> didPopRoute() async => AppLockManager.instance.isLocked;
 
-  // Optional: lock as soon as the app goes to the background.
-  // Enable this if AppLockManager exposes a lock method (adjust the name).
-  //
-  // @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) {
-  //   if (state == AppLifecycleState.paused) AppLockManager.instance.lock();
-  // }
-
-  /// Throttled so pointer-move events don't reset the timer hundreds of times a second.
   void _ping() {
     final now = DateTime.now();
     if (now.difference(_lastPing) < const Duration(seconds: 1)) return;
@@ -159,8 +138,6 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
               widget.child,
               if (AppLockManager.instance.isLocked)
                 Positioned.fill(
-                  // The shell is above the Navigator, so it has no Overlay of its
-                  // own. The lock screen's TextField needs one (selection, paste).
                   child: Overlay(
                     initialEntries: [
                       OverlayEntry(builder: (_) => const CinematicLockOverlay()),
@@ -175,7 +152,6 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
   }
 }
 
-/// Redirects to [AuthScreen] if someone reaches a named route without a session.
 class _SessionGate extends StatelessWidget {
   final Widget child;
   const _SessionGate({required this.child});
@@ -191,7 +167,6 @@ class _SessionGate extends StatelessWidget {
 // SHARED BRAND HEADER (animated logo + title)
 // ==========================================
 class BrandHeader extends StatefulWidget {
-  /// Compact is used on the lock screen, the default size on the splash.
   final bool compact;
   const BrandHeader({super.key, this.compact = false});
 
@@ -297,7 +272,7 @@ class _BrandHeaderState extends State<BrandHeader> with TickerProviderStateMixin
 }
 
 // ==========================================
-// CINEMATIC SPLASH GATEWAY (unchanged look)
+// CINEMATIC SPLASH GATEWAY
 // ==========================================
 class CinematicSplashGateway extends StatelessWidget {
   final String statusText;
@@ -343,9 +318,6 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
   static const Duration _lockout = Duration(seconds: 30);
   static const int _maxPinLength = 8;
 
-  // Static so the counter survives the overlay being rebuilt when the app re-locks.
-  // NOTE: this resets if the app process is killed. For real enforcement, also
-  // track attempts inside AppLockManager (persisted).
   static int _failedAttempts = 0;
   static DateTime? _lockedUntil;
 
@@ -385,7 +357,7 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
     if (ok) {
       _failedAttempts = 0;
       _lockedUntil = null;
-      return; // The overlay is removed by AppLockManager notifying listeners.
+      return;
     }
 
     _failedAttempts++;
@@ -591,7 +563,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     try {
       debugPrint("🔍 AuthWrapper: Fetching profile for UID: ${session.user.id}");
 
-      // Safe select without hardcoded columns to avoid schema mismatch
       final res = await _client
           .from('profiles')
           .select()
@@ -648,10 +619,18 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
-  // Safe checks
+  // SCJ ID is the master key: non-null, non-empty, and cannot be a dummy placeholder
+  bool get _hasScjId {
+    final raw = _profile?['scj_id'];
+    if (raw == null) return false;
+    final scjId = raw.toString().trim().toLowerCase();
+    return scjId.isNotEmpty && scjId != 'null' && scjId != 'none' && scjId != 'undefined';
+  }
+
   bool get _isApproved => _profile?['is_approved'] == true || _profile?['approval_status'] == 'approved';
 
-  bool get _isReadyForHome => _profile != null && _isApproved;
+  // Requires a valid SCJ ID AND approved status to open HomeScreen
+  bool get _isReadyForHome => _profile != null && _hasScjId && _isApproved;
 
   @override
   Widget build(BuildContext context) {
@@ -668,13 +647,13 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         );
 
       case _LoadState.ready:
-        // 1. Profile exists & approved -> HomeScreen
+        // 1. Has valid SCJ ID key AND is approved -> HomeScreen
         if (_isReadyForHome) {
           return HomeScreen(key: ValueKey(_session?.user.id ?? 'active_user'));
         }
 
-        // 2. Profile exists but awaiting approval -> Pending Screen
-        if (_profile != null && !_isApproved) {
+        // 2. Has valid SCJ ID key, but awaiting admin approval or rejected -> Pending Screen
+        if (_profile != null && _hasScjId && !_isApproved) {
           return _AccountPendingScreen(
             approvalStatus: _profile?['approval_status']?.toString() ?? 'pending',
             rejectionReason: _profile?['rejection_reason']?.toString(),
@@ -683,8 +662,9 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           );
         }
 
-        // 3. User authenticated but no profile record yet -> AddAccountScreen
-        return const AddAccountScreen();
+        // 3. Authenticated (e.g. Google), but NO SCJ ID key yet:
+        // MUST show AuthScreen so they complete SCJ ID verification before anything else!
+        return const AuthScreen();
     }
   }
 }

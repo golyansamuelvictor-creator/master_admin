@@ -1,4 +1,4 @@
-// ignore_for_file: curly_braces_in_flow_control_structures
+// ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -41,6 +41,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   List<String> _dynamicDuties = [];
   List<String> _dynamicAdminActions = [];
   Map<String, String> _interventionLabels = {}; 
+  bool _canEnterDataFromDB = false;
+  List<Map<String, dynamic>> _availableRoles = [];
 
   @override
   void initState() { 
@@ -65,6 +67,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         });
         await _fetchRolePermissions(_simulatedRole!); 
         await _fetchDutyConfig(); 
+        await _fetchAvailableRoles();
         _checkForFlaggedReports();
 
         if (!_hasRedirected) {
@@ -82,7 +85,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
     finally { if (mounted) setState(() => _isLoading = false); }
   }
 
-  // Dynamically fetches labels directly from Supabase 'app_duty_config'
+  Future<void> _fetchAvailableRoles() async {
+    try {
+      final res = await _supabase
+          .from('app_roles')
+          .select('role_key, display_name, "Grouping"')
+          .order('display_name');
+      if (mounted && res.isNotEmpty) {
+        setState(() {
+          _availableRoles = List<Map<String, dynamic>>.from(res);
+        });
+      }
+    } catch (e) {
+      debugPrint("Available roles fetch error: $e");
+    }
+  }
+
   Future<void> _fetchDutyConfig() async {
     try {
       final res = await _supabase.from('app_duty_config').select('duty_name, intervention_label');
@@ -100,31 +118,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  // Dynamic label resolver with case-insensitive matching & smart fallback
   String _getInterventionLabel(String duty) {
     String cleanDuty = duty.trim();
 
-    // 1. Direct match
     if (_interventionLabels.containsKey(cleanDuty)) {
       return _interventionLabels[cleanDuty]!;
     }
-
-    // 2. Evangelism / Evangelism Part cross-match
     if (cleanDuty == "Evangelism Part" && _interventionLabels.containsKey("Evangelism")) {
       return _interventionLabels["Evangelism"]!;
     }
     if (cleanDuty == "Evangelism" && _interventionLabels.containsKey("Evangelism Part")) {
       return _interventionLabels["Evangelism Part"]!;
     }
-
-    // 3. Case-insensitive search across dynamically loaded database keys
     for (var entry in _interventionLabels.entries) {
       if (entry.key.toLowerCase() == cleanDuty.toLowerCase()) {
         return entry.value;
       }
     }
-
-    // 4. Dynamic fallback without hardcoding
     return "$cleanDuty absentees";
   }
 
@@ -134,10 +144,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
       
       List<String> primaryDuties = [];
       List<String> primaryActions = [];
+      bool canEnter = false;
       
       if (res != null) {
         primaryDuties = List<String>.from(res['allowed_duties'] ?? []);
         primaryActions = List<String>.from(res['allowed_admin_actions'] ?? []);
+        canEnter = res['can_enter_data'] ?? false;
+
+        // Auto-populate userDept for 24-dept or group workers if missing in profile
+        if (userDept.isEmpty && res['display_name_ko'] != null) {
+          userDept = res['display_name_ko'];
+        }
       }
 
       if (_secondaryRole != null && _secondaryRole!.isNotEmpty) {
@@ -147,24 +164,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
           final secActions = List<String>.from(secRes['allowed_admin_actions'] ?? []);
           primaryDuties.addAll(secDuties);
           primaryActions.addAll(secActions);
+          if (secRes['can_enter_data'] == true) canEnter = true;
         }
-      }
-      if (roleKey == 'internal_affairs_dept_sec') {
-        primaryActions.addAll([
-          'Member Bio',
-          'Notification Center',
-          'Strategic Analysis',
-          'Request member transfer',
-          'Milestone bulk importer',
-          'Database master sync',
-          'View Member Profiles'
-        ]);
       }
 
       if (mounted) {
         setState(() {
           _dynamicDuties = primaryDuties.toSet().toList();
           _dynamicAdminActions = primaryActions.toSet().toList();
+          _canEnterDataFromDB = canEnter;
         });
       }
     } catch (e) { debugPrint("Permission Error: $e"); }
@@ -178,28 +186,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } catch (e) { debugPrint("Flag Check Error: $e"); }
   }
 
+  // Uses the database column `can_enter_data` directly
   bool _canUserEnterData(String duty) {
-    String r = _simulatedRole?.toLowerCase() ?? ""; 
-    String sec = _secondaryRole?.toLowerCase() ?? "";
+    if (_simulatedRole == 'admin') return true;
 
-    if (r == 'admin') return true;
+    // Must be allowed to view this duty
+    String cleanDuty = duty == 'Evangelism' ? 'Evangelism Part' : duty;
+    bool hasDuty = _dynamicDuties.contains(duty) || _dynamicDuties.contains(cleanDuty);
 
-    bool hasTeamSec = r.contains('team_sec') || sec.contains('team_sec');
+    if (!hasDuty) return false;
 
-    if (r.contains('cell_leader')) {
-      List<String> cellDuties = ['Service Attendance Status', 'Cell Group Service', 'Evangelism', 'Morning Light', 'All Saints Education', 'Visitations and Counselling'];
-      return cellDuties.contains(duty);
-    }
-
-    if (r.contains('team_leader') || r.contains('assistant_team') || hasTeamSec) {
-      return (duty == 'Workers Education' || duty == 'Workers Daily Participation');
-    }
-
-    if (r.contains('sec') || r.contains('secretary') || r.contains('manager')) {
-      if (!hasTeamSec) return false;
-    }
-
-    return false;
+    // Checks permission flag configured in app_roles
+    return _canEnterDataFromDB;
   }
 
   List<String> _getMainGridButtons() {
@@ -292,33 +290,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   List<String> _getAllowedTargetDuties(String role) {
     String r = role.toLowerCase();
-    if (r == 'admin' || r == 'internal_affairs_dept_leader') {
+    if (r == 'admin' || r.contains('internal_affairs')) {
       return [
         'Service Attendance Status', 'Cell Group Service', 'Offering Status',
         'Evangelism', 'Morning Light', 'All Saints Education',
         'Visitations and Counselling', 'Workers Education', 'Workers Daily Participation'
       ];
     }
-    if (r == 'edu_dept_sec' || r == 'edu_dept_leader') {
-      return ['Workers Education', 'All Saints Education'];
-    }
-    if (r == 'ia_maintenance_mgr') {
-      return ['Service Attendance Status', 'Visitations and Counselling'];
-    }
-    if (r == 'ia_mgr_1' || r == 'ia_mgr_2') {
-      return ['Cell Group Service', 'Workers Daily Participation'];
-    }
-    if (r == 'evang_dept_sec' || r == 'evang_dept_leader') {
-      return ['Evangelism'];
-    }
-    if (r == 'fin_dept_sec' || r == 'fin_dept_leader') {
-      return ['Offering Status'];
-    }
+    if (r.contains('edu_dept')) return ['Workers Education', 'All Saints Education'];
+    if (r.contains('evang_dept')) return ['Evangelism'];
+    if (r.contains('fin_dept')) return ['Offering Status'];
     return [];
   }
 
   bool _canSetTargets(String role) {
-    return _getAllowedTargetDuties(role).isNotEmpty;
+    return _dynamicAdminActions.contains('Set unit targets') || _getAllowedTargetDuties(role).isNotEmpty;
   }
 
   void _showMemberBioDialog() {
@@ -342,7 +328,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
           const SizedBox(height: 5),
           _compactActionBtn(Icons.person_pin_rounded, "View member profiles", Colors.blue, () { 
             Navigator.pop(context); 
-            Navigator.push(context, MaterialPageRoute(builder: (c) => MemberDirectoryScreen(userRole: _simulatedRole!, userLoc: userLoc, userSub: userSub, userDept: userDept, userTeam: userTeam, userCell: userCell))); 
+            Navigator.push(context, MaterialPageRoute(builder: (c) => MemberDirectoryScreen(
+              userRole: _simulatedRole!, 
+              userLoc: userLoc, 
+              userSub: userSub, 
+              userDept: userDept, 
+              userTeam: userTeam, 
+              userCell: userCell
+            ))); 
           }),
           if (isIASec || r == 'admin') ...[
             _compactActionBtn(Icons.sync_lock_rounded, "Database master sync", Colors.red[900]!, () { 
@@ -454,9 +447,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     });
   }
 
-  // --- UPDATED DIALOG: Awaits config if needed & uses dynamic labels ---
   void _showDutyActionDialog(String duty) async {
-    // If labels haven't finished loading yet, await them so it never falls back
     if (_interventionLabels.isEmpty) {
       await _fetchDutyConfig();
     }
@@ -494,7 +485,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
               Navigator.pop(context); 
               _goToCorrectDashboard(duty); 
             }),
-            // Custom dynamic label fetched from Supabase app_duty_config
             _compactActionBtn(Icons.person_search_rounded, interventionLabel, Colors.blue[800]!, () { 
               Navigator.pop(context); 
               Navigator.push(context, MaterialPageRoute(
@@ -539,66 +529,90 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  // Passes userRole and initialMode to EntryFormScreen
   void _nav(String duty, String mode) async { 
     bool? wasSaved; 
     if (_simulatedRole!.contains('cell')) {
-      wasSaved = await Navigator.push(context, MaterialPageRoute(builder: (c) => CellStatusScreen(sheetName: duty, cellName: userCell, location: userLoc, subLocation: userSub, dept: userDept, team: userTeam, initialMode: mode))); 
+      wasSaved = await Navigator.push(context, MaterialPageRoute(
+        builder: (c) => CellStatusScreen(
+          sheetName: duty, 
+          cellName: userCell, 
+          location: userLoc, 
+          subLocation: userSub, 
+          dept: userDept, 
+          team: userTeam, 
+          initialMode: mode
+        )
+      )); 
     } else {
-      wasSaved = await Navigator.push(context, MaterialPageRoute(builder: (c) => EntryFormScreen(sheetName: duty, cellName: userCell, location: userLoc, subLocation: userSub, dept: userDept, team: userTeam))); 
+      wasSaved = await Navigator.push(context, MaterialPageRoute(
+        builder: (c) => EntryFormScreen(
+          sheetName: duty, 
+          cellName: userCell, 
+          location: userLoc, 
+          subLocation: userSub, 
+          dept: userDept, 
+          team: userTeam,
+          userRole: _simulatedRole,
+          initialMode: mode,
+        )
+      )); 
     }
     if (wasSaved == true && mounted) _goToCorrectDashboard(duty); 
   }
 
+  // Handles Group & 24-Department workers correctly
   String _getUnitNameByRole() { 
     String r = _simulatedRole?.toLowerCase() ?? ""; 
     if (r.startsWith('church_') || r.startsWith('korean_worker_')) return "Church Executive";
+    if (r.contains('group') || r.contains('_dept_')) {
+      return userDept.isNotEmpty ? userDept : "Church Department";
+    }
     if (userLoc.trim().toLowerCase() == 'church') return userDept.isNotEmpty ? userDept : "24 Departments";
     if (r.contains('cell')) return userCell; 
     if (r.contains('team')) return userTeam; 
     if (r.contains('dept')) return userDept; 
     if (r.contains('sub_loc')) return userSub; 
-    if (r.contains('loc') || r.contains('group')) return userLoc; 
+    if (r.contains('loc')) return userLoc; 
     return "Church Admin"; 
   }
 
-  Widget _buildAdminSwitcher(double hPad) => Container(
-    margin: EdgeInsets.fromLTRB(hPad, 0, hPad, 15), 
-    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5), 
-    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(15)), 
-    child: Row(children: [
-      const Icon(Icons.admin_panel_settings, size: 18), 
-      const SizedBox(width: 10), 
-      Text("Admin Switcher", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900)), 
-      const Spacer(), 
-      DropdownButton<String>(
-        value: _simulatedRole, 
-        underline: const SizedBox(), 
-        items: {
-          'admin', 'loc_leader', 'loc_gen_sec', 'loc_sec', 'loc_treasurer', 'loc_ia_mgr', 'loc_edu_mgr', 'loc_evangelism_mgr',
-          'sub_loc_leader', 'sub_loc_sec', 
-          'dept_leader', 'dept_gen_sec', 'dept_sec', 
-          'team_leader', 'team_sec', 'cell_leader',
-          'internal_affairs_dept_leader', 'internal_affairs_dept_gen_sec', 'internal_affairs_dept_sec', 'ia_maintenance_mgr', 'ia_mgr_1', 'ia_mgr_2',
-          'edu_dept_leader', 'edu_dept_gen_sec', 'edu_dept_sec',
-          'fin_dept_leader', 'fin_dept_gen_sec', 'fin_dept_sec',
-          'evang_dept_leader', 'evang_dept_gen_sec', 'evang_dept_sec',
-          'admin_dept_leader', 'admin_dept_sec',
-          'church_head_instructor', 'church_secretary', 'korean_worker_1', 'korean_worker_2',
-        }.map((r) => DropdownMenuItem(
-          value: r, 
-          child: Text(_formatRoleToTitleCase(r), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))
-        )).toList(), 
-        onChanged: (v) { 
-          setState(() { 
-            _simulatedRole = v; 
-            _isLoading = true; 
-          }); 
-          _fetchRolePermissions(v!); 
-          setState(() => _isLoading = false); 
-        }
-      )
-    ])
-  );
+  // Complete list of roles from app_roles
+  Widget _buildAdminSwitcher(double hPad) {
+    return Container(
+      margin: EdgeInsets.fromLTRB(hPad, 0, hPad, 15), 
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5), 
+      decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(15)), 
+      child: Row(children: [
+        const Icon(Icons.admin_panel_settings, size: 18), 
+        const SizedBox(width: 10), 
+        Text("Admin Switcher", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)), 
+        const Spacer(), 
+        DropdownButton<String>(
+          value: _simulatedRole, 
+          underline: const SizedBox(), 
+          isDense: true,
+          items: _availableRoles.isNotEmpty
+              ? _availableRoles.map((r) => DropdownMenuItem<String>(
+                  value: r['role_key'], 
+                  child: Text(r['display_name'] ?? _formatRoleToTitleCase(r['role_key']), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))
+                )).toList()
+              : [
+                  DropdownMenuItem(value: _simulatedRole, child: Text(_formatRoleToTitleCase(_simulatedRole), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)))
+                ], 
+          onChanged: (v) { 
+            if (v == null) return;
+            setState(() { 
+              _simulatedRole = v; 
+              _isLoading = true; 
+            }); 
+            _fetchRolePermissions(v); 
+            setState(() => _isLoading = false); 
+          }
+        )
+      ])
+    );
+  }
 
   String _formatRoleToTitleCase(String? role) { 
     if (role == null || role.isEmpty) return ""; 

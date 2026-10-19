@@ -70,49 +70,80 @@ class _CompilationEngineState extends State<CompilationEngine> {
   String? _selectedDepartment;
   String? _selectedTeam;
 
-  // --- ROLE IDENTIFIERS ---
+  // Metadata from app_roles table
+  Map<String, dynamic>? _roleMetadata;
+  // Internal Affairs toggle: true = Church View (All), false = Department View (IA only)
+  bool _iaChurchMode = true;
+
+  // --- DYNAMIC ROLE IDENTIFIERS ---
+  String get _scope => _roleMetadata?['approval_scope'] ?? '';
+  String get _grouping => (_roleMetadata?['Grouping'] ?? '').toString();
+
+  bool get _isInternalAffairs {
+    String r = widget.role.toLowerCase();
+    String d = widget.dept.trim().toLowerCase();
+    return r.contains('internal_affairs') || 
+           r.startsWith('ia_') || 
+           d.contains('내무') ||
+           _grouping.startsWith('24-Dept 3');
+  }
+
   bool get _isGroupLeader {
+    if (_grouping == '24-Dept MG' || 
+        _grouping == '24-Dept WG' || 
+        _grouping == '24-Dept YAG' || 
+        _grouping == '24-Dept New Saints' || 
+        _grouping == '24-Dept MOU') {
+      return true;
+    }
     String r = widget.role.toLowerCase();
     String d = widget.dept.trim().toLowerCase();
     return r.contains('group') || 
-           r.contains('general_dept') ||
            r.contains('new_saints') ||
            d.contains('새신자') ||
-           ((widget.loc.isEmpty || widget.loc.toLowerCase() == 'church') && 
-            (d.contains('장년') || d.contains('부녀') || d.contains('청년') || d.contains('신학')));
+           d.contains('장년') || 
+           d.contains('부녀') || 
+           d.contains('청년') || 
+           d.contains('mou');
   }
 
   bool get _isChurchWideCompiler {
     if (_isGroupLeader) return false;
+    if (_isInternalAffairs) return _iaChurchMode;
+    if (_scope == 'church') return true;
+
     String r = widget.role.toLowerCase();
     String l = widget.loc.trim().toLowerCase();
     return l == 'church' ||
            l.isEmpty ||
            r == 'admin' ||
            r.startsWith('church_') ||
-           r.startsWith('korean_worker_') ||
-           r.contains('_dept_') ||
-           r.contains('internal_affairs');
+           r.startsWith('korean_worker_');
+  }
+
+  bool get _is24DeptWorker {
+    if (_isGroupLeader || _isChurchWideCompiler) return false;
+    return _grouping.startsWith('24-Dept') || _scope == 'church_department';
   }
 
   bool get _isLocationLeader {
-    String r = widget.role.toLowerCase();
-    return !_isChurchWideCompiler && !_isGroupLeader && (r.contains('location') || r.contains('loc_')) && !r.contains('sub_loc');
+    if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker) return false;
+    return _scope == 'location' || _grouping.startsWith('Location') || (widget.role.contains('loc_') && !widget.role.contains('sub_loc'));
   }
 
   bool get _isSubLocationLeader {
-    String r = widget.role.toLowerCase();
-    return !_isChurchWideCompiler && !_isGroupLeader && (r.contains('sub_location') || r.contains('sub_loc') || r.contains('sublocation'));
+    if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker) return false;
+    return _scope == 'sub_location' || _grouping.startsWith('Sub-Location') || widget.role.contains('sub_loc');
   }
 
   bool get _isDeptLeader {
-    String r = widget.role.toLowerCase();
-    return !_isChurchWideCompiler && !_isGroupLeader && !_isLocationLeader && !_isSubLocationLeader && (r.contains('dept') || r.contains('department'));
+    if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker || _isLocationLeader || _isSubLocationLeader) return false;
+    return _scope == 'department' || _grouping.startsWith('Dept ') || widget.role.contains('dept_');
   }
 
   bool get _isTeamLeader {
-    String r = widget.role.toLowerCase();
-    return !_isChurchWideCompiler && !_isGroupLeader && !_isLocationLeader && !_isSubLocationLeader && !_isDeptLeader && r.contains('team');
+    if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker || _isLocationLeader || _isSubLocationLeader || _isDeptLeader) return false;
+    return _scope == 'team' || _grouping.startsWith('Team') || _grouping == 'Location Team' || widget.role.contains('team_');
   }
 
   @override
@@ -123,9 +154,29 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   Future<void> _initHierarchyAndData() async {
+    await _fetchRoleMetadata();
+    _setHierarchy();
     await _loadUIConfig();
     await _fetchInitialLocations();
     await _fetchData();
+  }
+
+  Future<void> _fetchRoleMetadata() async {
+    try {
+      final res = await _supabase
+          .from('app_roles')
+          .select('role_key, approval_scope, display_name_ko, "Grouping", official_dept_id')
+          .eq('role_key', widget.role)
+          .maybeSingle();
+
+      if (mounted && res != null) {
+        setState(() {
+          _roleMetadata = res;
+        });
+      }
+    } catch (e) {
+      debugPrint("Role Metadata Fetch Error: $e");
+    }
   }
 
   void _setHierarchy() {
@@ -133,6 +184,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
       _hierarchy = ['Group status', 'Location status', 'Sub location status', 'Team status', 'Cell status'];
     } else if (_isChurchWideCompiler) {
       _hierarchy = ['Church status', 'Group status', 'Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
+    } else if (_is24DeptWorker || (_isInternalAffairs && !_iaChurchMode)) {
+      _hierarchy = ['Dept status', 'Team status', 'Cell status'];
     } else if (_isLocationLeader) {
       _hierarchy = ['Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isSubLocationLeader) {
@@ -144,7 +197,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
     } else {
       _hierarchy = ['Cell status'];
     }
-    _currentLevel = _hierarchy.first;
+
+    if (!_hierarchy.contains(_currentLevel)) {
+      _currentLevel = _hierarchy.first;
+    }
     _updateGroupByFromLevel(_currentLevel);
   }
 
@@ -166,7 +222,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         _locationData = List<Map<String, dynamic>>.from(data);
         _locations = _locationData
             .map((e) => e['location'].toString())
-            .where((l) => l.toLowerCase() != 'church')
+            .where((l) => l.toLowerCase() != 'church' && l.toLowerCase() != 'church workers')
             .toList();
 
         if (!_isChurchWideCompiler && !_isGroupLeader && widget.loc.isNotEmpty && widget.loc != 'Church') {
@@ -365,22 +421,81 @@ class _CompilationEngineState extends State<CompilationEngine> {
           q = q.gte('report_date', s).lte('report_date', e);
         }
 
-        // GROUP LEADER LOCK: Restrict data strictly to their group
-        if (_isGroupLeader && widget.dept.isNotEmpty) {
-          q = q.eq('members.department', widget.dept);
+        // =====================================================================
+        // 1. GROUP WORKERS (MG, WG, YAG, New Saints, MOU) - All Locations
+        // =====================================================================
+        if (_isGroupLeader) {
+          void excludeChurchWorkers() {
+            q = q.neq('members.location', 'Church Workers')
+                 .neq('members.location', 'Church Main')
+                 .neq('members.location', 'Church');
+          }
+
+          if (_grouping == '24-Dept MG' || widget.dept == '장년회') {
+            q = q.eq('members.department', '장년회')
+                 .neq('members.location', 'Mou')
+                 .neq('members.location', 'New Saints');
+            excludeChurchWorkers();
+          } else if (_grouping == '24-Dept WG' || widget.dept == '부녀회') {
+            q = q.eq('members.department', '부녀회')
+                 .neq('members.location', 'Mou')
+                 .neq('members.location', 'New Saints');
+            excludeChurchWorkers();
+          } else if (_grouping == '24-Dept YAG' || widget.dept == '청년회') {
+            q = q.eq('members.department', '청년회')
+                 .neq('members.location', 'Mou')
+                 .neq('members.location', 'New Saints');
+            excludeChurchWorkers();
+          } else if (_grouping == '24-Dept New Saints' || widget.dept == '새신자') {
+            q = q.eq('members.department', '새신자')
+                 .neq('members.location', 'Mou');
+            excludeChurchWorkers();
+          } else if (_grouping == '24-Dept MOU' || widget.dept.toLowerCase() == 'mou') {
+            q = q.eq('members.department', 'Mou')
+                 .neq('members.location', 'Mou')
+                 .neq('members.location', 'New Saints');
+            excludeChurchWorkers();
+          } else if (widget.dept.isNotEmpty) {
+            q = q.eq('members.department', widget.dept);
+          }
         }
 
-        // ROLE CONSTRAINTS FOR LOCAL WORKERS
-        if (!_isChurchWideCompiler && !_isGroupLeader) {
-          String r = widget.role.toLowerCase();
-          if (r.contains('cell')) q = q.eq('unit_name', widget.userUnit);
-          else if (r.contains('team')) q = q.eq('members.team', widget.userUnit);
-          else if (r.contains('dept')) q = q.eq('members.department', widget.userUnit);
-          else if (r.contains('sub_loc')) q = q.eq('members.sub_location', widget.userUnit);
-          else if (r.contains('loc')) q = q.eq('members.location', widget.userUnit);
+        // =====================================================================
+        // 2. 24-DEPARTMENT WORKERS & IA (DEPARTMENT MODE)
+        // =====================================================================
+        else if (_is24DeptWorker || (_isInternalAffairs && !_iaChurchMode)) {
+          final officialDeptId = _roleMetadata?['official_dept_id'];
+          if (officialDeptId != null) {
+            q = q.eq('members.official_dept_id', officialDeptId);
+          } else if (widget.dept.isNotEmpty && widget.dept != 'N/A') {
+            q = q.eq('members.department', widget.dept);
+          }
         }
 
-        // DRILL-DOWN FILTERS
+        // =====================================================================
+        // 3. LOCATION WORKERS (Strict 5-Tier Unit Hierarchy)
+        // =====================================================================
+        else if (!_isChurchWideCompiler) {
+          if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') {
+            q = q.eq('members.location', widget.loc);
+          }
+          if (_isSubLocationLeader || _isDeptLeader || _isTeamLeader) {
+            if (widget.sub.isNotEmpty && widget.sub != 'N/A') q = q.eq('members.sub_location', widget.sub);
+          }
+          if (_isDeptLeader || _isTeamLeader) {
+            if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq('members.department', widget.dept);
+          }
+          if (_isTeamLeader) {
+            if (widget.team.isNotEmpty && widget.team != 'N/A') q = q.eq('members.team', widget.team);
+          }
+          if (widget.role.toLowerCase().contains('cell')) {
+            q = q.eq('unit_name', widget.userUnit);
+          }
+        }
+
+        // =====================================================================
+        // 4. DRILL-DOWN FILTERS (Selected from Sidebar)
+        // =====================================================================
         if (lvl.contains('sub location') || lvl.contains('sub-location') || lvl.contains('team') || lvl.contains('cell')) {
           if (_selectedLocation != null && _selectedLocation!.isNotEmpty && _selectedLocation != 'Church') {
             q = q.eq('members.location', _selectedLocation!);
@@ -576,7 +691,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
-         isSubLocationLeader: _isSubLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
         isDeptLeader: _isDeptLeader,
         isTeamLeader: _isTeamLeader,
         isGroupLeader: _isGroupLeader,
@@ -585,9 +700,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userSub: widget.sub,
         userLoc: widget.loc,
         userTeam: widget.team,
-    );
+      );
     }
-    if (d == 'Offering') {
+    if (d == 'Offering' || d == 'Offering Status') {
       return OfferingModule(
         logs: _logs,
         timePeriod: _timePeriod,
@@ -612,10 +727,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userLoc: widget.loc,
         userTeam: widget.team,
       );
-      }
+    }
     if (d == 'Evangelism' || d == 'Evangelism Part') {
       return EvangelismModule(
-         logs: _logs,
+        logs: _logs,
         timePeriod: _timePeriod,
         level: _currentLevel,
         analyticsMode: _analyticsMode,
@@ -638,7 +753,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userLoc: widget.loc,
         userTeam: widget.team,
       );
-      }
+    }
 
     if (d == 'Morning Light') {
       return MorningLightModule(
@@ -667,31 +782,31 @@ class _CompilationEngineState extends State<CompilationEngine> {
       );
     }
     if (d == 'Workers Education') {
-  return WorkersEducationModule(
-    logs: _logs,
-    timePeriod: _timePeriod,
-    level: _currentLevel,
-    analyticsMode: _analyticsMode,
-    groupBy: _groupBy,
-    targetValue: 80.0,
-    selectedLocation: _selectedLocation ?? '',
-    selectedSubLocation: _selectedSubLocation ?? '',
-    selectedDepartment: _selectedDepartment ?? '',
-    selectedTeam: _selectedTeam ?? '',
-    activeUnitLabel: _getActiveUnitDisplayLabel(),
-    isChurchWide: _isChurchWideCompiler,
-    isLocationLeader: _isLocationLeader,
-    isSubLocationLeader: _isSubLocationLeader,
-    isDeptLeader: _isDeptLeader,
-    isTeamLeader: _isTeamLeader,
-    isGroupLeader: _isGroupLeader,
-    userRole: widget.role,
-    userDept: widget.dept,
-    userSub: widget.sub,
-    userLoc: widget.loc,
-    userTeam: widget.team,
-  );
-  }
+      return WorkersEducationModule(
+        logs: _logs,
+        timePeriod: _timePeriod,
+        level: _currentLevel,
+        analyticsMode: _analyticsMode,
+        groupBy: _groupBy,
+        targetValue: 80.0,
+        selectedLocation: _selectedLocation ?? '',
+        selectedSubLocation: _selectedSubLocation ?? '',
+        selectedDepartment: _selectedDepartment ?? '',
+        selectedTeam: _selectedTeam ?? '',
+        activeUnitLabel: _getActiveUnitDisplayLabel(),
+        isChurchWide: _isChurchWideCompiler,
+        isLocationLeader: _isLocationLeader,
+        isSubLocationLeader: _isSubLocationLeader,
+        isDeptLeader: _isDeptLeader,
+        isTeamLeader: _isTeamLeader,
+        isGroupLeader: _isGroupLeader,
+        userRole: widget.role,
+        userDept: widget.dept,
+        userSub: widget.sub,
+        userLoc: widget.loc,
+        userTeam: widget.team,
+      );
+    }
     if (d == 'Workers Daily Participation') {
       return DailyParticipationModule(
         logs: _logs,
@@ -745,12 +860,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userLoc: widget.loc,
         userTeam: widget.team,
       );
-      }
+    }
 
     if (d == 'Evangelism Results' || d == 'BB Results') {
       return EvangelismResultsModule(
         bbData: _logs,
-         logs: _logs,
+        logs: _logs,
         timePeriod: _timePeriod,
         level: _currentLevel,
         analyticsMode: _analyticsMode,
@@ -773,7 +888,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userLoc: widget.loc,
         userTeam: widget.team,
       );
-      }
+    }
     if (d == 'Growth Tracking') {
       return GrowthTrackingModule(
         category: d,
@@ -800,7 +915,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userLoc: widget.loc,
         userTeam: widget.team,
       );
-      }
+    }
     return const Center(child: Text("Module logic pending..."));
   }
 
@@ -845,6 +960,71 @@ class _CompilationEngineState extends State<CompilationEngine> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
             child: Column(children: [
+              // Internal Affairs Mode Switcher
+              if (_isInternalAffairs) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.purple.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Internal Affairs Scope", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _iaChurchMode = true;
+                                  _setHierarchy();
+                                });
+                                _fetchData();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: _iaChurchMode ? pPurple : Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text("Church", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _iaChurchMode ? Colors.white : Colors.black87)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _iaChurchMode = false;
+                                  _setHierarchy();
+                                });
+                                _fetchData();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: !_iaChurchMode ? pPurple : Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text("Department", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: !_iaChurchMode ? Colors.white : Colors.black87)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+
               _bentoNavCard("Data category", _timeOptions, _timePeriod, (v) async {
                 if (v == 'Custom period') {
                   final p = await showDateRangePicker(context: context, firstDate: DateTime(2023), lastDate: DateTime.now());
@@ -986,14 +1166,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
     });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 1. GROUP LEADER / NEW SAINTS
+    // 1. GROUP WORKERS (MG, WG, YAG, New Saints, MOU)
     // ─────────────────────────────────────────────────────────────────────────
     if (_isGroupLeader) {
       if (lvl.contains('group')) {
-        return _infoText("Displaying general summary for ${widget.dept}");
+        return _infoText("Displaying summary for ${widget.dept} across all locations");
       }
       if (lvl.contains('location status')) {
-        return _infoText("Displaying ${widget.dept} performance across all locations");
+        return _infoText("Displaying ${widget.dept} performance by location");
       }
       if (lvl.contains('sub location') || lvl.contains('sub-location')) {
         return _pickerContainer([locPicker]);
@@ -1007,7 +1187,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 2. LOCATION LEADER (Restricted to widget.loc)
+    // 2. 24 DEPARTMENTS / IA DEPARTMENT MODE
+    // ─────────────────────────────────────────────────────────────────────────
+    if (_is24DeptWorker || (_isInternalAffairs && !_iaChurchMode)) {
+      if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept}");
+      if (lvl.contains('team')) return _pickerContainer([deptPicker]);
+      if (lvl.contains('cell')) return _pickerContainer([deptPicker, teamPicker]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 3. LOCATION LEADER (Restricted to widget.loc)
     // ─────────────────────────────────────────────────────────────────────────
     if (_isLocationLeader) {
       if (lvl.contains('location status')) return _infoText("Displaying summary for your location (${widget.loc})");
@@ -1018,7 +1207,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 3. SUB-LOCATION LEADER
+    // 4. SUB-LOCATION LEADER
     // ─────────────────────────────────────────────────────────────────────────
     if (_isSubLocationLeader) {
       if (lvl.contains('sub location') || lvl.contains('sub-location')) return _infoText("Displaying summary for ${widget.sub}");
@@ -1028,7 +1217,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 4. DEPT LEADER
+    // 5. DEPT LEADER
     // ─────────────────────────────────────────────────────────────────────────
     if (_isDeptLeader) {
       if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept}");
@@ -1037,7 +1226,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 5. TEAM LEADER
+    // 6. TEAM LEADER
     // ─────────────────────────────────────────────────────────────────────────
     if (_isTeamLeader) {
       if (lvl.contains('team')) return _infoText("Displaying summary for your team (${widget.team})");
@@ -1045,7 +1234,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 6. CHURCH-WIDE COMPILER
+    // 7. CHURCH-WIDE COMPILER (Admin, Church Sec, IA Church Mode)
     // ─────────────────────────────────────────────────────────────────────────
     if (_isChurchWideCompiler) {
       if (lvl.contains('church')) return _infoText("Displaying general church summary (All Locations, MOU, Church Workers)");

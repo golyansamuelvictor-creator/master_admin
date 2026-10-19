@@ -40,8 +40,8 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isSearchingMember = false;
   Map<String, dynamic>? _matchedMemberRecord;
   String? _memberLookupStatus;
-  String? _lookedUpId; // the SCJ ID the current lookup result belongs to
-  int _lookupToken = 0; // ignores out-of-order lookup responses
+  String? _lookedUpId;
+  int _lookupToken = 0;
 
   bool _isSignUp = false;
   bool _otpSent = false;
@@ -57,10 +57,10 @@ class _AuthScreenState extends State<AuthScreen> {
   String _requestAccessMethod = 'email';
 
   String _appName = "Master Administration";
-  String _signupPrompt = "Need an account? Request Access";
+  // Updated text prompt per your request:
+  String _signupPrompt = "Create a New Account";
   Map<String, dynamic> _flags = {"google_login": true, "phone_login": true, "maintenance_mode": false};
 
-  // Typed explicitly so the dropdown's selected value is always one of the items.
   List<Map<String, dynamic>> _countries = [
     {"name": "Uganda", "code": "+256", "flag": "🇺🇬"},
     {"name": "Kenya", "code": "+254", "flag": "🇰🇪"},
@@ -85,9 +85,6 @@ class _AuthScreenState extends State<AuthScreen> {
       if (!_scjIdFocusNode.hasFocus) _autoFetchMemberDetails();
     });
 
-    // If a session already exists, check it. Otherwise show the form straight
-    // away; the auth listener below handles any session that arrives later
-    // (e.g. returning from the Google redirect).
     final existingUser = _supabase.auth.currentUser;
     if (existingUser != null) {
       _isLoading = true;
@@ -112,13 +109,11 @@ class _AuthScreenState extends State<AuthScreen> {
   // ==========================================
   // HELPERS
   // ==========================================
-  /// Digits only, no leading zeros ("0772 123 456" -> "772123456").
   String get _nationalPhone =>
       _phoneController.text.replaceAll(RegExp(r'\D'), '').replaceFirst(RegExp(r'^0+'), '');
 
   String get _fullPhone => "${_selectedCountry['code']}$_nationalPhone";
 
-  /// Escapes LIKE wildcards so user input like "%" can't match other rows.
   String _escapeLike(String s) =>
       s.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_');
 
@@ -132,9 +127,6 @@ class _AuthScreenState extends State<AuthScreen> {
     return null;
   }
 
-  /// Explains a failed lookup/verification call. A PostgrestException means the
-  /// server answered with an error (permissions, missing function...), which is
-  /// not a connection problem, so we no longer claim it is.
   String _lookupErrorText(Object e) {
     if (e is PostgrestException) {
       return kDebugMode
@@ -150,8 +142,6 @@ class _AuthScreenState extends State<AuthScreen> {
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 
-  /// Stricter than before: an empty record name can no longer match everything,
-  /// and a single shared word is not enough when the record has 2+ words.
   bool _namesMatch(String entered, Map<String, dynamic> member) {
     final e = _norm(entered);
     if (e.isEmpty) return false;
@@ -171,11 +161,9 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // ==========================================
-  // SAFE AUTO-FETCH VIA SECURITY DEFINER RPC
+  // AUTO-FETCH VIA RPC
   // ==========================================
   void _onScjIdChanged() {
-    // The typed ID no longer matches the looked-up record: drop the stale result
-    // so we never register someone under a different ID than the one on screen.
     if (_scjIdController.text.trim() == _lookedUpId) return;
     if (_matchedMemberRecord == null && _memberLookupStatus == null) return;
     setState(() {
@@ -231,7 +219,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // ==========================================
-  // 1. OAUTH & SESSION LISTENER
+  // OAUTH & SESSION LISTENER
   // ==========================================
   void _listenToAuthChanges() {
     _authSub = _supabase.auth.onAuthStateChange.listen((data) {
@@ -248,7 +236,6 @@ class _AuthScreenState extends State<AuthScreen> {
         return;
       }
 
-      // Hourly token refreshes don't need a profile check.
       if (data.event == AuthChangeEvent.tokenRefreshed) return;
 
       _verifyUserApproval(session.user);
@@ -256,12 +243,10 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   // ==========================================
-  // 2. CHECK APPROVAL STATUS IN PROFILES
+  // CHECK APPROVAL STATUS IN PROFILES
   // ==========================================
   Future<_Approval>? _verifyInFlight;
 
-  /// Single-flight: the init check, the auth listener and the sign-in handlers
-  /// can all ask at once; they now share one request instead of racing.
   Future<_Approval> _verifyUserApproval(User user) {
     return _verifyInFlight ??= _runApprovalCheck(user).whenComplete(() => _verifyInFlight = null);
   }
@@ -271,15 +256,20 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       final res = await _supabase
           .from('profiles')
-          .select('id, scj_id, email, phone, is_approved, approval_status, rejection_reason')
+          .select()
           .eq('id', user.id)
           .maybeSingle();
 
-      // The SCJ ID lives in profiles.scj_id (same rule as AuthWrapper).
-      final String? scjId = res == null ? null : res['scj_id']?.toString().trim();
+      // SCJ ID is strictly verified as the master key
+      final rawScjId = res == null ? null : res['scj_id'];
+      final String? scjId = rawScjId?.toString().trim();
+      final bool hasValidScjId = scjId != null &&
+          scjId.isNotEmpty &&
+          scjId.toLowerCase() != 'null' &&
+          scjId.toLowerCase() != 'none';
 
-      // 1. No profile / no SCJ ID -> inline member verification card
-      if (res == null || scjId == null || scjId.isEmpty) {
+      // 1. If SCJ ID is null, empty, or missing -> MUST present the Member Verification Card!
+      if (res == null || !hasValidScjId) {
         if (mounted) {
           setState(() {
             _isLoading = false;
@@ -313,7 +303,7 @@ class _AuthScreenState extends State<AuthScreen> {
         return _Approval.rejected;
       }
 
-      // 2. Pending -> "Account Under Review"
+      // 2. Has verified SCJ ID, but pending administrator review
       if (!isApproved) {
         if (mounted) {
           setState(() {
@@ -332,7 +322,7 @@ class _AuthScreenState extends State<AuthScreen> {
         setState(() {
           _isPendingApproval = false;
           _isGooglePendingVerification = false;
-          _isLoading = true; // keep the spinner until AuthWrapper swaps in HomeScreen
+          _isLoading = true;
         });
         _onApproved();
       }
@@ -350,27 +340,20 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  /// AuthWrapper owns navigation. We just tell it to reload the profile; it then
-  /// swaps this screen for HomeScreen. (Previously this screen also called
-  /// pushReplacementNamed('/home'), which raced with AuthWrapper and could
-  /// create HomeScreen twice.)
   void _onApproved() {
     requestProfileRefresh();
 
-    // If this screen was pushed on top of the wrapper, return to it.
     final nav = Navigator.of(context);
     if (nav.canPop()) nav.popUntil((r) => r.isFirst);
 
-    // Failsafe so the form never stays stuck behind a spinner.
     Future.delayed(const Duration(seconds: 6), () {
       if (mounted) setState(() => _isLoading = false);
     });
   }
 
   // ==========================================
-  // MEMBER VERIFICATION (shared by both flows)
+  // MEMBER VERIFICATION
   // ==========================================
-  /// Returns the verified member record, or null after showing the reason.
   Future<Map<String, dynamic>?> _verifyMember(String scjId, String name) async {
     final member = _matchedMemberRecord ??
         _asMember(await _supabase.rpc('verify_scj_member_id', params: {'lookup_scj_id': scjId}));
@@ -411,7 +394,6 @@ class _AuthScreenState extends State<AuthScreen> {
       final memberRecord = await _verifyMember(scjId, name);
       if (memberRecord == null) return;
 
-      // Duplicate SCJ ID check (limit(1) so several matches can't throw).
       final existing = await _supabase
           .from('profiles')
           .select('id')
@@ -428,6 +410,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       setState(() => _isLoading = false);
+
+      // Successfully verified with church records -> Proceed to AddAccountScreen with prefilled data
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (c) => AddAccountScreen(
@@ -457,8 +441,6 @@ class _AuthScreenState extends State<AuthScreen> {
     final result = await _verifyUserApproval(user);
     if (!mounted) return;
 
-    // Only claim what actually happened (it used to say "approved" even after
-    // a rejection or an error).
     if (result == _Approval.pending) {
       _showMsg("Account is still under review by Church Administration.", isError: true);
     } else if (result == _Approval.approved) {
@@ -483,7 +465,6 @@ class _AuthScreenState extends State<AuthScreen> {
             _countries = value.map((c) => Map<String, dynamic>.from(c as Map)).toList();
             _selectedCountry = _countries.first;
           }
-          // Merged over the defaults so a missing key can't crash the screen.
           if (key == 'feature_flags' && value is Map) {
             _flags = {..._flags, ...Map<String, dynamic>.from(value)};
           }
@@ -865,62 +846,68 @@ class _AuthScreenState extends State<AuthScreen> {
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(vertical: 24),
-          child: _isPendingApproval
-              ? _buildPendingApprovalUI()
-              : _isGooglePendingVerification
-                  ? _buildGoogleVerificationCardUI()
-                  : Container(
-                      constraints: const BoxConstraints(maxWidth: 440),
-                      margin: const EdgeInsets.all(20),
-                      padding: const EdgeInsets.all(28.0),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: pPurple.withValues(alpha: 0.08), width: 1.2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 24,
-                            offset: const Offset(0, 8),
+          child: _isLoading
+              ? const SizedBox(
+                  height: 48,
+                  width: 48,
+                  child: CircularProgressIndicator(strokeWidth: 3, color: Color(0xFF4A148C)),
+                )
+              : _isPendingApproval
+                  ? _buildPendingApprovalUI()
+                  : _isGooglePendingVerification
+                      ? _buildGoogleVerificationCardUI()
+                      : Container(
+                          constraints: const BoxConstraints(maxWidth: 440),
+                          margin: const EdgeInsets.all(20),
+                          padding: const EdgeInsets.all(28.0),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: pPurple.withValues(alpha: 0.08), width: 1.2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 24,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(color: pPurple.withValues(alpha: 0.08), shape: BoxShape.circle),
-                            child: Icon(Icons.admin_panel_settings_rounded, size: 46, color: pPurple),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(color: pPurple.withValues(alpha: 0.08), shape: BoxShape.circle),
+                                child: Icon(Icons.admin_panel_settings_rounded, size: 46, color: pPurple),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _appName,
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: pPurple),
+                              ),
+                              const SizedBox(height: 20),
+                              if (!_isSignUp && !_otpSent && phoneLogin) ...[
+                                _buildAuthSwitcher(),
+                                const SizedBox(height: 20),
+                              ],
+                              if (_isSignUp)
+                                _buildRequestAccessUI()
+                              else if (_authMethod == 'email' || !phoneLogin)
+                                _buildEmailSignInUI()
+                              else if (!_otpSent)
+                                _buildWhatsAppPhoneUI()
+                              else
+                                _buildWhatsAppOTPUI(),
+                              if (!_isSignUp && googleLogin) ...[
+                                const SizedBox(height: 20),
+                                _divider(),
+                                const SizedBox(height: 20),
+                                _googleBtn(),
+                              ]
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _appName,
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: pPurple),
-                          ),
-                          const SizedBox(height: 20),
-                          if (!_isSignUp && !_otpSent && phoneLogin) ...[
-                            _buildAuthSwitcher(),
-                            const SizedBox(height: 20),
-                          ],
-                          if (_isSignUp)
-                            _buildRequestAccessUI()
-                          else if (_authMethod == 'email' || !phoneLogin)
-                            _buildEmailSignInUI()
-                          else if (!_otpSent)
-                            _buildWhatsAppPhoneUI()
-                          else
-                            _buildWhatsAppOTPUI(),
-                          if (!_isSignUp && googleLogin) ...[
-                            const SizedBox(height: 20),
-                            _divider(),
-                            const SizedBox(height: 20),
-                            _googleBtn(),
-                          ]
-                        ],
-                      ),
-                    ),
+                        ),
         ),
       ),
     );
