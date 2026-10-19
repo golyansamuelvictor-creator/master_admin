@@ -94,6 +94,48 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         grouping.toString().startsWith('24-Dept 3');
   }
 
+  bool _dualModeIsChurch = false;
+
+  bool get _isEvangelismDept {
+    final r = (widget.userRole ?? '').toLowerCase();
+    final d = widget.dept.trim().toLowerCase();
+    final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
+    return (r.contains('evang_dept') || d.contains('전도') || grouping.startsWith('24-Dept 5')) &&
+           !r.contains('loc_evang');
+  }
+
+  bool get _isEducationDept {
+    final r = (widget.userRole ?? '').toLowerCase();
+    final d = widget.dept.trim().toLowerCase();
+    final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
+    return (r.contains('edu_dept') || d.contains('교육') || grouping.startsWith('24-Dept 4')) &&
+           !r.contains('loc_edu');
+  }
+
+  bool get _isAdministrationDept {
+    final r = (widget.userRole ?? '').toLowerCase();
+    final d = widget.dept.trim().toLowerCase();
+    final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
+    return (r.contains('admin_dept') || d.contains('행정서무') || grouping.startsWith('24-Dept 11') || grouping.startsWith('24-Dept 12') || grouping.startsWith('24-Dept 13')) &&
+           r != 'admin';
+  }
+
+  bool get _hasDualModeForCurrentDuty {
+    final d = widget.sheetName.trim();
+    if (_isInternalAffairs) return true;
+
+    if (_isEvangelismDept && (d == 'Evangelism' || d == 'Evangelism Part' || d == 'BB File')) {
+      return true;
+    }
+    if (_isEducationDept && (d == 'All Saints Education' || d == 'Workers Education')) {
+      return true;
+    }
+    if (_isAdministrationDept && d == 'Service Attendance Status') {
+      return true;
+    }
+    return false;
+  }
+
   bool get _isChurchWorkerTrack {
     final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
     final scope = _roleMetadata?['approval_scope'] ?? '';
@@ -632,52 +674,38 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
             ? Center(child: CircularProgressIndicator(color: pPurple))
             : Column(
                 children: [
-                  // Internal Affairs View Switcher (Church vs Department)
-                  if (_isInternalAffairs)
-                    Container(
-                      margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.purple.shade200),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _iaChurchView ? "Mode: Church Reports (All Units)" : "Mode: Department Reports (IA Only)",
-                            style: GoogleFonts.merriweather(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                              color: pPurple,
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              Text(
-                                _iaChurchView ? "Church" : "Dept",
-                                style: GoogleFonts.merriweather(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey.shade700,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Switch(
-                                value: _iaChurchView,
-                                activeThumbColor: pPurple,
-                                onChanged: (val) {
-                                  setState(() => _iaChurchView = val);
-                                  _loadInitialData();
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-
+                  // Switcher banner for Dual-Mode Departments (IA, Evangelism, Education, Administration)
+                  if (_hasDualModeForCurrentDuty)
+                  Container(
+                  margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.purple.shade200),
+                  ),
+                  child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                  Text(
+                  _dualModeIsChurch ? "Mode: Church-Wide (All Units)" : "Mode: Department Only",
+                  style: GoogleFonts.merriweather(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: pPurple,
+                  ),
+                  ),
+                  Switch(
+                  value: _dualModeIsChurch,
+                  activeThumbColor: pPurple,
+                  onChanged: (val) {
+                  setState(() => _dualModeIsChurch = val);
+                  _loadInitialData();
+                  },
+                 ),
+                 ],
+                 ),
+                 ),
                   // Mobile Quick Action Strip
                   if (!isDesktop)
                     Container(

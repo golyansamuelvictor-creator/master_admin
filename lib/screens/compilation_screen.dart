@@ -73,12 +73,38 @@ class _CompilationEngineState extends State<CompilationEngine> {
   // Metadata from app_roles table
   Map<String, dynamic>? _roleMetadata;
   // Internal Affairs toggle: true = Church View (All), false = Department View (IA only)
-  bool _iaChurchMode = true;
+  final bool _iaChurchMode = true;
 
   // --- DYNAMIC ROLE IDENTIFIERS ---
   String get _scope => _roleMetadata?['approval_scope'] ?? '';
   String get _grouping => (_roleMetadata?['Grouping'] ?? '').toString();
 
+  bool _dualModeIsChurch = true;
+
+  // 1. CROSS-REGION GROUP LEADERS (MG, WG, YAG, New Saints, MOU, Theology)
+  bool get _isGroupLeader {
+    String r = widget.role.toLowerCase();
+    // Guard: Location workers are NEVER Church Group Leaders
+    if (r.contains('cell') || r.contains('team') || r.startsWith('dept_') || r.startsWith('sub_loc') || r.startsWith('loc_')) {
+      return false;
+    }
+
+    if (_grouping == '24-Dept MG' || 
+        _grouping == '24-Dept WG' || 
+        _grouping == '24-Dept YAG' || 
+        _grouping == '24-Dept New Saints' || 
+        _grouping == '24-Dept MOU' ||
+        _grouping.startsWith('24-Dept 18')) {
+      return true;
+    }
+
+    return r.contains('_group_') || 
+           r.contains('new_saints_dept') || 
+           r.contains('theology_dept') ||
+           r.contains('mou_dept');
+  }
+
+  // 2. DUAL-MODE DEPARTMENTS IDENTIFIERS
   bool get _isInternalAffairs {
     String r = widget.role.toLowerCase();
     String d = widget.dept.trim().toLowerCase();
@@ -88,41 +114,79 @@ class _CompilationEngineState extends State<CompilationEngine> {
            _grouping.startsWith('24-Dept 3');
   }
 
-  bool get _isGroupLeader {
-    if (_grouping == '24-Dept MG' || 
-        _grouping == '24-Dept WG' || 
-        _grouping == '24-Dept YAG' || 
-        _grouping == '24-Dept New Saints' || 
-        _grouping == '24-Dept MOU') {
-      return true;
-    }
+  bool get _isEvangelismDept {
     String r = widget.role.toLowerCase();
     String d = widget.dept.trim().toLowerCase();
-    return r.contains('group') || 
-           r.contains('new_saints') ||
-           d.contains('새신자') ||
-           d.contains('장년') || 
-           d.contains('부녀') || 
-           d.contains('청년') || 
-           d.contains('mou');
+    return (r.contains('evang_dept') || d.contains('전도') || _grouping.startsWith('24-Dept 5')) &&
+           !r.contains('loc_evang');
+  }
+
+  bool get _isEducationDept {
+    String r = widget.role.toLowerCase();
+    String d = widget.dept.trim().toLowerCase();
+    return (r.contains('edu_dept') || d.contains('교육') || _grouping.startsWith('24-Dept 4')) &&
+           !r.contains('loc_edu');
+  }
+
+  bool get _isAdministrationDept {
+    String r = widget.role.toLowerCase();
+    String d = widget.dept.trim().toLowerCase();
+    return (r.contains('admin_dept') || d.contains('행정서무') || _grouping.startsWith('24-Dept 11') || _grouping.startsWith('24-Dept 12') || _grouping.startsWith('24-Dept 13')) &&
+           r != 'admin';
+  }
+
+  // Determines if the current worker gets a Dual Mode toggle on this specific duty
+  bool get _hasDualModeForCurrentDuty {
+    final d = widget.selectedDuty.trim();
+    if (_isInternalAffairs) return true;
+
+    if (_isEvangelismDept && 
+        (d == 'Evangelism' || d == 'Evangelism Part' || d == 'Evangelism Results' || d == 'BB Results')) {
+      return true;
+    }
+
+    if (_isEducationDept && 
+        (d == 'All Saints Education' || d == 'Workers Education')) {
+      return true;
+    }
+
+    if (_isAdministrationDept && 
+        d == 'Service Attendance Status') {
+      return true;
+    }
+
+    return false;
+  }
+
+  String _getDualModeTitle() {
+    if (_isInternalAffairs) return "Internal Affairs Scope";
+    if (_isEvangelismDept) return "Evangelism Scope";
+    if (_isEducationDept) return "Education Scope";
+    if (_isAdministrationDept) return "Administration Scope";
+    return "Report Scope";
   }
 
   bool get _isChurchWideCompiler {
     if (_isGroupLeader) return false;
-    if (_isInternalAffairs) return _iaChurchMode;
+    
+    // If this role has Dual Mode for this duty:
+    if (_hasDualModeForCurrentDuty) {
+      return _dualModeIsChurch;
+    }
+
+    // Standard 24 Departments without dual mode for this duty are NEVER church-wide
+    if (_scope == 'church_department' || _grouping.startsWith('24-Dept')) return false;
+
+    // Church-wide roles (Admin, Church Secretary, etc.)
     if (_scope == 'church') return true;
 
     String r = widget.role.toLowerCase();
-    String l = widget.loc.trim().toLowerCase();
-    return l == 'church' ||
-           l.isEmpty ||
-           r == 'admin' ||
-           r.startsWith('church_') ||
-           r.startsWith('korean_worker_');
+    return r == 'admin' || r.startsWith('church_') || r.startsWith('korean_worker_');
   }
 
   bool get _is24DeptWorker {
     if (_isGroupLeader || _isChurchWideCompiler) return false;
+    if (_hasDualModeForCurrentDuty && !_dualModeIsChurch) return true;
     return _grouping.startsWith('24-Dept') || _scope == 'church_department';
   }
 
@@ -461,13 +525,21 @@ class _CompilationEngineState extends State<CompilationEngine> {
         }
 
         // =====================================================================
-        // 2. 24-DEPARTMENT WORKERS & IA (DEPARTMENT MODE)
+        // 2. 24-DEPARTMENT WORKERS & DUAL-MODE WORKERS (DEPARTMENT MODE)
         // =====================================================================
-        else if (_is24DeptWorker || (_isInternalAffairs && !_iaChurchMode)) {
+        else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
           final officialDeptId = _roleMetadata?['official_dept_id'];
           if (officialDeptId != null) {
             q = q.eq('members.official_dept_id', officialDeptId);
-          } else if (widget.dept.isNotEmpty && widget.dept != 'N/A') {
+          } else if (_isEvangelismDept) {
+            q = q.or('members.department.eq.전도부,members.department.ilike.%evangelism%');
+          } else if (_isEducationDept) {
+            q = q.or('members.department.eq.교육부,members.department.ilike.%education%');
+          } else if (_isAdministrationDept) {
+            q = q.or('members.department.eq.행정서무부,members.department.ilike.%admin%');
+          } else if (_isInternalAffairs) {
+            q = q.or('members.department.eq.내무부,members.department.ilike.%internal affairs%');
+          } else if (widget.dept.isNotEmpty && widget.dept != 'N/A' && widget.dept != 'Church') {
             q = q.eq('members.department', widget.dept);
           }
         }
@@ -960,8 +1032,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
             child: Column(children: [
-              // Internal Affairs Mode Switcher
-              if (_isInternalAffairs) ...[
+              // Dual-Mode Switcher for IA, Evangelism, Education, & Administration
+              if (_hasDualModeForCurrentDuty) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -972,7 +1044,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("Internal Affairs Scope", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)),
+                      Text(
+                        _getDualModeTitle(), 
+                        style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)
+                      ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
@@ -980,7 +1055,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                             child: InkWell(
                               onTap: () {
                                 setState(() {
-                                  _iaChurchMode = true;
+                                  _dualModeIsChurch = true;
                                   _setHierarchy();
                                 });
                                 _fetchData();
@@ -988,11 +1063,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: _iaChurchMode ? pPurple : Colors.white,
+                                  color: _dualModeIsChurch ? pPurple : Colors.white,
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text("Church", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _iaChurchMode ? Colors.white : Colors.black87)),
+                                child: Text(
+                                  "Church Reports", 
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _dualModeIsChurch ? Colors.white : Colors.black87)
+                                ),
                               ),
                             ),
                           ),
@@ -1001,7 +1079,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                             child: InkWell(
                               onTap: () {
                                 setState(() {
-                                  _iaChurchMode = false;
+                                  _dualModeIsChurch = false;
                                   _setHierarchy();
                                 });
                                 _fetchData();
@@ -1009,11 +1087,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: !_iaChurchMode ? pPurple : Colors.white,
+                                  color: !_dualModeIsChurch ? pPurple : Colors.white,
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text("Department", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: !_iaChurchMode ? Colors.white : Colors.black87)),
+                                child: Text(
+                                  "Dept Reports", 
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: !_dualModeIsChurch ? Colors.white : Colors.black87)
+                                ),
                               ),
                             ),
                           ),
