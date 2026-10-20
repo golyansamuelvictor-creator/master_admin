@@ -1,5 +1,6 @@
-// ignore_for_file: curly_braces_in_flow_control_structures
+// ignore_for_file: unnecessary_to_list_in_spreads, curly_braces_in_flow_control_structures
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -25,6 +26,7 @@ class EvangelismEntry extends StatefulWidget {
 }
 
 class _EvangelismEntryState extends State<EvangelismEntry> {
+  // Synchronized scroll controllers for frozen panes
   late final ScrollController _rowNumScrollController;
   late final ScrollController _contentVertScrollController;
   late final ScrollController _horizScrollController;
@@ -34,12 +36,13 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
   int? _selStartRow, _selStartCol, _selEndRow, _selEndCol;
   final Map<int, Set<String>> _activeFilters = {};
 
-  static const double _rowHeight = 27.0;
+  static const double _rowHeight = 28.0;
   static const double _rowNumColWidth = 46.0;
   static const double _alphaHeaderHeight = 20.0;
   static const double _titleHeaderHeight = 32.0;
   static const double _totalHeaderHeight = _alphaHeaderHeight + _titleHeaderHeight;
 
+  // Column definitions (A - I)
   final List<String> _colLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
   final List<String> _colTitles = [
     "Location",
@@ -63,6 +66,7 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
     _contentVertScrollController = ScrollController();
     _horizScrollController = ScrollController();
 
+    // High performance linked vertical scroll synchronization
     _contentVertScrollController.addListener(() {
       if (_isSyncing) return;
       _isSyncing = true;
@@ -119,7 +123,7 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
       case 5: return m['english_name']?.toString() ?? "";
       case 6: return m['duty']?.toString() ?? "";
       case 7: return widget.reportData[mid]?['weekly_schedule']?.toString() ?? "";
-      case 8: return widget.reportData[mid]?['status_detail']?.toString() ?? "";
+      case 8: return widget.reportData[mid]?['status_detail']?.toString() ?? ""; // Cleaned: single source
       default: return "";
     }
   }
@@ -372,60 +376,70 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: (node, event) {
-        if (event is! KeyDownEvent) return KeyEventResult.ignored;
-        final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
-        if (ctrl && event.logicalKey == LogicalKeyboardKey.keyC) { _copySelection(); return KeyEventResult.handled; }
-        if (ctrl && event.logicalKey == LogicalKeyboardKey.keyV) { _pasteSelection(); return KeyEventResult.handled; }
-        if (ctrl && event.logicalKey == LogicalKeyboardKey.keyA) { _selectAll(); return KeyEventResult.handled; }
-        if (event.logicalKey == LogicalKeyboardKey.delete || event.logicalKey == LogicalKeyboardKey.backspace) { _clearSelection(); return KeyEventResult.handled; }
-        return KeyEventResult.ignored;
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final availWidth = constraints.maxWidth - _rowNumColWidth;
-          final baseSum = _baseWidths.fold<double>(0, (s, w) => s + w);
-          final scale = (availWidth > baseSum) ? (availWidth / baseSum) : 1.0;
-          final widths = _baseWidths.map((w) => w * scale).toList();
-          final totalTableWidth = widths.fold<double>(0, (s, w) => s + w);
-          final filtered = _filteredMembers;
+    return ScrollConfiguration(
+      behavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.trackpad,
+          PointerDeviceKind.stylus,
+        },
+      ),
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is! KeyDownEvent) return KeyEventResult.ignored;
+          final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
+          if (ctrl && event.logicalKey == LogicalKeyboardKey.keyC) { _copySelection(); return KeyEventResult.handled; }
+          if (ctrl && event.logicalKey == LogicalKeyboardKey.keyV) { _pasteSelection(); return KeyEventResult.handled; }
+          if (ctrl && event.logicalKey == LogicalKeyboardKey.keyA) { _selectAll(); return KeyEventResult.handled; }
+          if (event.logicalKey == LogicalKeyboardKey.delete || event.logicalKey == LogicalKeyboardKey.backspace) { _clearSelection(); return KeyEventResult.handled; }
+          return KeyEventResult.ignored;
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final availWidth = constraints.maxWidth - _rowNumColWidth;
+            final baseSum = _baseWidths.fold<double>(0, (s, w) => s + w);
+            final scale = (availWidth > baseSum) ? (availWidth / baseSum) : 1.0;
+            final widths = _baseWidths.map((w) => w * scale).toList();
+            final totalTableWidth = widths.fold<double>(0, (s, w) => s + w);
+            final filtered = _filteredMembers;
 
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: Colors.white,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. Frozen Left Pane
-                SizedBox(
-                  width: _rowNumColWidth,
-                  child: Column(
-                    children: [
-                      GestureDetector(
-                        onTap: _selectAll,
-                        child: Container(
-                          height: _totalHeaderHeight,
-                          width: _rowNumColWidth,
-                          color: const Color(0xFFE2E8F0),
-                          child: const Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.select_all, size: 14, color: Colors.black54),
-                              Text("#", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                            ],
+            return Container(
+              width: double.infinity,
+              height: double.infinity,
+              color: Colors.white,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. FROZEN LEFT PANE: Corner + Virtualized Row Numbers
+                  SizedBox(
+                    width: _rowNumColWidth,
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: _selectAll,
+                          child: Container(
+                            height: _totalHeaderHeight,
+                            width: _rowNumColWidth,
+                            color: const Color(0xFFE2E8F0),
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.select_all, size: 14, color: Colors.black54),
+                                Text("#", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          controller: _rowNumScrollController,
-                          physics: const ClampingScrollPhysics(),
-                          child: Column(
-                            children: List.generate(filtered.length, (idx) {
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _rowNumScrollController,
+                            physics: const ClampingScrollPhysics(),
+                            itemCount: filtered.length,
+                            itemExtent: _rowHeight,
+                            itemBuilder: (ctx, idx) {
                               final isRowSel = _selStartRow != null &&
                                   idx >= math.min(_selStartRow!, _selEndRow!) &&
                                   idx <= math.max(_selStartRow!, _selEndRow!) &&
@@ -445,91 +459,104 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
                                       right: BorderSide(color: Colors.grey.withValues(alpha: 0.4), width: 1.2),
                                     ),
                                   ),
-                                  child: Center(child: Text("${idx + 1}", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: isRowSel ? widget.pPurple : Colors.grey[700]))),
+                                  child: Center(
+                                    child: Text(
+                                      "${idx + 1}",
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: isRowSel ? widget.pPurple : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               );
-                            }),
+                            },
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
 
-                // 2. Scrollable Data Pane
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _horizScrollController,
-                    scrollDirection: Axis.horizontal,
-                    physics: const ClampingScrollPhysics(),
-                    child: SizedBox(
-                      width: totalTableWidth,
-                      child: Column(
-                        children: [
-                          Container(
-                            height: _totalHeaderHeight,
-                            color: const Color(0xFF1E293B),
-                            child: Column(
-                              children: [
-                                SizedBox(
-                                  height: _alphaHeaderHeight,
-                                  child: Row(
-                                    children: List.generate(_colLetters.length, (i) {
-                                      final isColSel = _selStartCol != null &&
-                                          i >= math.min(_selStartCol!, _selEndCol!) &&
-                                          i <= math.max(_selStartCol!, _selEndCol!) &&
-                                          _selStartRow == 0 &&
-                                          _selEndRow == filtered.length - 1;
-
-                                      return GestureDetector(
-                                        onTap: () => _selectColumn(i),
-                                        child: Container(
-                                          width: widths[i],
-                                          color: isColSel ? widget.pPurple.withValues(alpha: 0.25) : const Color(0xFFF1F5F9),
-                                          alignment: Alignment.center,
-                                          child: Text(_colLetters[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isColSel ? widget.pPurple : Colors.grey[700])),
-                                        ),
-                                      );
-                                    }),
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: _titleHeaderHeight,
-                                  child: Row(
-                                    children: List.generate(_colTitles.length, (i) {
-                                      final isFiltered = _activeFilters.containsKey(i);
-                                      return Container(
-                                        width: widths[i],
-                                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                                        decoration: BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.withValues(alpha: 0.3), width: 0.8))),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: GestureDetector(
-                                                onTap: () => _selectColumn(i),
-                                                child: Text(_colTitles[i], softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
-                                              ),
-                                            ),
-                                            InkWell(
-                                              onTap: () => _openFilterDialog(i),
-                                              child: Icon(isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: isFiltered ? const Color(0xFFF59E0B) : Colors.white70),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          Expanded(
-                            child: SingleChildScrollView(
-                              controller: _contentVertScrollController,
-                              physics: const ClampingScrollPhysics(),
+                  // 2. SCROLLABLE DATA PANE (Header sticky, Rows virtualized)
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: _horizScrollController,
+                      scrollDirection: Axis.horizontal,
+                      physics: const ClampingScrollPhysics(),
+                      child: SizedBox(
+                        width: totalTableWidth,
+                        child: Column(
+                          children: [
+                            // FROZEN TOP HEADER ROW
+                            Container(
+                              height: _totalHeaderHeight,
+                              color: const Color(0xFF1E293B),
                               child: Column(
-                                children: List.generate(filtered.length, (r) {
+                                children: [
+                                  // Excel Letters A..I
+                                  SizedBox(
+                                    height: _alphaHeaderHeight,
+                                    child: Row(
+                                      children: List.generate(_colLetters.length, (i) {
+                                        final isColSel = _selStartCol != null &&
+                                            i >= math.min(_selStartCol!, _selEndCol!) &&
+                                            i <= math.max(_selStartCol!, _selEndCol!) &&
+                                            _selStartRow == 0 &&
+                                            _selEndRow == filtered.length - 1;
+
+                                        return GestureDetector(
+                                          onTap: () => _selectColumn(i),
+                                          child: Container(
+                                            width: widths[i],
+                                            color: isColSel ? widget.pPurple.withValues(alpha: 0.25) : const Color(0xFFF1F5F9),
+                                            alignment: Alignment.center,
+                                            child: Text(_colLetters[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isColSel ? widget.pPurple : Colors.grey[700])),
+                                          ),
+                                        );
+                                      }),
+                                    ),
+                                  ),
+                                  // Column Names with Filters
+                                  SizedBox(
+                                    height: _titleHeaderHeight,
+                                    child: Row(
+                                      children: List.generate(_colTitles.length, (i) {
+                                        final isFiltered = _activeFilters.containsKey(i);
+                                        return Container(
+                                          width: widths[i],
+                                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                                          decoration: BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.withValues(alpha: 0.3), width: 0.8))),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: GestureDetector(
+                                                  onTap: () => _selectColumn(i),
+                                                  child: Text(_colTitles[i], softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                                ),
+                                              ),
+                                              InkWell(
+                                                onTap: () => _openFilterDialog(i),
+                                                child: Icon(isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: isFiltered ? const Color(0xFFF59E0B) : Colors.white70),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            // VIRTUALIZED MAIN DATA ROWS (Ultra smooth 60/120fps)
+                            Expanded(
+                              child: ListView.builder(
+                                controller: _contentVertScrollController,
+                                physics: const ClampingScrollPhysics(),
+                                itemCount: filtered.length,
+                                itemExtent: _rowHeight,
+                                itemBuilder: (ctx, r) {
                                   final m = filtered[r];
                                   final isEven = r.isEven;
                                   return SizedBox(
@@ -540,19 +567,19 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
                                       }),
                                     ),
                                   );
-                                }),
+                                },
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -564,6 +591,7 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
     widget.reportData.putIfAbsent(mid, () => {});
 
     Widget content;
+    // Static columns: Location, Sub, Dept, Team, Cell, English Name, Duty
     if (c <= 6) {
       final t = _getCellValue(m, c);
       content = Container(
@@ -571,16 +599,24 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
         alignment: Alignment.center,
         child: Text(t, softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: c == 5 ? FontWeight.bold : FontWeight.normal)),
       );
-    } else if (c == 7) {
+    } 
+    // Text Input: Weekly Schedule
+    else if (c == 7) {
       final val = _getCellValue(m, c);
       content = Container(
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: TextField(
+        child: TextFormField(
+          key: ValueKey("${mid}_$c"),
+          initialValue: val,
           textAlign: TextAlign.center,
           style: GoogleFonts.merriweather(fontSize: 10.5),
-          decoration: const InputDecoration(hintText: "Enter schedule...", border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
-          controller: TextEditingController(text: val)..selection = TextSelection.collapsed(offset: val.length),
+          decoration: const InputDecoration(
+            hintText: "Enter schedule...",
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(vertical: 4),
+          ),
           onTap: () => _selectCell(r, c),
           onChanged: (v) {
             widget.onChanged();
@@ -588,7 +624,9 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
           },
         ),
       );
-    } else {
+    } 
+    // Dropdown: Evangelism Status
+    else {
       final cur = _getCellValue(m, c);
       content = DropdownButtonHideUnderline(
         child: DropdownButton<String>(
@@ -597,7 +635,7 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
           style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.bold),
           items: [
             const DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11)))),
-            ...widget.statusOptions.map((s) => DropdownMenuItem(value: s, child: Center(child: Text(s, softWrap: false, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))))),
+            ...widget.statusOptions.map((s) => DropdownMenuItem(value: s, child: Center(child: Text(s, softWrap: false, overflow: TextOverflow.ellipsis)))).toList(),
           ],
           onChanged: (v) {
             _selectCell(r, c);

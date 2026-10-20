@@ -1,6 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:supabase_flutter/supabase_flutter.dart';
-// ignore: unused_import
 import 'package:intl/intl.dart';
 
 class AbsenteeLogic {
@@ -9,38 +8,85 @@ class AbsenteeLogic {
   static Future<List<Map<String, dynamic>>> getDetailedInterventionList({
     required String duty,
     required String unitName,
-    String? unitType, // Optional: 'cell_group', 'team', 'department', 'sub_location', 'location'
+    String? unitType,
+    DateTime? startDate,
+    DateTime? endDate,
   }) async {
     try {
       String table = _getTableName(duty);
-      
-      // 1. Fetch members across all units OR for a specific unit
+      String dbLookupName = duty == "Evangelism Part" ? "Evangelism" : duty;
+
+      // 1. Fetch OFFICIAL styles & absentee options directly from entry_field_options table
+      List<dynamic> rawOptions = [];
+      try {
+        final optRes = await _supabase
+            .from('entry_field_options')
+            .select('field_key, option_label, sort_order')
+            .eq('sheet_name', dbLookupName)
+            .eq('is_active', true)
+            .order('sort_order');
+        rawOptions = optRes as List;
+      } catch (_) {
+        rawOptions = [];
+      }
+
+      // Identify absentee labels vs valid attendance styles from DB
+      final Set<String> absenteeLabels = {};
+      final Set<String> validStyleLabels = {};
+
+      for (var opt in rawOptions) {
+        final label = (opt['option_label'] ?? '').toString().trim();
+        final fieldKey = (opt['field_key'] ?? '').toString().trim();
+        if (label.isEmpty) continue;
+
+        // Skip non-attendance fields (months, reasons, levels)
+        if (fieldKey == 'month' || fieldKey == 'level_status' || fieldKey == 'visitation_reason') continue;
+
+        final lower = label.toLowerCase();
+        if (lower.contains('absent') || 
+            lower.contains('didn') || 
+            lower == 'no' || 
+            lower.contains('not visited') || 
+            lower.contains('missed')) {
+          absenteeLabels.add(label);
+        } else {
+          validStyleLabels.add(label);
+        }
+      }
+
+      // Default fallbacks if DB table is unseeded
+      if (absenteeLabels.isEmpty) {
+        absenteeLabels.addAll(["Absentee", "CS Absentee", "ASE Absence", "Not Visited", "No", "ML Didn't", "WE Missed", "Did Not Evangelize"]);
+      }
+      if (validStyleLabels.isEmpty) {
+        validStyleLabels.addAll(["In-person", "On-line", "Call", "Meet", "Summary", "CS In-Person", "CS Online", "ASE In-person", "ASE Online", "Active", "Evangelised", "WE Attended", "ML Did"]);
+      }
+
+      // 2. Fetch members
       List<dynamic> members = [];
       bool fetchAll = unitName.isEmpty || unitName.toLowerCase() == 'all';
 
       if (fetchAll) {
-        final res = await _supabase.from('members').select();
+        final res = await _supabase.from('members').select('id, english_name, duty, location, sub_location, department, team, cell_group');
         members = res as List;
       } else if (unitType != null && unitType.isNotEmpty) {
-        final res = await _supabase.from('members').select().eq(unitType, unitName);
+        final res = await _supabase.from('members').select('id, english_name, duty, location, sub_location, department, team, cell_group').eq(unitType, unitName);
         members = res as List;
       } else {
-        // Search across all unit levels with both new & old column names
         try {
-          final res = await _supabase.from('members').select().or(
+          final res = await _supabase.from('members').select('id, english_name, duty, location, sub_location, department, team, cell_group').or(
             'department.eq.$unitName,team.eq.$unitName,cell_group.eq.$unitName,sub_location.eq.$unitName,location.eq.$unitName'
           );
           members = res as List;
         } catch (_) {
-          // Safe fallback: fetch members and match in-memory across all unit columns
           try {
-            final allM = await _supabase.from('members').select();
+            final allM = await _supabase.from('members').select('id, english_name, duty, location, sub_location, department, team, cell_group');
             members = (allM as List).where((m) {
-              final d = (m['department'] ?? m['current_dept'] ?? "").toString().toLowerCase().trim();
-              final t = (m['team'] ?? m['team_number'] ?? "").toString().toLowerCase().trim();
-              final c = (m['cell_group'] ?? m['cell_number'] ?? "").toString().toLowerCase().trim();
-              final s = (m['sub_location'] ?? m['sublocation'] ?? "").toString().toLowerCase().trim();
-              final l = (m['location'] ?? "").toString().toLowerCase().trim();
+              final d = (m['department'] ?? '').toString().toLowerCase().trim();
+              final t = (m['team'] ?? '').toString().toLowerCase().trim();
+              final c = (m['cell_group'] ?? '').toString().toLowerCase().trim();
+              final s = (m['sub_location'] ?? '').toString().toLowerCase().trim();
+              final l = (m['location'] ?? '').toString().toLowerCase().trim();
               final target = unitName.toLowerCase().trim();
               return d == target || t == target || c == target || s == target || l == target;
             }).toList();
@@ -52,37 +98,30 @@ class AbsenteeLogic {
 
       if (members.isEmpty) return [];
 
-      // 2. Fetch logs safely without crashing on 'unit_name' or 'report_date'
+      // 3. Fetch logs within selected date range
       List<dynamic> allLogs = [];
       try {
+        var query = _supabase.from(table).select();
+
+        if (startDate != null) {
+          query = query.gte('report_date', DateFormat('yyyy-MM-dd').format(startDate));
+        }
+        if (endDate != null) {
+          query = query.lte('report_date', DateFormat('yyyy-MM-dd').format(endDate));
+        }
+
+        final logsRes = await query.order('report_date', ascending: false).limit(members.length * 20);
+        allLogs = logsRes as List;
+      } catch (_) {
         try {
-          final logsRes = await _supabase
-              .from(table)
-              .select()
-              .order('report_date', ascending: false)
-              .limit(members.length * 12);
+          final logsRes = await _supabase.from(table).select().limit(members.length * 15);
           allLogs = logsRes as List;
         } catch (_) {
-          try {
-            final logsRes = await _supabase
-                .from(table)
-                .select()
-                .order('created_at', ascending: false)
-                .limit(members.length * 12);
-            allLogs = logsRes as List;
-          } catch (_) {
-            final logsRes = await _supabase
-                .from(table)
-                .select()
-                .limit(members.length * 12);
-            allLogs = logsRes as List;
-          }
+          allLogs = [];
         }
-      } catch (_) {
-        allLogs = [];
       }
 
-      // 3. Fetch Maintenance/Recovery History for this duty
+      // 4. Fetch Recovery/Care History
       List<dynamic> allRecovery = [];
       try {
         final recoveryRes = await _supabase
@@ -101,7 +140,6 @@ class AbsenteeLogic {
         final memberIdStr = member['id']?.toString() ?? "";
         if (memberIdStr.isEmpty) continue;
 
-        // String comparison to prevent int vs UUID type mismatch
         var memberLogs = allLogs.where((l) {
           final logMemberId = (l['member_id'] ?? l['id_member'])?.toString();
           return logMemberId == memberIdStr;
@@ -109,10 +147,14 @@ class AbsenteeLogic {
         
         int missedCount = 0;
         String lastReason = "No reason logged";
+        final Map<String, int> styleCounts = {
+          for (var s in validStyleLabels) s: 0,
+        };
+        final Set<String> memberObservedStyles = {};
 
-        // Calculate frequency and get the most recent reason
         for (var log in memberLogs) {
-          if (_checkIfMissed(duty, log)) {
+          // Check if log represents an Absence
+          if (_checkIfMissedWithLabels(duty, log, absenteeLabels)) {
             missedCount++;
             if (lastReason == "No reason logged") {
               lastReason = log['reason_notes'] ?? 
@@ -120,21 +162,35 @@ class AbsenteeLogic {
                            log['visitation_reason'] ?? 
                            "No reason logged";
             }
+          } else {
+            // Find which valid attendance style matches this log
+            String matchedStyle = _matchLogToStyle(log, validStyleLabels);
+            if (matchedStyle.isNotEmpty) {
+              memberObservedStyles.add(matchedStyle);
+              styleCounts[matchedStyle] = (styleCounts[matchedStyle] ?? 0) + 1;
+            }
           }
         }
 
-        // 4. Find the most recent Recovery Action for this member
         var lastCare = allRecovery.firstWhere(
           (r) => r['member_id']?.toString() == memberIdStr, 
           orElse: () => null,
         );
 
-        // Only add to list if they have missed at least once
+        // Include members who missed at least once in this period
         if (missedCount > 0) {
+          // If member has no positive styles logged in period, provide all valid styles with 0 count
+          final availableStyles = memberObservedStyles.isNotEmpty 
+              ? memberObservedStyles.toList() 
+              : validStyleLabels.toList();
+
           results.add({
             'member': member,
             'missed_count': missedCount,
             'last_reason': lastReason,
+            'service_styles': availableStyles,
+            'all_duty_styles': validStyleLabels.toList(),
+            'style_counts': styleCounts,
             'last_recovery_outcome': lastCare?['outcome'] ?? "No Care Logged",
             'maintenance_status': lastCare?['outcome'] ?? "Pending Care",
             'last_contact_date': lastCare?['contact_date'] ?? "Never",
@@ -143,39 +199,60 @@ class AbsenteeLogic {
         }
       }
 
-      // Sort descending by missed count
       results.sort((a, b) => (b['missed_count'] as int).compareTo(a['missed_count'] as int));
-
       return results;
     } catch (e) { 
       return []; 
     }
   }
 
-  /// Uses your EXACT status list: ["Absentee", "CS Absentee", "ASE Absence", "Not Visited", "No"]
-  static bool _checkIfMissed(String duty, dynamic log) {
+  // Matches a log row to one of the official valid styles from entry_field_options
+  static String _matchLogToStyle(dynamic log, Set<String> validStyles) {
+    if (log == null || log is! Map) return "";
+
+    final candidates = [
+      log['attendance_realtime'],
+      log['status_detail'],
+      log['attendance_makeup'],
+      log['attendance_pre'],
+      log['method'],
+      log['place'],
+    ];
+
+    for (var cand in candidates) {
+      if (cand == null) continue;
+      final str = cand.toString().trim();
+      for (var style in validStyles) {
+        if (style.toLowerCase() == str.toLowerCase()) {
+          return style; // Exact match found from entry_field_options!
+        }
+      }
+    }
+    return "";
+  }
+
+  static bool _checkIfMissedWithLabels(String duty, dynamic log, Set<String> absenteeLabels) {
     if (log == null || log is! Map) return false;
 
     if (duty.contains('Offering')) return log['offering_tithe'] == "No";
-    if (duty.contains('Evangelism')) return log['mon_part'] == "No";
-    if (duty.contains('Morning Light')) return log['mon_ml'] == "ML Didn't";
-    
-    // Safely extract status from status_detail, attendance_realtime, or attendance_pre
-    // Checks that non-null strings are actually non-empty
-    String status = "";
-    if (log['status_detail'] != null && log['status_detail'].toString().trim().isNotEmpty) {
-      status = log['status_detail'].toString().trim();
-    } else if (log['attendance_realtime'] != null && log['attendance_realtime'].toString().trim().isNotEmpty) {
-      status = log['attendance_realtime'].toString().trim();
-    } else if (log['attendance_pre'] != null && log['attendance_pre'].toString().trim().isNotEmpty) {
-      status = log['attendance_pre'].toString().trim();
-    }
 
-    // Your exact status list
-    const absenteeList = ["Absentee", "CS Absentee", "ASE Absence", "Not Visited", "No"];
-    
-    // Matches your exact values (case-insensitive and trimmed for reliability)
-    return absenteeList.any((val) => val.toLowerCase() == status.toLowerCase());
+    final candidates = [
+      log['status_detail'],
+      log['attendance_realtime'],
+      log['attendance_makeup'],
+      log['attendance_pre'],
+      log['mon_part'],
+      log['mon_ml'],
+    ];
+
+    for (var cand in candidates) {
+      if (cand == null) continue;
+      final str = cand.toString().trim();
+      for (var abs in absenteeLabels) {
+        if (abs.toLowerCase() == str.toLowerCase()) return true;
+      }
+    }
+    return false;
   }
 
   static String _getTableName(String duty) {
@@ -184,7 +261,8 @@ class AbsenteeLogic {
       case 'All Saints Education': return 'logs_all_saints_education';
       case 'Cell Group Service': return 'logs_cell_service';
       case 'Offering Status': return 'logs_offering';
-      case 'Evangelism Part': return 'logs_evangelism';
+      case 'Evangelism Part':
+      case 'Evangelism': return 'logs_evangelism';
       case 'Morning Light': return 'logs_morning_light';
       case 'Visitations and Counselling': return 'logs_visitations';
       case 'Workers Education': return 'logs_workers_education';

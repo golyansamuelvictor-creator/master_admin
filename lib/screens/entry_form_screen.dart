@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:master_admin/entry_modules/evidence_gallery_dialog.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:file_picker/file_picker.dart';
 import 'dart:convert';
 
 // --- ALL MODULES IMPORTED ---
@@ -20,9 +20,9 @@ import '../entry_modules/bb_file_entry.dart';
 
 class EntryFormScreen extends StatefulWidget {
   final String sheetName, cellName, location, subLocation, dept, team;
-  final DateTime? selectedDate; // Date selected from ReportsScreen (max 5 days ago)
+  final DateTime? selectedDate;
   final String? initialMode;
-  final String? userRole; // Optional: user role key from caller
+  final String? userRole;
 
   const EntryFormScreen({
     super.key,
@@ -51,6 +51,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   int groupEvidenceCount = 0;
   final Color pPurple = const Color(0xFF4A148C);
 
+  // --- DAY SELECTOR STATE ---
+  String _selectedDay = 'Wednesday';
+
   // --- EXCEL PRO STATE ---
   String _saveStatus = "Save";
   final List<String> _undoStack = [];
@@ -58,14 +61,56 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
   // --- ROLE METADATA & DUAL MODE ---
   Map<String, dynamic>? _roleMetadata;
-  bool _iaChurchView = false;
+  bool _dualModeIsChurch = false;
+
+  bool get _isBB => widget.sheetName == "BB File";
+  bool get _isMorningLight => widget.sheetName == 'Morning Light';
+  bool get _isWorkersEducation => widget.sheetName == 'Workers Education';
+  bool get _isWorkersParticipation => widget.sheetName == 'Workers Daily Participation';
+  bool get _isEvangelism => widget.sheetName == 'Evangelism' || widget.sheetName == 'Evangelism Part';
+
+  bool get _hasDayToggle =>
+      widget.sheetName == 'Service Attendance Status' ||
+      widget.sheetName == 'All Saints Education' ||
+      _isMorningLight ||
+      _isWorkersEducation ||
+      _isWorkersParticipation ||
+      _isEvangelism;
 
   @override
   void initState() {
     super.initState();
     selectedDate = widget.selectedDate ?? DateTime.now();
-    _iaChurchView = widget.initialMode?.toLowerCase() == 'church';
+    _dualModeIsChurch = widget.initialMode?.toLowerCase() == 'church';
+
+    _determineDefaultDay(selectedDate);
     _initRoleAndData();
+  }
+
+  void _determineDefaultDay(DateTime dt) {
+    if (_isMorningLight) {
+      if (dt.weekday == DateTime.tuesday) _selectedDay = 'Tue';
+      else if (dt.weekday == DateTime.thursday) _selectedDay = 'Thu';
+      else if (dt.weekday == DateTime.friday) _selectedDay = 'Fri';
+      else _selectedDay = 'Mon';
+    } else if (_isWorkersEducation || _isEvangelism) {
+      const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      _selectedDay = weekdays[dt.weekday - 1];
+    } else if (_isWorkersParticipation) {
+      if (dt.weekday == DateTime.tuesday) _selectedDay = 'Tue';
+      else if (dt.weekday == DateTime.thursday) _selectedDay = 'Thu';
+      else if (dt.weekday == DateTime.friday) _selectedDay = 'Fri';
+      else if (dt.weekday == DateTime.saturday) _selectedDay = 'Sat';
+      else _selectedDay = 'Mon';
+    } else {
+      if (dt.weekday == DateTime.monday ||
+          dt.weekday == DateTime.tuesday ||
+          dt.weekday == DateTime.wednesday) {
+        _selectedDay = 'Wednesday';
+      } else {
+        _selectedDay = 'Sunday';
+      }
+    }
   }
 
   Future<void> _initRoleAndData() async {
@@ -85,16 +130,14 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   }
 
   bool get _isInternalAffairs {
-    final grouping = _roleMetadata?['Grouping'] ?? '';
-    final role = widget.userRole ?? '';
+    final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
+    final role = (widget.userRole ?? '').toLowerCase();
+    final d = widget.dept.trim().toLowerCase();
     return role.contains('internal_affairs') ||
         role.startsWith('ia_') ||
-        widget.dept == '내무부' ||
-        widget.dept.toLowerCase() == 'internal affairs' ||
-        grouping.toString().startsWith('24-Dept 3');
+        d.contains('내무') ||
+        grouping.startsWith('24-Dept 3');
   }
-
-  bool _dualModeIsChurch = false;
 
   bool get _isEvangelismDept {
     final r = (widget.userRole ?? '').toLowerCase();
@@ -116,7 +159,8 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     final r = (widget.userRole ?? '').toLowerCase();
     final d = widget.dept.trim().toLowerCase();
     final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
-    return (r.contains('admin_dept') || d.contains('행정서무') || grouping.startsWith('24-Dept 11') || grouping.startsWith('24-Dept 12') || grouping.startsWith('24-Dept 13')) &&
+    return (r.contains('admin_dept') || d.contains('행정서무') || 
+            grouping.startsWith('24-Dept 11') || grouping.startsWith('24-Dept 12') || grouping.startsWith('24-Dept 13')) &&
            r != 'admin';
   }
 
@@ -136,23 +180,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     return false;
   }
 
-  bool get _isChurchWorkerTrack {
-    final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
-    final scope = _roleMetadata?['approval_scope'] ?? '';
-
-    if (scope == 'church' || scope == 'church_department') return true;
-    if (grouping.startsWith('24-Dept') || grouping == 'Church Main') return true;
-    if (widget.location.trim().toLowerCase() == 'church' ||
-        widget.location.trim().toLowerCase() == 'church workers' ||
-        widget.location.trim().toLowerCase() == 'all') {
-      return true;
-    }
-    // Group workers detection by department name
-    const groupDepts = ['장년회', '부녀회', '청년회', '새신자', 'Mou', 'MOU'];
-    return groupDepts.contains(widget.dept.trim());
-  }
-
-  // --- REAL-TIME PENDING LOGIC ---
   int get _pendingCount {
     if (members.isEmpty) return 0;
     int filled = reportData.values.where((v) => v.isNotEmpty && v.values.any((val) => val != null && val != "")).length;
@@ -204,133 +231,191 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     return 'member_logs';
   }
 
-  // Loads data for the selected date
   Future<void> _loadInitialData() async {
     if (!mounted) return;
     setState(() => isLoading = true);
     try {
-      bool isBB = widget.sheetName == "BB File";
-      var query = supabase.from(isBB ? 'bb_students' : 'members').select();
+      // 0. SPECIAL CASE: BB FILE (Master student table)
+      if (_isBB) {
+        var bbQuery = supabase.from('bb_students').select();
+        if (widget.cellName.isNotEmpty && widget.cellName != 'N/A') {
+          bbQuery = bbQuery.eq('cell_name', widget.cellName);
+        }
+        final res = await bbQuery.order('student_name');
+
+        final optionsRes = await supabase
+            .from('entry_field_options')
+            .select()
+            .eq('sheet_name', 'BB File')
+            .eq('is_active', true);
+
+        Map<String, List<String>> tempOpts = {};
+        for (var opt in optionsRes) {
+          tempOpts.putIfAbsent(opt['field_key'].toString().trim(), () => []).add(opt['option_label'].toString());
+        }
+
+        if (mounted) {
+          setState(() {
+            members = res;
+            dynamicOptions = tempOpts;
+            reportData = {
+              for (var s in res) s['id'].toString(): Map<String, dynamic>.from(s)
+            };
+            isLoading = false;
+          });
+        }
+        return;
+      }
+      // Load existing photos count for this sheet + date
+        final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
+        final unitName = widget.cellName.isNotEmpty && widget.cellName != "N/A"
+        ? widget.cellName
+        : (widget.team.isNotEmpty && widget.team != "N/A"
+        ? widget.team
+        : (widget.dept.isNotEmpty && widget.dept != "N/A" ? widget.dept : widget.location));
+
+        try {
+        final photoRes = await supabase
+        .from('report_evidence')
+        .select('id')
+        .eq('sheet_name', widget.sheetName)
+        .eq('unit_name', unitName)
+        .eq('report_date', dateStr);
+
+        if (mounted) setState(() => groupEvidenceCount = (photoRes as List).length);
+        } catch (e) {
+        debugPrint("Evidence count error: $e");
+        }
+
+      // 1. STANDARD MEMBERS QUERY (Optimized select!)
+      var query = supabase.from('members').select('id, english_name, duty, location, sub_location, department, team, cell_group');
 
       final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
-      final scope = _roleMetadata?['approval_scope'] ?? '';
+      final role = (widget.userRole ?? '').toLowerCase();
+      final locLower = widget.location.trim().toLowerCase();
+      final bool isWorkersSheet = widget.sheetName.contains('Workers');
 
-      // ==============================================================
-      // 1. BB FILE SPECIAL BRANCH
-      // ==============================================================
-      if (isBB) {
-        if (widget.location.isNotEmpty && widget.location != 'N/A') query = query.eq('location', widget.location);
-        if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') query = query.eq('sub_location', widget.subLocation);
-      }
-      // ==============================================================
-      // 2. CHURCH WORKERS & GROUP WORKERS TRACK
-      // ==============================================================
-      else if (_isChurchWorkerTrack) {
+      final bool isCellWorker = role.contains('cell');
+      final bool isTeamWorker = role.contains('team') && !isCellWorker;
+      final bool isDeptWorker = (role.startsWith('dept_') || role.contains('_dept_')) && !isCellWorker && !isTeamWorker;
+      final bool isSubLocWorker = (role.startsWith('sub_loc_') || role.contains('_sub_loc_')) && !isCellWorker && !isTeamWorker && !isDeptWorker;
+      final bool isLocOnlyWorker = role.startsWith('loc_') && !isSubLocWorker && !isDeptWorker && !isTeamWorker && !isCellWorker;
+
+      final bool isLocRole = isCellWorker || isTeamWorker || isDeptWorker || isSubLocWorker || isLocOnlyWorker;
+
+      final bool hasLocationUnits = (locLower != 'church' && locLower != 'church workers' && locLower != 'church main') &&
+          ((widget.location.isNotEmpty && widget.location != 'N/A') ||
+           (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') ||
+           (widget.team.isNotEmpty && widget.team != 'N/A') ||
+           (widget.cellName.isNotEmpty && widget.cellName != 'N/A'));
+
+      final bool isLocWorker = isLocRole || hasLocationUnits;
+
+      if (isLocWorker) {
+        if (isWorkersSheet) {
+          if (isTeamWorker || (widget.team.isNotEmpty && widget.team != 'N/A')) {
+            query = query.eq('team', widget.team);
+            if (widget.dept.isNotEmpty && widget.dept != 'N/A') query = query.eq('department', widget.dept);
+            if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') query = query.eq('sub_location', widget.subLocation);
+            if (widget.location.isNotEmpty && widget.location != 'N/A' && locLower != 'church') query = query.eq('location', widget.location);
+          } else if (isDeptWorker || (widget.dept.isNotEmpty && widget.dept != 'N/A')) {
+            query = query.eq('department', widget.dept);
+            if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') query = query.eq('sub_location', widget.subLocation);
+            if (widget.location.isNotEmpty && widget.location != 'N/A' && locLower != 'church') query = query.eq('location', widget.location);
+          } else if (isSubLocWorker || (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A')) {
+            query = query.eq('sub_location', widget.subLocation);
+            if (widget.location.isNotEmpty && widget.location != 'N/A' && locLower != 'church') query = query.eq('location', widget.location);
+          } else {
+            if (widget.location.isNotEmpty && widget.location != 'N/A' && locLower != 'church') {
+              query = query.eq('location', widget.location);
+            }
+          }
+          query = query.neq('duty', '구역원').not('duty', 'is', null).neq('duty', '');
+        } else {
+          if (isCellWorker || (widget.cellName.isNotEmpty && widget.cellName != 'N/A')) {
+            query = query.eq('cell_group', widget.cellName);
+            if (widget.team.isNotEmpty && widget.team != 'N/A') query = query.eq('team', widget.team);
+            if (widget.dept.isNotEmpty && widget.dept != 'N/A') query = query.eq('department', widget.dept);
+            if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') query = query.eq('sub_location', widget.subLocation);
+            if (widget.location.isNotEmpty && widget.location != 'N/A' && locLower != 'church') {
+              query = query.eq('location', widget.location);
+            }
+          } else if (isTeamWorker || (widget.team.isNotEmpty && widget.team != 'N/A')) {
+            query = query.eq('team', widget.team);
+            if (widget.dept.isNotEmpty && widget.dept != 'N/A') query = query.eq('department', widget.dept);
+            if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') query = query.eq('sub_location', widget.subLocation);
+            if (widget.location.isNotEmpty && widget.location != 'N/A' && locLower != 'church') {
+              query = query.eq('location', widget.location);
+            }
+          } else {
+            if (widget.dept.isNotEmpty && widget.dept != 'N/A') query = query.eq('department', widget.dept);
+            if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') query = query.eq('sub_location', widget.subLocation);
+            if (widget.location.isNotEmpty && widget.location != 'N/A' && locLower != 'church') {
+              query = query.eq('location', widget.location);
+            }
+          }
+        }
+      } else {
         void excludeChurchWorkers() {
           query = query
               .neq('location', 'Church Workers')
-              .neq('location', 'Church Main');
+              .neq('location', 'Church Main')
+              .neq('location', 'Church');
         }
 
-        // A. Church Admin / Church Sec / IA in Church Mode
-        if (scope == 'church' || (_isInternalAffairs && _iaChurchView)) {
-          // No location or department filter: access all members
-        }
-        // B. Men's Group (장년회)
-        else if (grouping == '24-Dept MG' || widget.dept == '장년회') {
-          query = query
-              .eq('department', '장년회')
-              .neq('location', 'Mou')
-              .neq('location', 'New Saints');
+        if (grouping == '24-Dept MG' || role.startsWith('mg_group')) {
+          query = query.eq('department', '장년회').neq('location', 'Mou').neq('location', 'New Saints');
           excludeChurchWorkers();
-        }
-        // C. Women's Group (부녀회)
-        else if (grouping == '24-Dept WG' || widget.dept == '부녀회') {
-          query = query
-              .eq('department', '부녀회')
-              .neq('location', 'Mou')
-              .neq('location', 'New Saints');
+        } else if (grouping == '24-Dept WG' || role.startsWith('wg_group')) {
+          query = query.eq('department', '부녀회').neq('location', 'Mou').neq('location', 'New Saints');
           excludeChurchWorkers();
-        }
-        // D. Young Adults Group (청년회)
-        else if (grouping == '24-Dept YAG' || widget.dept == '청년회') {
-          query = query
-              .eq('department', '청년회')
-              .neq('location', 'Mou')
-              .neq('location', 'New Saints');
+        } else if (grouping == '24-Dept YAG' || role.startsWith('yag_group')) {
+          query = query.eq('department', '청년회').neq('location', 'Mou').neq('location', 'New Saints');
           excludeChurchWorkers();
-        }
-        // E. New Saints (새신자)
-        else if (grouping == '24-Dept New Saints' || widget.dept == '새신자') {
-          query = query
-              .eq('department', '새신자')
-              .neq('location', 'Mou');
+        } else if (grouping == '24-Dept New Saints' || role.startsWith('new_saints_dept')) {
+          query = query.or('department.eq.새신자,department.ilike.%new saints%').neq('location', 'Mou');
           excludeChurchWorkers();
-        }
-        // F. MOU Department
-        else if (grouping == '24-Dept MOU' || widget.dept.toLowerCase() == 'mou') {
-          query = query
-              .eq('department', 'Mou')
-              .neq('location', 'Mou')
-              .neq('location', 'New Saints');
+        } else if (grouping.startsWith('24-Dept 18') || role.startsWith('theology_dept')) {
+          query = query.or('department.eq.신학부,department.ilike.%theology%').neq('location', 'Mou').neq('location', 'New Saints');
           excludeChurchWorkers();
-        }
-        // G. Internal Affairs (Department Mode)
-        else if (_isInternalAffairs && !_iaChurchView) {
+        } else if (grouping == '24-Dept MOU' || role.startsWith('mou_dept')) {
+          query = query.eq('department', 'Mou').neq('location', 'Mou').neq('location', 'New Saints');
+          excludeChurchWorkers();
+        } else if (_hasDualModeForCurrentDuty && _dualModeIsChurch) {
+          // Church-wide
+        } else {
           final officialDeptId = _roleMetadata?['official_dept_id'];
           if (officialDeptId != null) {
             query = query.eq('official_dept_id', officialDeptId);
-          } else {
-            query = query.or('department.eq.내무부,department.eq.Internal Affairs');
-          }
-        }
-        // H. Other 24 Departments (Praise, ICT, Culture, etc.)
-        else {
-          final officialDeptId = _roleMetadata?['official_dept_id'];
-          if (officialDeptId != null) {
-            query = query.eq('official_dept_id', officialDeptId);
-          } else if (widget.dept.isNotEmpty && widget.dept != 'N/A') {
+          } else if (_isInternalAffairs) {
+            query = query.or('department.eq.내무부,department.ilike.%internal affairs%');
+          } else if (_isEvangelismDept) {
+            query = query.or('department.eq.전도부,department.ilike.%evangelism%');
+          } else if (_isEducationDept) {
+            query = query.or('department.eq.교육부,department.ilike.%education%');
+          } else if (_isAdministrationDept) {
+            query = query.or('department.eq.행정서무부,department.ilike.%admin%');
+          } else if (widget.dept.isNotEmpty && widget.dept != 'N/A' && widget.dept != 'Church') {
             query = query.eq('department', widget.dept);
+          } else {
+            String deptKeyword = (_roleMetadata?['display_name_ko'] ?? '')
+                .toString()
+                .replaceAll(RegExp(r'(서무|부장|총무|과장)$'), '')
+                .trim();
+            if (deptKeyword.isNotEmpty) {
+              query = query.eq('department', deptKeyword);
+            }
           }
         }
 
-        // Filter workers if sheet is for Workers Education / Daily Participation
-        if (widget.sheetName.contains('Workers')) {
+        if (isWorkersSheet) {
           query = query.neq('duty', '구역원').not('duty', 'is', null).neq('duty', '');
-        }
-      }
-      // ==============================================================
-      // 3. LOCATION WORKER HIERARCHY (5-Tier Cascade)
-      // ==============================================================
-      else {
-        // Tier 1: Location
-        if (widget.location.isNotEmpty && widget.location != 'N/A') {
-          query = query.eq('location', widget.location);
-        }
-        // Tier 2: Sub-Location
-        if (widget.subLocation.isNotEmpty && widget.subLocation != 'N/A') {
-          query = query.eq('sub_location', widget.subLocation);
-        }
-        // Tier 3: Department (within location)
-        if (widget.dept.isNotEmpty && widget.dept != 'N/A') {
-          query = query.eq('department', widget.dept);
-        }
-        // Tier 4: Team
-        if (widget.team.isNotEmpty && widget.team != 'N/A') {
-          query = query.eq('team', widget.team);
-        }
-        // Tier 5: Cell Group
-        if (widget.sheetName.contains('Workers')) {
-          query = query.neq('duty', '구역원').not('duty', 'is', null).neq('duty', '');
-        } else if (widget.cellName.isNotEmpty && widget.cellName != 'N/A') {
-          query = query.eq('cell_group', widget.cellName);
         }
       }
 
-      final res = await query.order(isBB ? 'student_name' : 'english_name');
+      final res = await query.order('english_name');
       final memberIds = res.map((m) => m['id'].toString()).toList();
 
-      // Efficiently fetch logs for this date and for loaded members
       List<dynamic> logs = [];
       if (memberIds.isNotEmpty) {
         var logsQuery = supabase
@@ -338,7 +423,20 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
             .select()
             .eq('report_date', DateFormat('yyyy-MM-dd').format(selectedDate));
 
-        // Use filter if member set is manageable, otherwise rely on date filter
+        if (widget.sheetName == 'Service Attendance Status') {
+          logsQuery = logsQuery.eq('service_day', _selectedDay);
+        } else if (widget.sheetName == 'All Saints Education') {
+          logsQuery = logsQuery.eq('education_day', _selectedDay);
+        } else if (_isMorningLight) {
+          logsQuery = logsQuery.eq('ml_day', _selectedDay);
+        } else if (_isWorkersEducation) {
+          logsQuery = logsQuery.eq('edu_day', _selectedDay);
+        } else if (_isWorkersParticipation) {
+          logsQuery = logsQuery.eq('part_day', _selectedDay);
+        } else if (_isEvangelism) {
+          logsQuery = logsQuery.eq('evang_day', _selectedDay);
+        }
+
         if (memberIds.length <= 500) {
           logsQuery = logsQuery.filter('member_id', 'in', memberIds);
         }
@@ -377,7 +475,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     }
   }
 
-  // Saves/upserts edits directly into Supabase under the selected report_date
   Future<void> _save() async {
     final currentUser = supabase.auth.currentUser;
     if (currentUser == null) {
@@ -392,6 +489,53 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     }
 
     setState(() => _saveStatus = "Saving...");
+
+    // 1. SAVE PATH A: BB FILE
+    if (_isBB) {
+      List<Map<String, dynamic>> studentRows = [];
+      reportData.forEach((id, data) {
+        if (data.isNotEmpty) {
+          final row = Map<String, dynamic>.from(data);
+          row['id'] = id;
+          row['owner_email'] = currentUser.email;
+          row['last_updated'] = DateTime.now().toIso8601String();
+          studentRows.add(row);
+        }
+      });
+
+      if (studentRows.isEmpty) {
+        setState(() => _saveStatus = "Save");
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(backgroundColor: Colors.orange, content: Text("No entries to save!")),
+        );
+        return;
+      }
+
+      try {
+        await supabase.from('bb_students').upsert(studentRows, onConflict: 'id');
+        if (mounted) {
+          setState(() => _saveStatus = "Saved");
+          await Future.delayed(const Duration(seconds: 1));
+          if (mounted) {
+            setState(() => _saveStatus = "Save");
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(backgroundColor: Colors.green[800], content: const Text("BB Students saved successfully!")),
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint("BB Save Error: $e");
+        if (mounted) {
+          setState(() => _saveStatus = "Save");
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(backgroundColor: Colors.red[800], content: Text("Save failed: $e")),
+          );
+        }
+      }
+      return;
+    }
+
+    // 2. SAVE PATH B: STANDARD LOG TABLES
     List<Map<String, dynamic>> logRows = [];
     String dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
 
@@ -406,19 +550,21 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     };
 
     final bool isServiceAttendance = widget.sheetName == 'Service Attendance Status';
+    final bool isAllSaintsEdu = widget.sheetName == 'All Saints Education';
+    final bool isCellService = widget.sheetName == 'Cell Group Service';
+    final bool isVisitations = widget.sheetName == 'Visitations and Counselling';
 
     reportData.forEach((mid, data) {
       if (data.isNotEmpty) {
         final member = memberLookup[mid];
 
         Map<String, dynamic> row = {
-          'member_id': int.tryParse(mid) ?? mid,
+          'member_id': mid,
           'leader_id': currentUser.id,
           'report_date': dateStr,
           'unit_name': unitName,
           'verification_status': 'pending',
 
-          // Preserves the member's home location details (vital for compiled Church Groups)
           'location': member?['location'] ?? (widget.location != 'N/A' ? widget.location : null),
           'sub_location': member?['sub_location'] ?? (widget.subLocation != 'N/A' ? widget.subLocation : null),
           'department': member?['department'] ?? (widget.dept != 'N/A' ? widget.dept : null),
@@ -429,6 +575,32 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         if (isServiceAttendance) {
           row['reg_status'] = member?['reg_status'];
           row['geo_category'] = member?['geo_category'];
+          row['service_day'] = _selectedDay;
+        } else if (isAllSaintsEdu) {
+          row['education_day'] = _selectedDay;
+        } else if (isCellService) {
+          row['owner_email'] = currentUser.email;
+        } else if (_isMorningLight) {
+          row['ml_day'] = _selectedDay;
+          row['owner_email'] = currentUser.email;
+          row['status_detail'] = data['status_detail'];
+        } else if (_isWorkersEducation) {
+          row['edu_day'] = _selectedDay;
+          row['status_detail'] = data['status_detail'];
+        } else if (_isEvangelism) {
+          row['evang_day'] = _selectedDay;
+          row['owner_email'] = currentUser.email;
+          row['status_detail'] = data['status_detail'];
+          if (data.containsKey('weekly_schedule')) {
+            row['weekly_schedule'] = data['weekly_schedule'];
+          }
+        } else if (isVisitations) {
+          row['owner_email'] = currentUser.email;
+          if (data.containsKey('result')) row['result'] = data['result'];
+          if (data.containsKey('situation_notes')) row['situation_notes'] = data['situation_notes'];
+        } else if (_isWorkersParticipation) {
+          row['part_day'] = _selectedDay;
+          row['status_detail'] = data['status_detail'];
         }
 
         row.addAll(data);
@@ -450,7 +622,49 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
     try {
       debugPrint("Saving ${logRows.length} rows to ${_getTargetTable()}");
-      await supabase.from(_getTargetTable()).upsert(logRows);
+      if (isServiceAttendance) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date,service_day',
+        );
+      } else if (isAllSaintsEdu) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date,education_day',
+        );
+      } else if (isCellService) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date',
+        );
+      } else if (_isMorningLight) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date,ml_day',
+        );
+      } else if (_isWorkersEducation) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date,edu_day',
+        );
+      } else if (_isWorkersParticipation) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date,part_day',
+        );
+      } else if (_isEvangelism) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date,evang_day',
+        );
+      } else if (isVisitations) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date',
+        );
+      } else {
+        await supabase.from(_getTargetTable()).upsert(logRows);
+      }
 
       if (mounted) {
         setState(() => _saveStatus = "Saved");
@@ -460,7 +674,11 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: Colors.green[800],
-              content: Text("Report for $dateStr saved successfully!"),
+              content: Text(
+                _hasDayToggle
+                    ? "Report for $_selectedDay ($dateStr) saved successfully!"
+                    : "Report for $dateStr saved successfully!",
+              ),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -481,7 +699,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     }
   }
 
-  // Quick date change restricted to max 5 days back
   Future<void> _pickAnotherDate() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -502,23 +719,184 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     );
 
     if (picked != null && picked != selectedDate) {
-      setState(() => selectedDate = picked);
+      setState(() {
+        selectedDate = picked;
+        _determineDefaultDay(picked);
+      });
       _loadInitialData();
     }
+  }
+
+  Widget _buildDayToggle() {
+    if (_isWorkersEducation || _isEvangelism) {
+      final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      return Container(
+        height: 32,
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: days.map((d) => _dayOption(d, d)).toList(),
+          ),
+        ),
+      );
+    }
+
+    if (_isWorkersParticipation) {
+      return Container(
+        height: 32,
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _dayOption('Mon', 'Mon'),
+            _dayOption('Tue', 'Tue'),
+            _dayOption('Thu', 'Thu'),
+            _dayOption('Fri', 'Fri'),
+            _dayOption('Sat', 'Sat'),
+          ],
+        ),
+      );
+    }
+
+    if (_isMorningLight) {
+      return Container(
+        height: 32,
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _dayOption('Mon', 'Mon'),
+            _dayOption('Tue', 'Tue'),
+            _dayOption('Thu', 'Thu'),
+            _dayOption('Fri', 'Fri'),
+          ],
+        ),
+      );
+    }
+
+    final String labelSuffix = widget.sheetName == 'All Saints Education' ? 'Edu' : 'Service';
+    return Container(
+      height: 32,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _dayOption('Wednesday', 'Wed $labelSuffix'),
+          _dayOption('Sunday', 'Sun $labelSuffix'),
+        ],
+      ),
+    );
+  }
+
+  Widget _dayOption(String key, String label) {
+    final isSelected = _selectedDay == key;
+    return InkWell(
+      onTap: () {
+        if (_selectedDay != key) {
+          setState(() => _selectedDay = key);
+          _loadInitialData();
+        }
+      },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? pPurple : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.merriweather(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: isSelected ? Colors.white : Colors.black87,
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSelectedModule() {
     String sn = widget.sheetName;
     final void Function() onDataChanged = _recordHistory;
 
-    if (sn == 'Service Attendance Status') return ServiceAttendanceEntry(members: members, reportData: reportData, pPurple: pPurple, optionsPre: dynamicOptions['attendance_pre'] ?? [], optionsActual: dynamicOptions['attendance_realtime'] ?? [], optionsMakeup: dynamicOptions['attendance_makeup'] ?? [], optionsPlace: dynamicOptions['place'] ?? [], onChanged: onDataChanged);
-    if (sn == 'Cell Group Service') return CellServiceEntry(members: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
+    if (sn == 'Service Attendance Status') {
+      return ServiceAttendanceEntry(
+        members: members,
+        reportData: reportData,
+        pPurple: pPurple,
+        optionsPre: dynamicOptions['attendance_pre'] ?? [],
+        optionsActual: dynamicOptions['attendance_realtime'] ?? [],
+        optionsMakeup: dynamicOptions['attendance_makeup'] ?? [],
+        optionsPlace: dynamicOptions['place'] ?? [],
+        onChanged: onDataChanged,
+      );
+    }
+    if (sn == 'All Saints Education') {
+      return AllSaintsEducationEntry(
+        members: members,
+        reportData: reportData,
+        pPurple: pPurple,
+        statusOptions: dynamicOptions['status_detail'] ?? [],
+        onChanged: onDataChanged,
+      );
+    }
+    if (sn == 'Cell Group Service') {
+      return CellServiceEntry(
+        members: members, 
+        reportData: reportData, 
+        pPurple: pPurple, 
+        statusOptions: dynamicOptions['status_detail'] ?? [], 
+        onChanged: onDataChanged,
+      );
+    }
+    if (sn == 'Morning Light') {
+      return MorningLightEntry(
+        members: members,
+        reportData: reportData,
+        pPurple: pPurple,
+        statusOptions: dynamicOptions['status_detail'] ?? [],
+        onChanged: onDataChanged,
+      );
+    }
+    if (sn == 'Workers Education') {
+      return WorkersEducationEntry(
+        members: members,
+        reportData: reportData,
+        pPurple: pPurple,
+        statusOptions: dynamicOptions['status_detail'] ?? [],
+        onChanged: onDataChanged,
+      );
+    }
     if (sn == 'Evangelism' || sn == 'Evangelism Part') return EvangelismEntry(members: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
     if (sn == 'BB File') return BbFileEntry(students: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['level_status'] ?? [], methodOptions: dynamicOptions['method'] ?? [], monthOptions: dynamicOptions['month'] ?? [], onChanged: onDataChanged);
-    if (sn == 'Morning Light') return MorningLightEntry(members: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
-    if (sn == 'All Saints Education') return AllSaintsEducationEntry(members: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
     if (sn == 'Visitations and Counselling') return VisitationsEntry(members: members, reportData: reportData, pPurple: pPurple, optionsReason: dynamicOptions['visitation_reason'] ?? [], optionsResult: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
-    if (sn == 'Workers Education') return WorkersEducationEntry(members: members, reportData: reportData, pPurple: pPurple, optionsSun: dynamicOptions['edu_sun'] ?? [], optionsWed: dynamicOptions['edu_wed'] ?? [], optionsOther: dynamicOptions['edu_other'] ?? [], onChanged: onDataChanged);
     if (sn == 'Workers Daily Participation') return DailyParticipationEntry(members: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
 
     return Center(child: Text("Module not found: $sn", style: GoogleFonts.merriweather()));
@@ -610,6 +988,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           ),
           centerTitle: true,
           actions: [
+            if (isDesktop && _hasDayToggle) _buildDayToggle(),
             if (isDesktop)
               InkWell(
                 onTap: _pickAnotherDate,
@@ -634,7 +1013,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        DateFormat('MMM d, yyyy').format(selectedDate),
+                        DateFormat('MMM d, yyyy (E)').format(selectedDate),
                         style: GoogleFonts.merriweather(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -674,39 +1053,38 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
             ? Center(child: CircularProgressIndicator(color: pPurple))
             : Column(
                 children: [
-                  // Switcher banner for Dual-Mode Departments (IA, Evangelism, Education, Administration)
                   if (_hasDualModeForCurrentDuty)
-                  Container(
-                  margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                  decoration: BoxDecoration(
-                  color: Colors.purple.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.purple.shade200),
-                  ),
-                  child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                  Text(
-                  _dualModeIsChurch ? "Mode: Church-Wide (All Units)" : "Mode: Department Only",
-                  style: GoogleFonts.merriweather(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  color: pPurple,
-                  ),
-                  ),
-                  Switch(
-                  value: _dualModeIsChurch,
-                  activeThumbColor: pPurple,
-                  onChanged: (val) {
-                  setState(() => _dualModeIsChurch = val);
-                  _loadInitialData();
-                  },
-                 ),
-                 ],
-                 ),
-                 ),
-                  // Mobile Quick Action Strip
+                    Container(
+                      margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.purple.shade200),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _dualModeIsChurch ? "Mode: Church-Wide (All Units)" : "Mode: Department Only",
+                            style: GoogleFonts.merriweather(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              color: pPurple,
+                            ),
+                          ),
+                          Switch(
+                            value: _dualModeIsChurch,
+                            activeThumbColor: pPurple,
+                            onChanged: (val) {
+                              setState(() => _dualModeIsChurch = val);
+                              _loadInitialData();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+
                   if (!isDesktop)
                     Container(
                       margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
@@ -723,63 +1101,92 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                           ),
                         ],
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
                         children: [
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.undo, size: 19),
-                                onPressed: _undo,
-                                tooltip: "Undo",
-                                padding: const EdgeInsets.all(4),
-                                constraints: const BoxConstraints(),
-                              ),
-                              const SizedBox(width: 6),
-                              IconButton(
-                                icon: const Icon(Icons.redo, size: 19),
-                                onPressed: _redo,
-                                tooltip: "Redo",
-                                padding: const EdgeInsets.all(4),
-                                constraints: const BoxConstraints(),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                height: 18,
-                                width: 1,
-                                color: Colors.grey.shade300,
-                              ),
-                              const SizedBox(width: 8),
-                              InkWell(
-                                onTap: _save,
-                                borderRadius: BorderRadius.circular(6),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: _saveStatus == "Saved"
-                                        ? Colors.green.withValues(alpha: 0.1)
-                                        : pPurple.withValues(alpha: 0.08),
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.undo, size: 19),
+                                    onPressed: _undo,
+                                    tooltip: "Undo",
+                                    padding: const EdgeInsets.all(4),
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  IconButton(
+                                    icon: const Icon(Icons.redo, size: 19),
+                                    onPressed: _redo,
+                                    tooltip: "Redo",
+                                    padding: const EdgeInsets.all(4),
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    height: 18,
+                                    width: 1,
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  InkWell(
+                                    onTap: _save,
                                     borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: _saveStatus == "Saved"
-                                          ? Colors.green
-                                          : pPurple.withValues(alpha: 0.3),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: _saveStatus == "Saved"
+                                            ? Colors.green.withValues(alpha: 0.1)
+                                            : pPurple.withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: _saveStatus == "Saved"
+                                              ? Colors.green
+                                              : pPurple.withValues(alpha: 0.3),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            _saveStatus == "Saved" ? Icons.check_circle : Icons.save_rounded,
+                                            size: 14,
+                                            color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _saveStatus,
+                                            style: GoogleFonts.merriweather(
+                                              fontWeight: FontWeight.bold,
+                                              color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
+                                ],
+                              ),
+                              InkWell(
+                                onTap: _pickAnotherDate,
+                                borderRadius: BorderRadius.circular(6),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                                   child: Row(
                                     children: [
                                       Icon(
-                                        _saveStatus == "Saved" ? Icons.check_circle : Icons.save_rounded,
-                                        size: 14,
-                                        color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                        isPastReport ? Icons.history_rounded : Icons.calendar_today_rounded,
+                                        size: 13,
+                                        color: isPastReport ? Colors.orange[900] : pPurple,
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        _saveStatus,
+                                        DateFormat('MMM d (E)').format(selectedDate),
                                         style: GoogleFonts.merriweather(
+                                          fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          color: _saveStatus == "Saved" ? Colors.green : pPurple,
-                                          fontSize: 12,
+                                          color: isPastReport ? Colors.orange[900] : pPurple,
                                         ),
                                       ),
                                     ],
@@ -788,38 +1195,19 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                               ),
                             ],
                           ),
-                          InkWell(
-                            onTap: _pickAnotherDate,
-                            borderRadius: BorderRadius.circular(6),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    isPastReport ? Icons.history_rounded : Icons.calendar_today_rounded,
-                                    size: 13,
-                                    color: isPastReport ? Colors.orange[900] : pPurple,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    DateFormat('MMM d, yyyy').format(selectedDate),
-                                    style: GoogleFonts.merriweather(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: isPastReport ? Colors.orange[900] : pPurple,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          if (_hasDayToggle) ...[
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: _buildDayToggle(),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
 
                   const SizedBox(height: 8),
 
-                  // Responsive Stats Row
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: sideMargin),
                     child: Row(
@@ -835,7 +1223,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
                   const SizedBox(height: 10),
 
-                  // Module Grid Container
                   Expanded(
                     child: Container(
                       width: double.infinity,
@@ -976,8 +1363,22 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     );
   }
 
-  Future<void> _handleUpload() async {
-    FilePickerResult? r = await FilePicker.platform.pickFiles(allowMultiple: true, type: FileType.image);
-    if (r != null) setState(() => groupEvidenceCount = r.files.length);
-  }
+  void _handleUpload() {
+  final unitName = widget.cellName.isNotEmpty && widget.cellName != "N/A"
+      ? widget.cellName
+      : (widget.team.isNotEmpty && widget.team != "N/A"
+          ? widget.team
+          : (widget.dept.isNotEmpty && widget.dept != "N/A" ? widget.dept : widget.location));
+
+  showDialog(
+    context: context,
+    builder: (ctx) => EvidenceGalleryDialog(
+      sheetName: widget.sheetName,
+      unitName: unitName,
+      reportDate: selectedDate,
+      pPurple: pPurple,
+      onEvidenceChanged: _loadInitialData,
+    ),
+  );
+}
 }

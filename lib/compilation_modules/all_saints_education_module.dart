@@ -86,6 +86,17 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
   static const double lw = 115.0;
   static const double totalHeaderHeight = hh + hh + sh;
 
+  bool get _is24ChurchDept {
+    final r = widget.userRole.toLowerCase();
+    final d = widget.userDept.toLowerCase();
+    return (r.contains('_dept_') || r.startsWith('ia_') || d.contains('내무')) &&
+        !widget.isLocationLeader &&
+        !widget.isSubLocationLeader &&
+        !widget.isDeptLeader &&
+        !widget.isTeamLeader &&
+        !widget.isGroupLeader;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -99,7 +110,10 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         oldWidget.selectedSubLocation != widget.selectedSubLocation ||
         oldWidget.selectedDepartment != widget.selectedDepartment ||
         oldWidget.selectedTeam != widget.selectedTeam ||
-        oldWidget.level != widget.level) {
+        oldWidget.level != widget.level ||
+        oldWidget.timePeriod != widget.timePeriod ||
+        oldWidget.analyticsMode != widget.analyticsMode ||
+        oldWidget.groupBy != widget.groupBy) {
       _fetchMasterUnitsAndMembers();
     }
   }
@@ -109,12 +123,13 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
       final lvl = widget.level.toLowerCase();
 
       // 1. Fetch sub-locations for selected location excluding MOU
-      if ((lvl.contains('sub location') || lvl.contains('sub-location')) && widget.selectedLocation.isNotEmpty) {
-        final locRes = await _supabase.from('locations').select('id').eq('location', widget.selectedLocation).maybeSingle();
+      String locToFetch = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : widget.userLoc;
+      if ((lvl.contains('sub location') || lvl.contains('sub-location')) && locToFetch.isNotEmpty && locToFetch.toLowerCase() != 'church') {
+        final locRes = await _supabase.from('locations').select('id, location, name').or('location.eq.$locToFetch,name.eq.$locToFetch').maybeSingle();
         if (locRes != null && locRes['id'] != null) {
           final subData = await _supabase.from('sub_locations').select('name, is_mou').eq('location_id', locRes['id']).order('name');
           if (mounted) {
-            bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
+            bool isViewingMou = locToFetch.toUpperCase() == 'MOU';
             setState(() {
               _masterSubLocations = subData
                   .where((e) => isViewingMou ? (e['is_mou'] == true) : (e['is_mou'] != true))
@@ -125,22 +140,33 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         }
       }
 
-      // 2. Paginated fetch of standard members
+      // 2. Targeted fetch of members (Scoped to prevent 8000-member dump)
       dynamic mQuery = _supabase.from('members').select(
-        'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept'
+        'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id'
       );
 
-      // Apply scoping based on role and level
-      if (widget.isDeptLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
-      } else if (widget.isTeamLeader && widget.userTeam.isNotEmpty) {
-        mQuery = mQuery.eq('team', widget.userTeam);
-      } else if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
-        mQuery = mQuery.eq('sub_location', widget.userSub);
-      } else if (widget.isLocationLeader && widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
-        mQuery = mQuery.eq('location', widget.userLoc);
-      } else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
+      // A. Church 24-Department in Dept Mode: Only fetch Church staff (< 20 members)
+      if (_is24ChurchDept && widget.groupBy == 'Church') {
+        mQuery = mQuery.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,location.is.null');
+        if (widget.userDept.isNotEmpty && widget.userDept != 'Church') {
+          mQuery = mQuery.eq('department', widget.userDept);
+        }
+      }
+      // B. Cross-Region Group Leader constraint
+      else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
+        mQuery = mQuery.eq('department', widget.userDept).neq('location', 'Mou').neq('location', 'New Saints');
+      }
+      // C. Location Overseers / Workers
+      else if (!widget.isChurchWide) {
+        if (widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
+          mQuery = mQuery.eq('location', widget.userLoc);
+        }
+        if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
+          mQuery = mQuery.eq('sub_location', widget.userSub);
+        }
+        if (widget.isDeptLeader && widget.userDept.isNotEmpty) {
+          mQuery = mQuery.eq('department', widget.userDept);
+        }
       }
 
       // Hierarchical drill-down filter overrides
@@ -148,7 +174,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
           mQuery = mQuery.eq('location', widget.selectedLocation);
         }
-      } else if (lvl.contains('dept')) {
+      } else if (lvl.contains('dept') && !_is24ChurchDept) {
         if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
           mQuery = mQuery.eq('location', widget.selectedLocation);
         }
@@ -162,7 +188,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         if (widget.selectedSubLocation.isNotEmpty) {
           mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
         }
-        if (widget.selectedDepartment.isNotEmpty) {
+        if (!widget.isGroupLeader && widget.selectedDepartment.isNotEmpty) {
           mQuery = mQuery.eq('department', widget.selectedDepartment);
         }
       } else if (lvl.contains('cell')) {
@@ -172,7 +198,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         if (widget.selectedSubLocation.isNotEmpty) {
           mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
         }
-        if (widget.selectedDepartment.isNotEmpty) {
+        if (!widget.isGroupLeader && widget.selectedDepartment.isNotEmpty) {
           mQuery = mQuery.eq('department', widget.selectedDepartment);
         }
         if (widget.selectedTeam.isNotEmpty) {
@@ -247,11 +273,11 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
   Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers}) {
     int n = officialMembers != null ? officialMembers.length : logsList.length;
 
-    int ip = logsList.where((x) => x['status_detail'] == "ASE In-person").length;
-    int on = logsList.where((x) => x['status_detail'] == "ASE Online").length;
-    int mu = logsList.where((x) => x['status_detail'] == "ASE Make Up").length;
+    int ip = logsList.where((x) => x['status_detail'] == "ASE In-person" || x['status_detail'] == "In-person").length;
+    int on = logsList.where((x) => x['status_detail'] == "ASE Online" || x['status_detail'] == "Online" || x['status_detail'] == "On-line").length;
+    int mu = logsList.where((x) => x['status_detail'] == "ASE Make Up" || x['status_detail'] == "Make Up" || x['status_detail'] == "Makeup").length;
     int att = ip + on + mu;
-    int ab = n > att ? (n - att) : logsList.where((x) => x['status_detail'] == "ASE Absence").length;
+    int ab = n > att ? (n - att) : logsList.where((x) => x['status_detail'] == "ASE Absence" || x['status_detail'] == "Absentee" || x['status_detail'] == "Absence").length;
 
     return {
       "n": n,
@@ -276,7 +302,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
       _buildToolbar(),
       _section("Education table summary", _buildExcelGrid(totS), context),
       const SizedBox(height: 8),
-      _section("Participation visualization", _buildChart(), context),
+      _section("Participation visualization", _buildChart(totS), context),
     ]);
   }
 
@@ -307,17 +333,30 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     );
   }
 
+  // --- DYNAMIC ROWS (NO DUPLICATES, NO PHANTOM 24-DEPT ROWS) ---
   Widget? _buildDynamicHierarchicalRows() {
     final String lvl = widget.level.trim().toLowerCase();
 
-    // Avoid redundant row when viewing own unit tier
-    if (lvl == 'church status' ||
-        (widget.isLocationLeader && lvl == 'location status') ||
-        (widget.isSubLocationLeader && lvl.contains('sub location')) ||
-        (widget.isDeptLeader && lvl.contains('dept')) ||
-        (widget.isTeamLeader && lvl.contains('team'))) {
-      return null;
-    }
+    // 1. Church status top row already represents Church
+    if (lvl == 'church status') return null;
+
+    // 2. 24 Departments at Church: No demographic sub-departments (장년회, 부녀회...)
+    if (_is24ChurchDept || widget.groupBy == 'Church') return null;
+
+    // 3. Location leader viewing location status: Summary is already at top
+    if (widget.isLocationLeader && lvl == 'location status') return null;
+
+    // 4. Sub-location leader viewing sub-location status: Prevent duplicate row
+    if (widget.isSubLocationLeader && (lvl.contains('sub location') || lvl.contains('sub-location'))) return null;
+
+    // 5. Dept leader viewing dept status: Prevent duplicate row
+    if (widget.isDeptLeader && lvl == 'dept status') return null;
+
+    // 6. Team leader viewing team status: Prevent duplicate row
+    if (widget.isTeamLeader && lvl == 'team status') return null;
+
+    // 7. Group leader viewing group status: Summary is already at top
+    if (widget.isGroupLeader && lvl.contains('group')) return null;
 
     Map<String, List<dynamic>> groupedLogs = {};
     Map<String, List<dynamic>> groupedMembers = {};
@@ -347,22 +386,17 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         if (groupedLogs.containsKey(bol)) groupedLogs[bol]!.add(l);
       }
     }
-    // 2. SUB-LOCATION STATUS
+    // 2. SUB-LOCATION STATUS (Supports Dept Leader overseeing all sub-locations)
     else if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      categoryName = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : "Sub-locations";
-
-      bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
-      bool isMouRecord(dynamic r) {
-        String dept = (r['department'] ?? r['members']?['department'] ?? '').toString().trim().toUpperCase();
-        return dept.contains('MOU');
-      }
-
-      final scopedMembers = _masterMembers.where((m) => isViewingMou ? isMouRecord(m) : !isMouRecord(m)).toList();
-      final scopedLogs = widget.logs.where((l) => isViewingMou ? isMouRecord(l) : !isMouRecord(l)).toList();
+      categoryName = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : (widget.userLoc.isNotEmpty ? widget.userLoc : "Sub-locations");
 
       final Set<String> subLocs = Set.from(_masterSubLocations);
-      for (var m in scopedMembers) {
+      for (var m in _masterMembers) {
         String sub = m['sub_location']?.toString().trim() ?? '';
+        if (sub.isNotEmpty) subLocs.add(sub);
+      }
+      for (var l in widget.logs) {
+        String sub = extract(l, ['sub_location', 'sub_loc']);
         if (sub.isNotEmpty) subLocs.add(sub);
       }
 
@@ -370,11 +404,11 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         groupedLogs[sub] = [];
         groupedMembers[sub] = [];
       }
-      for (var m in scopedMembers) {
+      for (var m in _masterMembers) {
         String sub = m['sub_location']?.toString().trim() ?? '';
         if (sub.isNotEmpty) groupedMembers.putIfAbsent(sub, () => []).add(m);
       }
-      for (var l in scopedLogs) {
+      for (var l in widget.logs) {
         String sub = extract(l, ['sub_location', 'sub_loc']);
         if (sub.isNotEmpty) groupedLogs.putIfAbsent(sub, () => []).add(l);
       }
@@ -403,14 +437,11 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         }
       }
     }
-    // 4. DEPT STATUS
+    // 4. DEPT STATUS (Location Departments only)
     else if (lvl.contains('dept')) {
       categoryName = widget.selectedSubLocation.isNotEmpty ? widget.selectedSubLocation : "Department";
-      List<String> deptsToShow = widget.isDeptLeader && widget.userDept.isNotEmpty
-          ? [widget.userDept]
-          : _orderedDepartments;
-
-      for (var d in deptsToShow) {
+      
+      for (var d in _orderedDepartments) {
         groupedLogs[d] = [];
         groupedMembers[d] = [];
       }
@@ -418,12 +449,16 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         String dept = m['department']?.toString().trim() ?? '';
         if (groupedMembers.containsKey(dept)) {
           groupedMembers[dept]!.add(m);
+        } else if (dept.isNotEmpty) {
+          groupedMembers.putIfAbsent(dept, () => []).add(m);
         }
       }
       for (var l in widget.logs) {
         String dept = extract(l, ['department', 'dept', 'dept_name']);
         if (groupedLogs.containsKey(dept)) {
           groupedLogs[dept]!.add(l);
+        } else if (dept.isNotEmpty) {
+          groupedLogs.putIfAbsent(dept, () => []).add(l);
         }
       }
     }
@@ -557,9 +592,15 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     );
   }
 
-  // --- CHART LOGIC ---
+  // --- CONNECTED CHART LOGIC ---
   String _getDynamicXAxisLabel() {
     final lvl = widget.level.toLowerCase();
+    if (_is24ChurchDept || widget.groupBy == 'Church') {
+      return widget.userDept.isNotEmpty ? widget.userDept : 'Department Summary';
+    }
+    if (widget.isGroupLeader && lvl.contains('location status')) {
+      return '${widget.userDept} across Locations';
+    }
     if (lvl.contains('church')) return 'Church Results';
     if (lvl.contains('group')) return 'Book of Life Groups';
     if (lvl.contains('sub location') || lvl.contains('sub-location')) {
@@ -578,14 +619,94 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     return widget.groupBy;
   }
 
-  Widget _buildChart() {
-    bool isTrend = widget.timePeriod != "Current status";
+  Widget _buildChart(Map<String, dynamic> totSummary) {
+    bool isTrend = widget.analyticsMode == "Trend" || (widget.timePeriod != "Current status" && widget.analyticsMode != "Summary");
     final lvl = widget.level.toLowerCase();
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // CASE A: SNAPSHOT / SUMMARY MODE -> BAR CHART
+    // ─────────────────────────────────────────────────────────────────────────
     if (!isTrend) {
       String xName = _getDynamicXAxisLabel();
       List<String> keys = _getUnitKeysForLevel(lvl);
 
+      // SINGLE UNIT / DEPARTMENT VIEW: Chart displays metric breakdown
+      if (keys.isEmpty || keys.length == 1 || _is24ChurchDept || widget.groupBy == 'Church') {
+        final double nVal = (totSummary['n'] as num?)?.toDouble() ?? 0.0;
+        final double attVal = (totSummary['att'] as num?)?.toDouble() ?? 0.0;
+        final double ipVal = (totSummary['ip'] as num?)?.toDouble() ?? 0.0;
+        final double onVal = (totSummary['on'] as num?)?.toDouble() ?? 0.0;
+        final double muVal = (totSummary['mu'] as num?)?.toDouble() ?? 0.0;
+        final double abVal = (totSummary['ab'] as num?)?.toDouble() ?? 0.0;
+
+        final double dynamicMaxY = (max(nVal, max(attVal, abVal)) * 1.25).ceilToDouble();
+
+        final List<_AseBarMetric> metrics = [
+          _AseBarMetric("Saints (N)", nVal, Colors.grey.shade500),
+          _AseBarMetric("Attended", attVal, pPurple),
+          _AseBarMetric("In-person", ipVal, Colors.indigo),
+          _AseBarMetric("Online", onVal, Colors.teal),
+          _AseBarMetric("Make-up", muVal, Colors.orange),
+          _AseBarMetric("Absentees", abVal, Colors.red.shade400),
+        ];
+
+        return Column(children: [
+          Container(
+            height: 320,
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+            child: BarChart(BarChartData(
+              maxY: dynamicMaxY > 0 ? dynamicMaxY : 10,
+              borderData: FlBorderData(show: true, border: const Border(left: BorderSide(color: Colors.black, width: 1.0), bottom: BorderSide(color: Colors.black, width: 1.0))),
+              gridData: const FlGridData(show: true, drawVerticalLine: false),
+              titlesData: FlTitlesData(
+                bottomTitles: AxisTitles(
+                  axisNameWidget: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(xName, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                  axisNameSize: 28,
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    getTitlesWidget: (v, m) {
+                      int idx = v.toInt();
+                      if (idx < 0 || idx >= metrics.length) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(metrics[idx].label, style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: AxisTitles(
+                  axisNameWidget: Text("Persons", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold)),
+                  axisNameSize: 22,
+                  sideTitles: SideTitles(showTitles: true, reservedSize: 36, getTitlesWidget: (v, m) => Text("${v.toInt()}", style: GoogleFonts.merriweather(fontSize: 9.5))),
+                ),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              barGroups: List.generate(metrics.length, (i) {
+                return BarChartGroupData(x: i, barRods: [
+                  BarChartRodData(toY: metrics[i].val, color: metrics[i].color, width: 34, borderRadius: BorderRadius.circular(4))
+                ]);
+              }),
+            )),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 6),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: metrics.map((m) => _lgItem("${m.label}: ${m.val.toInt()}", m.color)).toList(),
+            ),
+          ),
+        ]);
+      }
+
+      // MULTI-UNIT VIEW: Compares units across level
       Map<String, List<dynamic>> cgLogs = {};
       Map<String, List<dynamic>> cgMembers = {};
 
@@ -612,7 +733,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         final double highest = max<double>(nVal, max<double>(attVal, ipVal));
         if (highest > maxHeadcount) maxHeadcount = highest;
       }
-      double dynamicMaxY = (maxHeadcount * 1.2).ceilToDouble();
+      double dynamicMaxY = (maxHeadcount * 1.25).ceilToDouble();
 
       return Column(children: [
         Container(
@@ -625,7 +746,9 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
       ]);
     }
 
-    // MULTI-LINE OVER TIME
+    // ─────────────────────────────────────────────────────────────────────────
+    // CASE B: TREND OVER TIME (WEEKLY / MONTHLY) -> MULTI-LINE OVER DATES
+    // ─────────────────────────────────────────────────────────────────────────
     final Set<String> rawDates = {};
     for (var l in widget.logs) {
       final d = l['report_date']?.toString();
@@ -647,35 +770,55 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     double maxTrendValue = 10.0;
     final List<LineChartBarData> lineBars = [];
 
-    for (int u = 0; u < unitKeys.length; u++) {
-      final unitName = unitKeys[u];
-      final Color unitColor = palette[u % palette.length];
+    // Single department/unit: Single clean trendline
+    if (unitKeys.isEmpty || _is24ChurchDept || widget.groupBy == 'Church') {
       final List<FlSpot> spots = [];
-
       for (int d = 0; d < sortedDates.length; d++) {
         final dateStr = sortedDates[d];
-        final dateLogs = widget.logs.where((l) {
-          final matchesDate = l['report_date']?.toString() == dateStr;
-          final matchesUnit = _resolveUnitKeyForRecord(l, lvl) == unitName;
-          return matchesDate && matchesUnit;
-        }).toList();
-
+        final dateLogs = widget.logs.where((l) => l['report_date']?.toString() == dateStr).toList();
         final calc = _calc(dateLogs);
-        double val = _selectedTrendMetric == "General Attendance"
-            ? (calc['att'] as num).toDouble()
-            : (calc['ip'] as num).toDouble();
-
+        double val = _selectedTrendMetric == "General Attendance" ? (calc['att'] as num).toDouble() : (calc['ip'] as num).toDouble();
         if (val > maxTrendValue) maxTrendValue = val;
         spots.add(FlSpot(d.toDouble(), val));
       }
-
       lineBars.add(LineChartBarData(
         spots: spots,
-        color: unitColor,
-        barWidth: 2.5,
+        color: pPurple,
+        barWidth: 3.0,
         isCurved: true,
         dotData: const FlDotData(show: true),
       ));
+    } else {
+      for (int u = 0; u < unitKeys.length; u++) {
+        final unitName = unitKeys[u];
+        final Color unitColor = palette[u % palette.length];
+        final List<FlSpot> spots = [];
+
+        for (int d = 0; d < sortedDates.length; d++) {
+          final dateStr = sortedDates[d];
+          final dateLogs = widget.logs.where((l) {
+            final matchesDate = l['report_date']?.toString() == dateStr;
+            final matchesUnit = _resolveUnitKeyForRecord(l, lvl) == unitName;
+            return matchesDate && matchesUnit;
+          }).toList();
+
+          final calc = _calc(dateLogs);
+          double val = _selectedTrendMetric == "General Attendance"
+              ? (calc['att'] as num).toDouble()
+              : (calc['ip'] as num).toDouble();
+
+          if (val > maxTrendValue) maxTrendValue = val;
+          spots.add(FlSpot(d.toDouble(), val));
+        }
+
+        lineBars.add(LineChartBarData(
+          spots: spots,
+          color: unitColor,
+          barWidth: 2.5,
+          isCurved: true,
+          dotData: const FlDotData(show: true),
+        ));
+      }
     }
 
     double dynamicMaxY = (maxTrendValue * 1.25).ceilToDouble();
@@ -752,23 +895,26 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
           lineBarsData: lineBars,
         )),
       ),
-      Padding(
-        padding: const EdgeInsets.only(top: 12, bottom: 6),
-        child: Center(
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: List.generate(unitKeys.length, (i) => _lgItem(unitKeys[i], palette[i % palette.length])),
+      if (unitKeys.isNotEmpty && !_is24ChurchDept && widget.groupBy != 'Church')
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 6),
+          child: Center(
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: List.generate(unitKeys.length, (i) => _lgItem(unitKeys[i], palette[i % palette.length])),
+            ),
           ),
         ),
-      ),
     ]);
   }
 
   List<String> _getUnitKeysForLevel(String lvl) {
-    if (lvl.contains('church')) return ["Church (Overall)"];
+    if (_is24ChurchDept || widget.groupBy == 'Church' || lvl.contains('church')) {
+      return [];
+    }
     if (lvl.contains('group')) return List.from(_orderedBOLGroups);
     if (lvl.contains('sub location') || lvl.contains('sub-location')) {
       final Set<String> subs = Set.from(_masterSubLocations);
@@ -776,7 +922,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
         final s = m['sub_location']?.toString().trim() ?? '';
         if (s.isNotEmpty) subs.add(s);
       }
-      return subs.isNotEmpty ? _sortAscending(subs.toList()) : ["Sub-locations"];
+      return subs.isNotEmpty ? _sortAscending(subs.toList()) : [];
     }
     if (lvl.contains('location status')) {
       if (widget.isLocationLeader && widget.selectedLocation.isNotEmpty) {
@@ -790,11 +936,11 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     }
     if (lvl.contains('team')) {
       final teams = _getScopedTeams();
-      return teams.isNotEmpty ? teams : ["팀1"];
+      return teams.isNotEmpty ? teams : [];
     }
     if (lvl.contains('cell')) {
       final cells = _getScopedCellGroups();
-      return cells.isNotEmpty ? cells : ["구역1"];
+      return cells.isNotEmpty ? cells : [];
     }
     return [];
   }
@@ -924,4 +1070,11 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
       content,
     ]),
   );
+}
+
+class _AseBarMetric {
+  final String label;
+  final double val;
+  final Color color;
+  _AseBarMetric(this.label, this.val, this.color);
 }

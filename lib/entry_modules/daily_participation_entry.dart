@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,16 +9,16 @@ class DailyParticipationEntry extends StatefulWidget {
   final List<dynamic> members;
   final Map<String, Map<String, dynamic>> reportData;
   final Color pPurple;
-  final List<String> statusOptions; 
+  final List<String> statusOptions;
   final VoidCallback onChanged;
 
   const DailyParticipationEntry({
-    super.key, 
-    required this.members, 
-    required this.reportData, 
-    required this.pPurple, 
-    required this.statusOptions, 
-    required this.onChanged
+    super.key,
+    required this.members,
+    required this.reportData,
+    required this.pPurple,
+    required this.statusOptions,
+    required this.onChanged,
   });
 
   @override
@@ -25,7 +26,6 @@ class DailyParticipationEntry extends StatefulWidget {
 }
 
 class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
-  // Synchronized Scroll Controllers for Frozen Panes
   late final ScrollController _rowNumScrollController;
   late final ScrollController _contentVertScrollController;
   late final ScrollController _horizScrollController;
@@ -35,15 +35,13 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
   int? _selStartRow, _selStartCol, _selEndRow, _selEndCol;
   final Map<int, Set<String>> _activeFilters = {};
 
-  // 80% Row Height (original was 38px -> 30px)
-  static const double _rowHeight = 30.0;
+  static const double _rowHeight = 28.0;
   static const double _rowNumColWidth = 46.0;
   static const double _alphaHeaderHeight = 20.0;
   static const double _titleHeaderHeight = 32.0;
   static const double _totalHeaderHeight = _alphaHeaderHeight + _titleHeaderHeight;
 
-  // Unabbreviated Columns matching your exact schema
-  final List<String> _colLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
+  final List<String> _colLetters = ["A", "B", "C", "D", "E", "F", "G", "H"];
   final List<String> _colTitles = [
     "Location",
     "Sub-Location",
@@ -52,13 +50,9 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
     "Cell Group",
     "English Name",
     "Duty",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday"
+    "Participation Status",
   ];
-  final List<double> _baseWidths = [105, 115, 115, 95, 95, 160, 110, 105, 105, 105, 105, 105];
+  final List<double> _baseWidths = [110, 120, 120, 100, 100, 160, 110, 180];
 
   @override
   void initState() {
@@ -69,7 +63,6 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
     _contentVertScrollController = ScrollController();
     _horizScrollController = ScrollController();
 
-    // Link vertical scrolling between frozen row numbers and main data
     _contentVertScrollController.addListener(() {
       if (_isSyncing) return;
       _isSyncing = true;
@@ -101,10 +94,6 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
     super.dispose();
   }
 
-  String get _pos => widget.statusOptions.isNotEmpty ? widget.statusOptions[0] : "Yes";
-  String get _neg => widget.statusOptions.length > 1 ? widget.statusOptions[1] : "No";
-
-  // Dynamic filter
   List<dynamic> get _filteredMembers {
     if (_activeFilters.isEmpty) return widget.members;
     return widget.members.where((m) {
@@ -129,11 +118,7 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
       case 4: return m['cell_group']?.toString() ?? "";
       case 5: return m['english_name']?.toString() ?? "";
       case 6: return m['duty']?.toString() ?? "";
-      case 7: return widget.reportData[mid]?['mon_part']?.toString() ?? "";
-      case 8: return widget.reportData[mid]?['tue_part']?.toString() ?? "";
-      case 9: return widget.reportData[mid]?['wed_part']?.toString() ?? "";
-      case 10: return widget.reportData[mid]?['thu_part']?.toString() ?? "";
-      case 11: return widget.reportData[mid]?['fri_part']?.toString() ?? "";
+      case 7: return widget.reportData[mid]?['status_detail']?.toString() ?? "";
       default: return "";
     }
   }
@@ -256,11 +241,10 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
   }
 
   bool _setEditableValue(String mid, int c, String? val) {
-    if (c == 7) { widget.reportData[mid]!['mon_part'] = val; return true; }
-    if (c == 8) { widget.reportData[mid]!['tue_part'] = val; return true; }
-    if (c == 9) { widget.reportData[mid]!['wed_part'] = val; return true; }
-    if (c == 10) { widget.reportData[mid]!['thu_part'] = val; return true; }
-    if (c == 11) { widget.reportData[mid]!['fri_part'] = val; return true; }
+    if (c == 7) {
+      widget.reportData[mid]!['status_detail'] = val;
+      return true;
+    }
     return false;
   }
 
@@ -389,60 +373,70 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: (node, event) {
-        if (event is! KeyDownEvent) return KeyEventResult.ignored;
-        final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
-        if (ctrl && event.logicalKey == LogicalKeyboardKey.keyC) { _copySelection(); return KeyEventResult.handled; }
-        if (ctrl && event.logicalKey == LogicalKeyboardKey.keyV) { _pasteSelection(); return KeyEventResult.handled; }
-        if (ctrl && event.logicalKey == LogicalKeyboardKey.keyA) { _selectAll(); return KeyEventResult.handled; }
-        if (event.logicalKey == LogicalKeyboardKey.delete || event.logicalKey == LogicalKeyboardKey.backspace) { _clearSelection(); return KeyEventResult.handled; }
-        return KeyEventResult.ignored;
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final availWidth = constraints.maxWidth - _rowNumColWidth;
-          final baseSum = _baseWidths.fold<double>(0, (s, w) => s + w);
-          final scale = (availWidth > baseSum) ? (availWidth / baseSum) : 1.0;
-          final widths = _baseWidths.map((w) => w * scale).toList();
-          final totalTableWidth = widths.fold<double>(0, (s, w) => s + w);
-          final filtered = _filteredMembers;
+    return ScrollConfiguration(
+      behavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.trackpad,
+          PointerDeviceKind.stylus,
+        },
+      ),
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is! KeyDownEvent) return KeyEventResult.ignored;
+          final ctrl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
+          if (ctrl && event.logicalKey == LogicalKeyboardKey.keyC) { _copySelection(); return KeyEventResult.handled; }
+          if (ctrl && event.logicalKey == LogicalKeyboardKey.keyV) { _pasteSelection(); return KeyEventResult.handled; }
+          if (ctrl && event.logicalKey == LogicalKeyboardKey.keyA) { _selectAll(); return KeyEventResult.handled; }
+          if (event.logicalKey == LogicalKeyboardKey.delete || event.logicalKey == LogicalKeyboardKey.backspace) { _clearSelection(); return KeyEventResult.handled; }
+          return KeyEventResult.ignored;
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final availWidth = constraints.maxWidth - _rowNumColWidth;
+            final baseSum = _baseWidths.fold<double>(0, (s, w) => s + w);
+            final scale = (availWidth > baseSum) ? (availWidth / baseSum) : 1.0;
+            final widths = _baseWidths.map((w) => w * scale).toList();
+            final totalTableWidth = widths.fold<double>(0, (s, w) => s + w);
+            final filtered = _filteredMembers;
 
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: Colors.white,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. FROZEN LEFT PANE: Corner + Row Numbers
-                SizedBox(
-                  width: _rowNumColWidth,
-                  child: Column(
-                    children: [
-                      GestureDetector(
-                        onTap: _selectAll,
-                        child: Container(
-                          height: _totalHeaderHeight,
-                          width: _rowNumColWidth,
-                          color: const Color(0xFFE2E8F0),
-                          child: const Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.select_all, size: 14, color: Colors.black54),
-                              Text("#", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                            ],
+            return Container(
+              width: double.infinity,
+              height: double.infinity,
+              color: Colors.white,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. FROZEN LEFT PANE: Corner + Virtualized Row Numbers
+                  SizedBox(
+                    width: _rowNumColWidth,
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: _selectAll,
+                          child: Container(
+                            height: _totalHeaderHeight,
+                            width: _rowNumColWidth,
+                            color: const Color(0xFFE2E8F0),
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.select_all, size: 14, color: Colors.black54),
+                                Text("#", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          controller: _rowNumScrollController,
-                          physics: const ClampingScrollPhysics(),
-                          child: Column(
-                            children: List.generate(filtered.length, (idx) {
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _rowNumScrollController,
+                            physics: const ClampingScrollPhysics(),
+                            itemCount: filtered.length,
+                            itemExtent: _rowHeight,
+                            itemBuilder: (ctx, idx) {
                               final isRowSel = _selStartRow != null &&
                                   idx >= math.min(_selStartRow!, _selEndRow!) &&
                                   idx <= math.max(_selStartRow!, _selEndRow!) &&
@@ -462,95 +456,100 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
                                       right: BorderSide(color: Colors.grey.withValues(alpha: 0.4), width: 1.2),
                                     ),
                                   ),
-                                  child: Center(child: Text("${idx + 1}", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: isRowSel ? widget.pPurple : Colors.grey[700]))),
+                                  child: Center(
+                                    child: Text(
+                                      "${idx + 1}",
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: isRowSel ? widget.pPurple : Colors.grey[700],
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               );
-                            }),
+                            },
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
 
-                // 2. SCROLLABLE DATA PANE (Header sticky vertically, Data scrolls 2D)
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: _horizScrollController,
-                    scrollDirection: Axis.horizontal,
-                    physics: const ClampingScrollPhysics(),
-                    child: SizedBox(
-                      width: totalTableWidth,
-                      child: Column(
-                        children: [
-                          // FROZEN TOP HEADER
-                          Container(
-                            height: _totalHeaderHeight,
-                            color: const Color(0xFF1E293B),
-                            child: Column(
-                              children: [
-                                // Excel Alphabet
-                                SizedBox(
-                                  height: _alphaHeaderHeight,
-                                  child: Row(
-                                    children: List.generate(_colLetters.length, (i) {
-                                      final isColSel = _selStartCol != null &&
-                                          i >= math.min(_selStartCol!, _selEndCol!) &&
-                                          i <= math.max(_selStartCol!, _selEndCol!) &&
-                                          _selStartRow == 0 &&
-                                          _selEndRow == filtered.length - 1;
-
-                                      return GestureDetector(
-                                        onTap: () => _selectColumn(i),
-                                        child: Container(
-                                          width: widths[i],
-                                          color: isColSel ? widget.pPurple.withValues(alpha: 0.25) : const Color(0xFFF1F5F9),
-                                          alignment: Alignment.center,
-                                          child: Text(_colLetters[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isColSel ? widget.pPurple : Colors.grey[700])),
-                                        ),
-                                      );
-                                    }),
-                                  ),
-                                ),
-                                // Column Titles + Filter Icons
-                                SizedBox(
-                                  height: _titleHeaderHeight,
-                                  child: Row(
-                                    children: List.generate(_colTitles.length, (i) {
-                                      final isFiltered = _activeFilters.containsKey(i);
-                                      return Container(
-                                        width: widths[i],
-                                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                                        decoration: BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.withValues(alpha: 0.3), width: 0.8))),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: GestureDetector(
-                                                onTap: () => _selectColumn(i),
-                                                child: Text(_colTitles[i], softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
-                                              ),
-                                            ),
-                                            InkWell(
-                                              onTap: () => _openFilterDialog(i),
-                                              child: Icon(isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: isFiltered ? const Color(0xFFF59E0B) : Colors.white70),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          // DATA ROWS (Scrolls vertically in sync with row numbers)
-                          Expanded(
-                            child: SingleChildScrollView(
-                              controller: _contentVertScrollController,
-                              physics: const ClampingScrollPhysics(),
+                  // 2. SCROLLABLE DATA PANE (Header sticky, Rows virtualized)
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: _horizScrollController,
+                      scrollDirection: Axis.horizontal,
+                      physics: const ClampingScrollPhysics(),
+                      child: SizedBox(
+                        width: totalTableWidth,
+                        child: Column(
+                          children: [
+                            Container(
+                              height: _totalHeaderHeight,
+                              color: const Color(0xFF1E293B),
                               child: Column(
-                                children: List.generate(filtered.length, (r) {
+                                children: [
+                                  SizedBox(
+                                    height: _alphaHeaderHeight,
+                                    child: Row(
+                                      children: List.generate(_colLetters.length, (i) {
+                                        final isColSel = _selStartCol != null &&
+                                            i >= math.min(_selStartCol!, _selEndCol!) &&
+                                            i <= math.max(_selStartCol!, _selEndCol!) &&
+                                            _selStartRow == 0 &&
+                                            _selEndRow == filtered.length - 1;
+
+                                        return GestureDetector(
+                                          onTap: () => _selectColumn(i),
+                                          child: Container(
+                                            width: widths[i],
+                                            color: isColSel ? widget.pPurple.withValues(alpha: 0.25) : const Color(0xFFF1F5F9),
+                                            alignment: Alignment.center,
+                                            child: Text(_colLetters[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isColSel ? widget.pPurple : Colors.grey[700])),
+                                          ),
+                                        );
+                                      }),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    height: _titleHeaderHeight,
+                                    child: Row(
+                                      children: List.generate(_colTitles.length, (i) {
+                                        final isFiltered = _activeFilters.containsKey(i);
+                                        return Container(
+                                          width: widths[i],
+                                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                                          decoration: BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.withValues(alpha: 0.3), width: 0.8))),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: GestureDetector(
+                                                  onTap: () => _selectColumn(i),
+                                                  child: Text(_colTitles[i], softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                                ),
+                                              ),
+                                              InkWell(
+                                                onTap: () => _openFilterDialog(i),
+                                                child: Icon(isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: isFiltered ? const Color(0xFFF59E0B) : Colors.white70),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            Expanded(
+                              child: ListView.builder(
+                                controller: _contentVertScrollController,
+                                physics: const ClampingScrollPhysics(),
+                                itemCount: filtered.length,
+                                itemExtent: _rowHeight,
+                                itemBuilder: (ctx, r) {
                                   final m = filtered[r];
                                   final isEven = r.isEven;
                                   return SizedBox(
@@ -561,19 +560,19 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
                                       }),
                                     ),
                                   );
-                                }),
+                                },
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -585,7 +584,7 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
     widget.reportData.putIfAbsent(mid, () => {});
 
     Widget content;
-    // Static columns: Location, Sub, Dept, Team, Cell, Name, Duty
+    // Static columns: Location, Sub, Dept, Team, Cell, English Name, Duty
     if (c <= 6) {
       final t = _getCellValue(m, c);
       content = Container(
@@ -593,43 +592,24 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
         alignment: Alignment.center,
         child: Text(t, softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: c == 5 ? FontWeight.bold : FontWeight.normal)),
       );
-    }
-    // Checkbox / Toggle Pills (Monday – Friday)
+    } 
+    // Dropdown: Daily Participation Status (status_detail)
     else {
-      final keys = ['mon_part', 'tue_part', 'wed_part', 'thu_part', 'fri_part'];
-      final colKey = keys[c - 7];
-      final currentVal = widget.reportData[mid]![colKey];
-      final bool isDone = currentVal == _pos;
-
-      content = Center(
-        child: InkWell(
-          onTap: () {
+      final cur = _getCellValue(m, c);
+      content = DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: widget.statusOptions.contains(cur) ? cur : null,
+          isDense: true, isExpanded: true, iconSize: 14,
+          style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.bold),
+          items: [
+            const DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11)))),
+            ...widget.statusOptions.map((s) => DropdownMenuItem(value: s, child: Center(child: Text(s, softWrap: false, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))))),
+          ],
+          onChanged: (v) {
             _selectCell(r, c);
             widget.onChanged();
-            setState(() => widget.reportData[mid]![colKey] = isDone ? _neg : _pos);
+            setState(() => _setEditableValue(mid, c, v));
           },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: isDone ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: isDone ? Colors.green : Colors.red.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(isDone ? Icons.check_circle_rounded : Icons.cancel_rounded, size: 11, color: isDone ? Colors.green : Colors.red),
-                const SizedBox(width: 3),
-                Text(
-                  isDone ? _pos : _neg,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.w900, color: isDone ? Colors.green[800] : Colors.red[800]),
-                ),
-              ],
-            ),
-          ),
         ),
       );
     }

@@ -72,19 +72,15 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   // Metadata from app_roles table
   Map<String, dynamic>? _roleMetadata;
-  // Internal Affairs toggle: true = Church View (All), false = Department View (IA only)
-  final bool _iaChurchMode = true;
+  bool _dualModeIsChurch = true;
 
   // --- DYNAMIC ROLE IDENTIFIERS ---
   String get _scope => _roleMetadata?['approval_scope'] ?? '';
   String get _grouping => (_roleMetadata?['Grouping'] ?? '').toString();
 
-  bool _dualModeIsChurch = true;
-
   // 1. CROSS-REGION GROUP LEADERS (MG, WG, YAG, New Saints, MOU, Theology)
   bool get _isGroupLeader {
     String r = widget.role.toLowerCase();
-    // Guard: Location workers are NEVER Church Group Leaders
     if (r.contains('cell') || r.contains('team') || r.startsWith('dept_') || r.startsWith('sub_loc') || r.startsWith('loc_')) {
       return false;
     }
@@ -131,11 +127,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
   bool get _isAdministrationDept {
     String r = widget.role.toLowerCase();
     String d = widget.dept.trim().toLowerCase();
-    return (r.contains('admin_dept') || d.contains('행정서무') || _grouping.startsWith('24-Dept 11') || _grouping.startsWith('24-Dept 12') || _grouping.startsWith('24-Dept 13')) &&
+    return (r.contains('admin_dept') || d.contains('행정서무') || 
+            _grouping.startsWith('24-Dept 11') || _grouping.startsWith('24-Dept 12') || _grouping.startsWith('24-Dept 13')) &&
            r != 'admin';
   }
 
-  // Determines if the current worker gets a Dual Mode toggle on this specific duty
   bool get _hasDualModeForCurrentDuty {
     final d = widget.selectedDuty.trim();
     if (_isInternalAffairs) return true;
@@ -169,15 +165,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
   bool get _isChurchWideCompiler {
     if (_isGroupLeader) return false;
     
-    // If this role has Dual Mode for this duty:
     if (_hasDualModeForCurrentDuty) {
       return _dualModeIsChurch;
     }
 
-    // Standard 24 Departments without dual mode for this duty are NEVER church-wide
     if (_scope == 'church_department' || _grouping.startsWith('24-Dept')) return false;
 
-    // Church-wide roles (Admin, Church Secretary, etc.)
     if (_scope == 'church') return true;
 
     String r = widget.role.toLowerCase();
@@ -248,14 +241,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
       _hierarchy = ['Group status', 'Location status', 'Sub location status', 'Team status', 'Cell status'];
     } else if (_isChurchWideCompiler) {
       _hierarchy = ['Church status', 'Group status', 'Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
-    } else if (_is24DeptWorker || (_isInternalAffairs && !_iaChurchMode)) {
-      _hierarchy = ['Dept status', 'Team status', 'Cell status'];
+    } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+      // 24 Departments at Church only have Dept status (no team/cell status unless special)
+      _hierarchy = ['Dept status'];
     } else if (_isLocationLeader) {
       _hierarchy = ['Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isSubLocationLeader) {
       _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isDeptLeader) {
-      _hierarchy = ['Dept status', 'Team status', 'Cell status'];
+      // Dept leaders can oversee their department across all sub-locations in their city
+      _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isTeamLeader) {
       _hierarchy = ['Team status', 'Cell status'];
     } else {
@@ -269,25 +264,63 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   void _updateGroupByFromLevel(String level) {
-    if (level.contains('Cell')) _groupBy = 'Cell';
-    else if (level.contains('Team')) _groupBy = 'Team';
-    else if (level.contains('Dept')) _groupBy = 'Dept';
-    else if (level.contains('Sub location')) _groupBy = 'Sub-loc';
-    else if (level.contains('Location')) _groupBy = 'Loc';
-    else if (level.contains('Group')) _groupBy = 'Group';
-    else _groupBy = 'Church';
+    // Prevent duplicate rows for units viewing their own level
+    if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+      _groupBy = 'Church'; // Single department summary, no demographic splits
+    } else if (_isDeptLeader && level == 'Dept status') {
+      _groupBy = 'Church'; // Clean Dept summary without duplicate row
+    } else if (_isSubLocationLeader && level == 'Sub location status') {
+      _groupBy = 'Church'; // Clean Sub-location summary without duplicate row
+    } else if (level.contains('Cell')) {
+      _groupBy = 'Cell';
+    } else if (level.contains('Team')) {
+      _groupBy = 'Team';
+    } else if (level.contains('Dept')) {
+      _groupBy = 'Dept';
+    } else if (level.contains('Sub location')) {
+      _groupBy = 'Sub-loc';
+    } else if (level.contains('Location')) {
+      _groupBy = 'Loc';
+    } else if (level.contains('Group')) {
+      _groupBy = 'Group';
+    } else {
+      _groupBy = 'Church';
+    }
   }
 
   Future<void> _fetchInitialLocations() async {
     try {
-      final data = await _supabase.from('locations').select('id, location').order('location');
+      List<Map<String, dynamic>> data = [];
+      try {
+        final res = await _supabase.from('locations').select('id, location').order('location');
+        data = List<Map<String, dynamic>>.from(res);
+      } catch (_) {
+        try {
+          final res = await _supabase.from('locations').select('id, name').order('name');
+          data = List<Map<String, dynamic>>.from(res.map((e) => {'id': e['id'], 'location': e['name']}));
+        } catch (_) {}
+      }
+
+      // Robust fallback to distinct locations in members table
+      if (data.isEmpty) {
+        final mLocs = await _supabase.from('members').select('location').not('location', 'is', null);
+        final Set<String> distinct = {};
+        for (var row in mLocs) {
+          final l = row['location']?.toString() ?? '';
+          if (l.isNotEmpty) distinct.add(l);
+        }
+        data = distinct.map((l) => {'id': l, 'location': l}).toList();
+      }
+
       if (!mounted) return;
       setState(() {
-        _locationData = List<Map<String, dynamic>>.from(data);
+        _locationData = data;
         _locations = _locationData
-            .map((e) => e['location'].toString())
-            .where((l) => l.toLowerCase() != 'church' && l.toLowerCase() != 'church workers')
+            .map((e) => (e['location'] ?? e['name'] ?? '').toString())
+            .where((l) => l.isNotEmpty && l.toLowerCase() != 'church' && l.toLowerCase() != 'church workers')
+            .toSet()
             .toList();
+        _locations.sort();
 
         if (!_isChurchWideCompiler && !_isGroupLeader && widget.loc.isNotEmpty && widget.loc != 'Church') {
           _selectedLocation = widget.loc;
@@ -310,7 +343,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   Future<void> _fetchSubLocations(String locName, {bool triggerFetch = true}) async {
     try {
-      final match = _locationData.firstWhere((e) => e['location'] == locName, orElse: () => {});
+      final match = _locationData.firstWhere(
+        (e) => (e['location'] ?? e['name']) == locName, 
+        orElse: () => {}
+      );
       if (match.isEmpty || match['id'] == null) return;
       final locId = match['id'];
 
@@ -428,7 +464,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (d == 'Service Attendance Status') return 'logs_service_attendance_status';
     if (d == 'Cell Group Service') return 'logs_cell_service';
     if (d == 'All Saints Education') return 'logs_all_saints_education';
-    if (d == 'Offering Status') return 'logs_offering';
+    if (d == 'Offering' || d == 'Offering Status') return 'logs_offering';
     if (d == 'Evangelism' || d == 'Evangelism Part') return 'logs_evangelism';
     if (d == 'Morning Light') return 'logs_morning_light';
     if (d == 'Visitations and Counselling') return 'logs_visitations';
@@ -486,7 +522,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         }
 
         // =====================================================================
-        // 1. GROUP WORKERS (MG, WG, YAG, New Saints, MOU) - All Locations
+        // 1. GROUP WORKERS (MG, WG, YAG, New Saints, MOU, Theology)
         // =====================================================================
         if (_isGroupLeader) {
           void excludeChurchWorkers() {
@@ -495,29 +531,25 @@ class _CompilationEngineState extends State<CompilationEngine> {
                  .neq('members.location', 'Church');
           }
 
-          if (_grouping == '24-Dept MG' || widget.dept == '장년회') {
-            q = q.eq('members.department', '장년회')
-                 .neq('members.location', 'Mou')
-                 .neq('members.location', 'New Saints');
+          final r = widget.role.toLowerCase();
+
+          if (_grouping == '24-Dept MG' || r.startsWith('mg_group') || widget.dept == '장년회') {
+            q = q.eq('members.department', '장년회').neq('members.location', 'Mou').neq('members.location', 'New Saints');
             excludeChurchWorkers();
-          } else if (_grouping == '24-Dept WG' || widget.dept == '부녀회') {
-            q = q.eq('members.department', '부녀회')
-                 .neq('members.location', 'Mou')
-                 .neq('members.location', 'New Saints');
+          } else if (_grouping == '24-Dept WG' || r.startsWith('wg_group') || widget.dept == '부녀회') {
+            q = q.eq('members.department', '부녀회').neq('members.location', 'Mou').neq('members.location', 'New Saints');
             excludeChurchWorkers();
-          } else if (_grouping == '24-Dept YAG' || widget.dept == '청년회') {
-            q = q.eq('members.department', '청년회')
-                 .neq('members.location', 'Mou')
-                 .neq('members.location', 'New Saints');
+          } else if (_grouping == '24-Dept YAG' || r.startsWith('yag_group') || widget.dept == '청년회') {
+            q = q.eq('members.department', '청년회').neq('members.location', 'Mou').neq('members.location', 'New Saints');
             excludeChurchWorkers();
-          } else if (_grouping == '24-Dept New Saints' || widget.dept == '새신자') {
-            q = q.eq('members.department', '새신자')
-                 .neq('members.location', 'Mou');
+          } else if (_grouping == '24-Dept New Saints' || r.startsWith('new_saints_dept') || widget.dept == '새신자') {
+            q = q.or('members.department.eq.새신자,members.department.ilike.%new saints%').neq('members.location', 'Mou');
             excludeChurchWorkers();
-          } else if (_grouping == '24-Dept MOU' || widget.dept.toLowerCase() == 'mou') {
-            q = q.eq('members.department', 'Mou')
-                 .neq('members.location', 'Mou')
-                 .neq('members.location', 'New Saints');
+          } else if (_grouping.startsWith('24-Dept 18') || r.startsWith('theology_dept') || widget.dept == '신학부' || widget.dept.toLowerCase() == 'theology') {
+            q = q.or('members.department.eq.신학부,members.department.ilike.%theology%').neq('members.location', 'Mou').neq('members.location', 'New Saints');
+            excludeChurchWorkers();
+          } else if (_grouping == '24-Dept MOU' || r.startsWith('mou_dept') || widget.dept.toLowerCase() == 'mou') {
+            q = q.eq('members.department', 'Mou').neq('members.location', 'Mou').neq('members.location', 'New Saints');
             excludeChurchWorkers();
           } else if (widget.dept.isNotEmpty) {
             q = q.eq('members.department', widget.dept);
@@ -525,60 +557,75 @@ class _CompilationEngineState extends State<CompilationEngine> {
         }
 
         // =====================================================================
-        // 2. 24-DEPARTMENT WORKERS & DUAL-MODE WORKERS (DEPARTMENT MODE)
+        // 2. 24-DEPARTMENT WORKERS & DUAL-MODE (DEPARTMENT MODE)
+        // Strictly filters Church Workers only (< 20 members), excluding locations
         // =====================================================================
         else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+          // Exclude city/regional locations, MOU, and New Saints
+          q = q.neq('members.location', 'Mou')
+               .neq('members.location', 'New Saints');
+
+          // Must be Church Staff (Location is Church or Church Workers or null)
+          q = q.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,members.location.eq.Church,members.location.eq.Church Workers,members.location.eq.Church Main,members.location.is.null');
+
           final officialDeptId = _roleMetadata?['official_dept_id'];
           if (officialDeptId != null) {
             q = q.eq('members.official_dept_id', officialDeptId);
+          } else if (_isInternalAffairs) {
+            q = q.or('members.department.eq.내무부,members.department.ilike.%internal affairs%');
           } else if (_isEvangelismDept) {
             q = q.or('members.department.eq.전도부,members.department.ilike.%evangelism%');
           } else if (_isEducationDept) {
             q = q.or('members.department.eq.교육부,members.department.ilike.%education%');
           } else if (_isAdministrationDept) {
             q = q.or('members.department.eq.행정서무부,members.department.ilike.%admin%');
-          } else if (_isInternalAffairs) {
-            q = q.or('members.department.eq.내무부,members.department.ilike.%internal affairs%');
           } else if (widget.dept.isNotEmpty && widget.dept != 'N/A' && widget.dept != 'Church') {
             q = q.eq('members.department', widget.dept);
           }
         }
 
         // =====================================================================
-        // 3. LOCATION WORKERS (Strict 5-Tier Unit Hierarchy)
+        // 3. LOCATION WORKERS HIERARCHY
         // =====================================================================
         else if (!_isChurchWideCompiler) {
           if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') {
             q = q.eq('members.location', widget.loc);
           }
-          if (_isSubLocationLeader || _isDeptLeader || _isTeamLeader) {
-            if (widget.sub.isNotEmpty && widget.sub != 'N/A') q = q.eq('members.sub_location', widget.sub);
-          }
-          if (_isDeptLeader || _isTeamLeader) {
+          
+          // Dept leaders can oversee their department across all sub-locations in their city
+          if (_isDeptLeader) {
             if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq('members.department', widget.dept);
-          }
-          if (_isTeamLeader) {
+            // Only lock sub-location if drilled into or on team/cell level
+            if (lvl.contains(RegExp(r'team|cell')) && _selectedSubLocation != null && _selectedSubLocation!.isNotEmpty) {
+              q = q.eq('members.sub_location', _selectedSubLocation!);
+            }
+          } else if (_isSubLocationLeader) {
+            if (widget.sub.isNotEmpty && widget.sub != 'N/A') q = q.eq('members.sub_location', widget.sub);
+          } else if (_isTeamLeader) {
+            if (widget.sub.isNotEmpty && widget.sub != 'N/A') q = q.eq('members.sub_location', widget.sub);
+            if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq('members.department', widget.dept);
             if (widget.team.isNotEmpty && widget.team != 'N/A') q = q.eq('members.team', widget.team);
           }
+          
           if (widget.role.toLowerCase().contains('cell')) {
             q = q.eq('unit_name', widget.userUnit);
           }
         }
 
         // =====================================================================
-        // 4. DRILL-DOWN FILTERS (Selected from Sidebar)
+        // 4. DRILL-DOWN FILTERS (Sidebar Selections)
         // =====================================================================
         if (lvl.contains('sub location') || lvl.contains('sub-location') || lvl.contains('team') || lvl.contains('cell')) {
           if (_selectedLocation != null && _selectedLocation!.isNotEmpty && _selectedLocation != 'Church') {
             q = q.eq('members.location', _selectedLocation!);
           }
         }
-        if (lvl.contains(RegExp(r'dept|team|cell'))) {
+        if (lvl.contains(RegExp(r'dept|team|cell')) && !_isDeptLeader) {
           if (_selectedSubLocation != null && _selectedSubLocation!.isNotEmpty) {
             q = q.eq('members.sub_location', _selectedSubLocation!);
           }
         }
-        if (!_isGroupLeader && lvl.contains(RegExp(r'team|cell'))) {
+        if (!_isGroupLeader && !_isDeptLeader && lvl.contains(RegExp(r'team|cell'))) {
           if (_selectedDepartment != null && _selectedDepartment!.isNotEmpty) {
             q = q.eq('members.department', _selectedDepartment!);
           }
@@ -620,6 +667,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   String _getActiveUnitDisplayLabel() {
     final lvl = _currentLevel.toLowerCase();
+    if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+      return widget.dept.isNotEmpty ? widget.dept : "Department";
+    }
     if (_isGroupLeader) {
       if (lvl.contains('group')) return widget.dept;
       if (lvl.contains('location')) return 'Location';
@@ -1247,7 +1297,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 1. GROUP WORKERS (MG, WG, YAG, New Saints, MOU)
+    // 1. GROUP WORKERS (MG, WG, YAG, New Saints, MOU, Theology)
     // ─────────────────────────────────────────────────────────────────────────
     if (_isGroupLeader) {
       if (lvl.contains('group')) {
@@ -1270,10 +1320,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
     // ─────────────────────────────────────────────────────────────────────────
     // 2. 24 DEPARTMENTS / IA DEPARTMENT MODE
     // ─────────────────────────────────────────────────────────────────────────
-    if (_is24DeptWorker || (_isInternalAffairs && !_iaChurchMode)) {
-      if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept}");
-      if (lvl.contains('team')) return _pickerContainer([deptPicker]);
-      if (lvl.contains('cell')) return _pickerContainer([deptPicker, teamPicker]);
+    if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+      if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept.isNotEmpty ? widget.dept : 'your department'} at Church");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1298,12 +1346,15 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 5. DEPT LEADER
+    // 5. DEPT LEADER (Oversees department across all sub-locations in location)
     // ─────────────────────────────────────────────────────────────────────────
     if (_isDeptLeader) {
+      if (lvl.contains('sub location') || lvl.contains('sub-location')) {
+        return _pickerContainer([subPicker]);
+      }
       if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept}");
-      if (lvl.contains('team')) return _infoText("Displaying teams under ${widget.dept}");
-      if (lvl.contains('cell')) return _pickerContainer([teamPicker]);
+      if (lvl.contains('team')) return _pickerContainer([subPicker, teamPicker]);
+      if (lvl.contains('cell')) return _pickerContainer([subPicker, teamPicker]);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

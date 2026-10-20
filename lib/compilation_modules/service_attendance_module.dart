@@ -89,6 +89,12 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
   double get cw => _isExpanded ? 48.0 : 65.0;
 
+  bool get _is24ChurchDept {
+    final r = widget.userRole.toLowerCase();
+    final d = widget.userDept.toLowerCase();
+    return (r.contains('_dept_') || r.startsWith('ia_') || d.contains('내무')) && !widget.isLocationLeader && !widget.isSubLocationLeader && !widget.isDeptLeader && !widget.isTeamLeader && !widget.isGroupLeader;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -102,7 +108,10 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         oldWidget.selectedSubLocation != widget.selectedSubLocation ||
         oldWidget.selectedDepartment != widget.selectedDepartment ||
         oldWidget.selectedTeam != widget.selectedTeam || 
-        oldWidget.level != widget.level) {
+        oldWidget.level != widget.level ||
+        oldWidget.timePeriod != widget.timePeriod ||
+        oldWidget.analyticsMode != widget.analyticsMode ||
+        oldWidget.groupBy != widget.groupBy) {
       _fetchMasterUnitsAndMembers();
     }
   }
@@ -111,13 +120,14 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     try {
       final lvl = widget.level.toLowerCase();
 
-      // 1. SUB-LOCATION STATUS: Fetch non-MOU Sub-Locations from DB for selected Location
-      if ((lvl.contains('sub location') || lvl.contains('sub-location')) && widget.selectedLocation.isNotEmpty) {
-        final locRes = await _supabase.from('locations').select('id').eq('location', widget.selectedLocation).maybeSingle();
+      // 1. SUB-LOCATION STATUS: Fetch Sub-Locations from DB for selected Location
+      String locToFetch = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : widget.userLoc;
+      if ((lvl.contains('sub location') || lvl.contains('sub-location')) && locToFetch.isNotEmpty && locToFetch.toLowerCase() != 'church') {
+        final locRes = await _supabase.from('locations').select('id, location, name').or('location.eq.$locToFetch,name.eq.$locToFetch').maybeSingle();
         if (locRes != null && locRes['id'] != null) {
           final subData = await _supabase.from('sub_locations').select('name, is_mou').eq('location_id', locRes['id']).order('name');
           if (mounted) {
-            bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
+            bool isViewingMou = locToFetch.toUpperCase() == 'MOU';
             setState(() {
               _masterSubLocations = subData
                   .where((e) => isViewingMou ? (e['is_mou'] == true) : (e['is_mou'] != true))
@@ -128,22 +138,41 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         }
       }
 
-      // 2. PAGINATED FETCH FOR ALL 8,000+ MEMBERS
+      // 2. TARGETED FETCH FOR MEMBERS (Scoped by user track to avoid 8000-member dump)
       dynamic mQuery = _supabase.from('members').select(
-        'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept'
+        'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id'
       );
 
-      // Group Leader constraint
-      if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
+      // A. Church 24-Department in Dept Mode: Only fetch Church staff (< 20 members)
+      if (_is24ChurchDept && widget.groupBy == 'Church') {
+        mQuery = mQuery.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,location.is.null');
+        if (widget.userDept.isNotEmpty && widget.userDept != 'Church') {
+          mQuery = mQuery.eq('department', widget.userDept);
+        }
+      }
+      // B. Cross-Region Group Leader constraint
+      else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
+        mQuery = mQuery.eq('department', widget.userDept).neq('location', 'Mou').neq('location', 'New Saints');
+      }
+      // C. Location Overseers / Workers
+      else if (!widget.isChurchWide) {
+        if (widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
+          mQuery = mQuery.eq('location', widget.userLoc);
+        }
+        if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
+          mQuery = mQuery.eq('sub_location', widget.userSub);
+        }
+        if (widget.isDeptLeader && widget.userDept.isNotEmpty) {
+          mQuery = mQuery.eq('department', widget.userDept);
+        }
       }
 
-      // Scoping
+      // Drill-down filters
       if (lvl.contains('sub location') || lvl.contains('sub-location')) {
         if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
           mQuery = mQuery.eq('location', widget.selectedLocation);
         }
-      } else if (lvl.contains('dept')) {
+      } else if (lvl.contains('dept') && !_is24ChurchDept) {
         if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
           mQuery = mQuery.eq('location', widget.selectedLocation);
         }
@@ -220,7 +249,6 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     return sorted;
   }
 
-  // --- DERIVE TEAMS STRICTLY FROM SCOPED MEMBERS TABLE ---
   List<String> _getScopedTeams() {
     final Set<String> teams = {};
     for (var m in _masterMembers) {
@@ -230,7 +258,6 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     return _sortAscending(teams.toList());
   }
 
-  // --- DERIVE CELL GROUPS STRICTLY FROM SCOPED MEMBERS TABLE ---
   List<String> _getScopedCellGroups() {
     final Set<String> cells = {};
     for (var m in _masterMembers) {
@@ -329,7 +356,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       _buildToolbar(),
       _section("Attendance summary table", _buildExcelGrid(hqS, enS, totS), context),
       const SizedBox(height: 6), 
-      _section("Participation visualization", _buildChart(), context),
+      _section("Participation visualization", _buildChart(totS), context),
     ]);
   }
 
@@ -367,19 +394,30 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     );
   }
 
+  // --- DYNAMIC ROWS (ELIMINATES DUPLICATES AND MISPLACED 24-DEPT ROWS) ---
   Widget? _buildDynamicHierarchicalRows() {
     final String lvl = widget.level.trim().toLowerCase();
 
-    // Redundant child row checks:
     // 1. Church status top row already represents Church
-    // 2. Location leader viewing location status
-    // 3. Team leader viewing team status (FIX: removes repeating team row)
-    if (lvl == 'church status' || 
-        (widget.isLocationLeader && lvl == 'location status') ||
-        (widget.isTeamLeader && lvl == 'team status') ||
-        (widget.isGroupLeader && lvl.contains('group'))) {
-      return null;
-    }
+    if (lvl == 'church status') return null;
+
+    // 2. 24 Departments at Church: No demographic sub-departments (장년회, 부녀회...)
+    if (_is24ChurchDept || widget.groupBy == 'Church') return null;
+
+    // 3. Location leader viewing location status: Summary is already at top
+    if (widget.isLocationLeader && lvl == 'location status') return null;
+
+    // 4. Sub-location leader viewing sub-location status: Prevent duplicate row
+    if (widget.isSubLocationLeader && (lvl.contains('sub location') || lvl.contains('sub-location'))) return null;
+
+    // 5. Dept leader viewing dept status: Prevent duplicate row
+    if (widget.isDeptLeader && lvl == 'dept status') return null;
+
+    // 6. Team leader viewing team status: Prevent duplicate row
+    if (widget.isTeamLeader && lvl == 'team status') return null;
+
+    // 7. Group leader viewing group status: Summary is already at top
+    if (widget.isGroupLeader && lvl.contains('group')) return null;
 
     Map<String, List<dynamic>> groupedLogs = {};
     Map<String, List<dynamic>> groupedMembers = {};
@@ -410,48 +448,31 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       }
     } 
 
-    // 2. SUB-LOCATION STATUS
+    // 2. SUB-LOCATION STATUS (Supports Dept Leader overseeing all sub-locations)
     else if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      categoryName = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : "Sub-locations";
-      
-      // If Sub-location Leader: ONLY display their assigned sub-location!
-      if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
-        groupedLogs[widget.userSub] = [];
-        groupedMembers[widget.userSub] = [];
-        for (var m in _masterMembers) {
-          if (m['sub_location'] == widget.userSub) groupedMembers[widget.userSub]!.add(m);
-        }
-        for (var l in widget.logs) {
-          if (extract(l, ['sub_location', 'sub_loc']) == widget.userSub) groupedLogs[widget.userSub]!.add(l);
-        }
-      } else {
-        bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
-        bool isMouRecord(dynamic r) {
-          String dept = (r['department'] ?? r['members']?['department'] ?? '').toString().trim().toUpperCase();
-          return dept.contains('MOU');
-        }
+      categoryName = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : (widget.userLoc.isNotEmpty ? widget.userLoc : "Sub-locations");
 
-        final scopedMembers = _masterMembers.where((m) => isViewingMou ? isMouRecord(m) : !isMouRecord(m)).toList();
-        final scopedLogs = widget.logs.where((l) => isViewingMou ? isMouRecord(l) : !isMouRecord(l)).toList();
+      final Set<String> subLocs = Set.from(_masterSubLocations);
+      for (var m in _masterMembers) {
+        String sub = m['sub_location']?.toString().trim() ?? '';
+        if (sub.isNotEmpty) subLocs.add(sub);
+      }
+      for (var l in widget.logs) {
+        String sub = extract(l, ['sub_location', 'sub_loc']);
+        if (sub.isNotEmpty) subLocs.add(sub);
+      }
 
-        final Set<String> subLocs = Set.from(_masterSubLocations);
-        for (var m in scopedMembers) {
-          String sub = m['sub_location']?.toString().trim() ?? '';
-          if (sub.isNotEmpty) subLocs.add(sub);
-        }
-
-        for (var sub in subLocs) {
-          groupedLogs[sub] = [];
-          groupedMembers[sub] = [];
-        }
-        for (var m in scopedMembers) {
-          String sub = m['sub_location']?.toString().trim() ?? '';
-          if (sub.isNotEmpty) groupedMembers.putIfAbsent(sub, () => []).add(m);
-        }
-        for (var l in scopedLogs) {
-          String sub = extract(l, ['sub_location', 'sub_loc']);
-          if (sub.isNotEmpty) groupedLogs.putIfAbsent(sub, () => []).add(l);
-        }
+      for (var sub in subLocs) {
+        groupedLogs[sub] = [];
+        groupedMembers[sub] = [];
+      }
+      for (var m in _masterMembers) {
+        String sub = m['sub_location']?.toString().trim() ?? '';
+        if (sub.isNotEmpty) groupedMembers.putIfAbsent(sub, () => []).add(m);
+      }
+      for (var l in widget.logs) {
+        String sub = extract(l, ['sub_location', 'sub_loc']);
+        if (sub.isNotEmpty) groupedLogs.putIfAbsent(sub, () => []).add(l);
       }
     }
 
@@ -480,16 +501,11 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       }
     } 
 
-    // 4. DEPT STATUS
+    // 4. DEPT STATUS (Location Departments only)
     else if (lvl.contains('dept')) {
       categoryName = widget.selectedSubLocation.isNotEmpty ? widget.selectedSubLocation : "Department";
       
-      // If Department Leader: ONLY display their respective department!
-      final List<String> targetDepts = widget.isDeptLeader && widget.userDept.isNotEmpty
-          ? [widget.userDept]
-          : _orderedDepartments;
-
-      for (var d in targetDepts) {
+      for (var d in _orderedDepartments) {
         groupedLogs[d] = [];
         groupedMembers[d] = [];
       }
@@ -497,7 +513,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         String dept = m['department']?.toString().trim() ?? '';
         if (groupedMembers.containsKey(dept)) {
           groupedMembers[dept]!.add(m);
-        } else if (dept.isNotEmpty && !widget.isDeptLeader) {
+        } else if (dept.isNotEmpty) {
           groupedMembers.putIfAbsent(dept, () => []).add(m);
         }
       }
@@ -505,7 +521,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         String dept = extract(l, ['department', 'dept', 'dept_name']);
         if (groupedLogs.containsKey(dept)) {
           groupedLogs[dept]!.add(l);
-        } else if (dept.isNotEmpty && !widget.isDeptLeader) {
+        } else if (dept.isNotEmpty) {
           groupedLogs.putIfAbsent(dept, () => []).add(l);
         }
       }
@@ -653,6 +669,9 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
   String _getDynamicXAxisLabel() {
     final lvl = widget.level.toLowerCase();
+    if (_is24ChurchDept || widget.groupBy == 'Church') {
+      return widget.userDept.isNotEmpty ? widget.userDept : 'Department Summary';
+    }
     if (widget.isGroupLeader && lvl.contains('location status')) {
       return '${widget.userDept} across Locations';
     }
@@ -674,17 +693,94 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     return widget.groupBy;
   }
 
-  Widget _buildChart() {
-    bool isTrend = widget.timePeriod != "Current status";
+  // --- CONNECTED CHART (ALIGNED WITH SIDEBAR MODE AND TIME PERIOD) ---
+  Widget _buildChart(Map<String, dynamic> totSummary) {
+    // Respects sidebar mode: if Analytics mode is Trend, or if multi-day period, show Trend
+    bool isTrend = widget.analyticsMode == "Trend" || (widget.timePeriod != "Current status" && widget.analyticsMode != "Summary");
     final lvl = widget.level.toLowerCase();
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CASE A: 1-DAY SNAPSHOT (CURRENT STATUS) -> BAR / COLUMN CHART
+    // CASE A: SNAPSHOT / SUMMARY MODE -> BAR CHART
     // ─────────────────────────────────────────────────────────────────────────
     if (!isTrend) {
       String xName = _getDynamicXAxisLabel();
       List<String> keys = _getUnitKeysForLevel(lvl);
 
+      // SINGLE UNIT / DEPARTMENT VIEW: Chart displays metric breakdown
+      if (keys.isEmpty || keys.length == 1 || _is24ChurchDept || widget.groupBy == 'Church') {
+        final double nVal = (totSummary['n'] as num?)?.toDouble() ?? 0.0;
+        final double attVal = (totSummary['att'] as num?)?.toDouble() ?? 0.0;
+        final double ipVal = (totSummary['ip'] as num?)?.toDouble() ?? 0.0;
+        final double otVal = (totSummary['ot'] as num?)?.toDouble() ?? 0.0;
+        final double abVal = (totSummary['ab'] as num?)?.toDouble() ?? 0.0;
+
+        final double dynamicMaxY = (max(nVal, max(attVal, abVal)) * 1.25).ceilToDouble();
+
+        final List<_BarMetric> metrics = [
+          _BarMetric("Saints (N)", nVal, Colors.grey.shade500),
+          _BarMetric("Attended", attVal, pPurple),
+          _BarMetric("In-person", ipVal, Colors.blue.shade700),
+          _BarMetric("Online", otVal, Colors.teal.shade600),
+          _BarMetric("Absentees", abVal, Colors.red.shade400),
+        ];
+
+        return Column(children: [
+          Container(
+            height: 320,
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+            child: BarChart(BarChartData(
+              maxY: dynamicMaxY > 0 ? dynamicMaxY : 10,
+              borderData: FlBorderData(show: true, border: const Border(left: BorderSide(color: Colors.black, width: 1.0), bottom: BorderSide(color: Colors.black, width: 1.0))),
+              gridData: const FlGridData(show: true, drawVerticalLine: false),
+              titlesData: FlTitlesData(
+                bottomTitles: AxisTitles(
+                  axisNameWidget: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(xName, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  ),
+                  axisNameSize: 28,
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    getTitlesWidget: (v, m) {
+                      int idx = v.toInt();
+                      if (idx < 0 || idx >= metrics.length) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(metrics[idx].label, style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: AxisTitles(
+                  axisNameWidget: Text("Persons", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold)),
+                  axisNameSize: 22,
+                  sideTitles: SideTitles(showTitles: true, reservedSize: 36, getTitlesWidget: (v, m) => Text("${v.toInt()}", style: GoogleFonts.merriweather(fontSize: 9.5))),
+                ),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              barGroups: List.generate(metrics.length, (i) {
+                return BarChartGroupData(x: i, barRods: [
+                  BarChartRodData(toY: metrics[i].val, color: metrics[i].color, width: 36, borderRadius: BorderRadius.circular(4))
+                ]);
+              }),
+            )),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 6),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: metrics.map((m) => _lgItem("${m.label}: ${m.val.toInt()}", m.color)).toList(),
+            ),
+          ),
+        ]);
+      }
+
+      // MULTI-UNIT VIEW: Compares units across level
       Map<String, List<dynamic>> cgLogs = {};
       Map<String, List<dynamic>> cgMembers = {};
 
@@ -711,7 +807,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         final double highest = max(nVal, max(attVal, ipVal));
         if (highest > maxHeadcount) maxHeadcount = highest;
       }
-      double dynamicMaxY = (maxHeadcount * 1.2).ceilToDouble();
+      double dynamicMaxY = (maxHeadcount * 1.25).ceilToDouble();
 
       return Column(children: [
         Container(
@@ -762,38 +858,52 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     double maxTrendValue = 10.0;
     final List<LineChartBarData> lineBars = [];
 
-    for (int u = 0; u < unitKeys.length; u++) {
-      final unitName = unitKeys[u];
-      final Color unitColor = palette[u % palette.length];
+    // If viewing single department: show single line trend
+    if (unitKeys.isEmpty || _is24ChurchDept || widget.groupBy == 'Church') {
       final List<FlSpot> spots = [];
-
       for (int d = 0; d < sortedDates.length; d++) {
         final dateStr = sortedDates[d];
-        final dateLogs = widget.logs.where((l) {
-          final matchesDate = l['report_date']?.toString() == dateStr;
-          final matchesUnit = _resolveUnitKeyForRecord(l, lvl) == unitName;
-          return matchesDate && matchesUnit;
-        }).toList();
-
+        final dateLogs = widget.logs.where((l) => l['report_date']?.toString() == dateStr).toList();
         final calc = _calc(dateLogs);
-        double val = 0.0;
-        if (_selectedTrendMetric == "General Attendance") {
-          val = (calc['att'] as num).toDouble();
-        } else {
-          val = (calc['ip'] as num).toDouble();
-        }
-
+        double val = _selectedTrendMetric == "General Attendance" ? (calc['att'] as num).toDouble() : (calc['ip'] as num).toDouble();
         if (val > maxTrendValue) maxTrendValue = val;
         spots.add(FlSpot(d.toDouble(), val));
       }
-
       lineBars.add(LineChartBarData(
         spots: spots,
-        color: unitColor,
-        barWidth: 2.5,
+        color: pPurple,
+        barWidth: 3.0,
         isCurved: true,
         dotData: const FlDotData(show: true),
       ));
+    } else {
+      for (int u = 0; u < unitKeys.length; u++) {
+        final unitName = unitKeys[u];
+        final Color unitColor = palette[u % palette.length];
+        final List<FlSpot> spots = [];
+
+        for (int d = 0; d < sortedDates.length; d++) {
+          final dateStr = sortedDates[d];
+          final dateLogs = widget.logs.where((l) {
+            final matchesDate = l['report_date']?.toString() == dateStr;
+            final matchesUnit = _resolveUnitKeyForRecord(l, lvl) == unitName;
+            return matchesDate && matchesUnit;
+          }).toList();
+
+          final calc = _calc(dateLogs);
+          double val = _selectedTrendMetric == "General Attendance" ? (calc['att'] as num).toDouble() : (calc['ip'] as num).toDouble();
+          if (val > maxTrendValue) maxTrendValue = val;
+          spots.add(FlSpot(d.toDouble(), val));
+        }
+
+        lineBars.add(LineChartBarData(
+          spots: spots,
+          color: unitColor,
+          barWidth: 2.5,
+          isCurved: true,
+          dotData: const FlDotData(show: true),
+        ));
+      }
     }
 
     double dynamicMaxY = (maxTrendValue * 1.25).ceilToDouble();
@@ -874,44 +984,36 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
           lineBarsData: lineBars,
         )),
       ),
-      Padding(
-        padding: const EdgeInsets.only(top: 12, bottom: 6),
-        child: Center(
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: List.generate(
-              unitKeys.length, 
-              (i) => _lgItem(unitKeys[i], palette[i % palette.length])
+      if (unitKeys.isNotEmpty && !_is24ChurchDept && widget.groupBy != 'Church')
+        Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 6),
+          child: Center(
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: List.generate(
+                unitKeys.length, 
+                (i) => _lgItem(unitKeys[i], palette[i % palette.length])
+              ),
             ),
           ),
         ),
-      ),
     ]);
   }
 
   List<String> _getUnitKeysForLevel(String lvl) {
-    if (lvl.contains('church')) return ["Church (Overall)"];
+    if (_is24ChurchDept || widget.groupBy == 'Church' || lvl.contains('church')) {
+      return [];
+    }
     if (lvl.contains('group')) return List.from(_orderedBOLGroups);
     if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) return [widget.userSub];
-
-      bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
-      bool isMou(dynamic r) {
-        String dept = (r['department'] ?? r['members']?['department'] ?? '').toString().trim().toUpperCase();
-        return dept.contains('MOU');
-      }
-
       final Set<String> subs = Set.from(_masterSubLocations);
       for (var m in _masterMembers) {
-        if (isViewingMou ? isMou(m) : !isMou(m)) {
-          final s = m['sub_location']?.toString().trim() ?? '';
-          if (s.isNotEmpty) subs.add(s);
-        }
+        final s = m['sub_location']?.toString().trim() ?? '';
+        if (s.isNotEmpty) subs.add(s);
       }
-      return subs.isNotEmpty ? _sortAscending(subs.toList()) : ["Sub-locations"];
+      return subs.isNotEmpty ? _sortAscending(subs.toList()) : [];
     }
     if (lvl.contains('location status')) {
       if (widget.isLocationLeader && widget.selectedLocation.isNotEmpty) {
@@ -925,11 +1027,11 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     }
     if (lvl.contains('team')) {
       final teams = _getScopedTeams();
-      return teams.isNotEmpty ? teams : ["팀1"];
+      return teams.isNotEmpty ? teams : [];
     }
     if (lvl.contains('cell')) {
       final cells = _getScopedCellGroups();
-      return cells.isNotEmpty ? cells : ["구역1"];
+      return cells.isNotEmpty ? cells : [];
     }
     return [];
   }
@@ -940,11 +1042,6 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       return (record['book_of_life'] ?? record['members']?['book_of_life'] ?? record['bol_dept'] ?? '').toString();
     }
     if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
-      String dept = (record['department'] ?? record['members']?['department'] ?? '').toString().trim().toUpperCase();
-      bool isMou = dept.contains('MOU');
-      if (isViewingMou != isMou) return '';
-
       return (record['sub_location'] ?? record['members']?['sub_location'] ?? '').toString();
     }
     if (lvl.contains('location status')) {
@@ -1064,4 +1161,11 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       content,
     ]),
   );
+}
+
+class _BarMetric {
+  final String label;
+  final double val;
+  final Color color;
+  _BarMetric(this.label, this.val, this.color);
 }
