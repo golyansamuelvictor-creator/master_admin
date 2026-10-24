@@ -593,17 +593,25 @@ class _DailyParticipationEntryState extends State<DailyParticipationEntry> {
         child: Text(t, softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: c == 5 ? FontWeight.bold : FontWeight.normal)),
       );
     } 
-    // Dropdown: Daily Participation Status (status_detail)
+    // Dropdown: Daily Participation Status (FIXED with explicit generic <String> typing)
     else {
       final cur = _getCellValue(m, c);
       content = DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: widget.statusOptions.contains(cur) ? cur : null,
-          isDense: true, isExpanded: true, iconSize: 14,
+          isDense: true, 
+          isExpanded: true, 
+          iconSize: 14,
           style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.bold),
           items: [
-            const DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11)))),
-            ...widget.statusOptions.map((s) => DropdownMenuItem(value: s, child: Center(child: Text(s, softWrap: false, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))))),
+            const DropdownMenuItem<String>(
+              value: null, 
+              child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11))),
+            ),
+            ...widget.statusOptions.map((s) => DropdownMenuItem<String>(
+              value: s, 
+              child: Center(child: Text(s, softWrap: false, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))),
+            )),
           ],
           onChanged: (v) {
             _selectCell(r, c);

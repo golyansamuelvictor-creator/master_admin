@@ -80,9 +80,24 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
   static const double rh = 24.0;
   static const double hh = 28.0;
   static const double sh = 18.0;
-  static const double cw = 60.0;
+  static const double baseCw = 60.0;
   static const double lw = 115.0;
   static const double totalHeaderHeight = hh + hh + sh;
+
+  bool get _is24ChurchDept {
+    final r = widget.userRole.toLowerCase();
+    final d = widget.userDept.toLowerCase();
+    return (r.contains('_dept_') || r.startsWith('ia_') || d.contains('내무')) &&
+        !widget.isLocationLeader &&
+        !widget.isSubLocationLeader &&
+        !widget.isDeptLeader &&
+        !widget.isTeamLeader &&
+        !widget.isGroupLeader;
+  }
+
+  bool get _isLocationRestricted {
+    return !widget.isChurchWide && !widget.isGroupLeader && widget.userLoc.isNotEmpty && widget.userLoc != 'Church';
+  }
 
   @override
   void initState() {
@@ -97,7 +112,11 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
         oldWidget.selectedSubLocation != widget.selectedSubLocation ||
         oldWidget.selectedDepartment != widget.selectedDepartment ||
         oldWidget.selectedTeam != widget.selectedTeam ||
-        oldWidget.level != widget.level) {
+        oldWidget.level != widget.level ||
+        oldWidget.timePeriod != widget.timePeriod ||
+        oldWidget.analyticsMode != widget.analyticsMode ||
+        oldWidget.groupBy != widget.groupBy ||
+        oldWidget.logs != widget.logs) {
       _selectedChartUnit = "General total";
       _fetchMasterUnitsAndMembers();
     }
@@ -109,6 +128,40 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     return s == 'yes' || s == 'true' || s == 'attended' || s == 'participated' || s == '1' || s == 'done';
   }
 
+  // Dual-format day checker: connects new 'part_day' + 'status_detail' as well as legacy columns
+  bool _isDayDone(dynamic log, String dayCode, String legacyField) {
+    final partDay = (log['part_day'] ?? '').toString().trim().toLowerCase();
+    if (partDay.isNotEmpty) {
+      if (partDay == dayCode.toLowerCase()) {
+        return _isParticipated(log['status_detail']);
+      }
+      return false;
+    }
+    return _isParticipated(log[legacyField]);
+  }
+
+  String _getUnitKey(dynamic record) {
+    final map = record is Map<String, dynamic>
+        ? record
+        : (record is Map && record.containsKey('members') && record['members'] is Map
+            ? Map<String, dynamic>.from(record['members'])
+            : (record is Map ? Map<String, dynamic>.from(record) : <String, dynamic>{}));
+
+    final gb = widget.groupBy.toLowerCase().trim();
+    if (gb.contains('cell')) {
+      return (map['unit_name'] ?? map['cell_group'] ?? '').toString().trim();
+    } else if (gb.contains('team')) {
+      return (map['team'] ?? '').toString().trim();
+    } else if (gb.contains('dept')) {
+      return (map['department'] ?? '').toString().trim();
+    } else if (gb.contains('sub')) {
+      return (map['sub_location'] ?? '').toString().trim();
+    } else if (gb.contains('loc')) {
+      return _resolveLocationBucket(map);
+    }
+    return (map['unit_name'] ?? '').toString().trim();
+  }
+
   List<dynamic> get _scopedWorkerLogs {
     return widget.logs.where((l) {
       final members = l['members'] is Map ? l['members'] as Map : {};
@@ -118,7 +171,6 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     }).toList();
   }
 
-  // --- STRICT CASCADING FILTER ---
   List<T> _applyCascade<T>(List<T> items) {
     final lvl = widget.level.toLowerCase();
     final loc = widget.selectedLocation.trim();
@@ -138,9 +190,13 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
       final iDept = (map['department'] ?? '').toString().trim();
       final iTeam = (map['team'] ?? '').toString().trim();
 
+      if (_isLocationRestricted && iLoc.toLowerCase() != widget.userLoc.toLowerCase()) {
+        return false;
+      }
+
       if (lvl.contains('sub location') || lvl.contains('sub-location')) {
         if (loc.isNotEmpty && loc.toLowerCase() != 'church' && iLoc.toLowerCase() != loc.toLowerCase()) return false;
-      } else if (lvl.contains('dept')) {
+      } else if (lvl.contains('dept') && !_is24ChurchDept) {
         if (loc.isNotEmpty && loc.toLowerCase() != 'church' && iLoc.toLowerCase() != loc.toLowerCase()) return false;
         if (sub.isNotEmpty && iSub.toLowerCase() != sub.toLowerCase()) return false;
       } else if (lvl.contains('team')) {
@@ -161,13 +217,13 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     try {
       final lvl = widget.level.toLowerCase();
 
-      // 1. Fetch sub-locations strictly for the selected location
-      if ((lvl.contains('sub location') || lvl.contains('sub-location')) && widget.selectedLocation.isNotEmpty) {
-        final locRes = await _supabase.from('locations').select('id').eq('location', widget.selectedLocation).maybeSingle();
+      String locToFetch = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : widget.userLoc;
+      if ((lvl.contains('sub location') || lvl.contains('sub-location')) && locToFetch.isNotEmpty && locToFetch.toLowerCase() != 'church') {
+        final locRes = await _supabase.from('locations').select('id, location, name').or('location.eq.$locToFetch,name.eq.$locToFetch').maybeSingle();
         if (locRes != null && locRes['id'] != null) {
           final subData = await _supabase.from('sub_locations').select('name, is_mou').eq('location_id', locRes['id']).order('name');
           if (mounted) {
-            bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
+            bool isViewingMou = locToFetch.toUpperCase() == 'MOU';
             setState(() {
               _masterSubLocations = subData
                   .where((e) => isViewingMou ? (e['is_mou'] == true) : (e['is_mou'] != true))
@@ -178,42 +234,64 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
         }
       }
 
-      // 2. Query workers strictly with cascading scope
       dynamic mQuery = _supabase.from('members').select(
-        'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, duty, is_worker'
+        'id, english_name, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, duty, is_worker'
       ).eq('is_worker', true);
 
-      final loc = widget.selectedLocation.trim();
-      final sub = widget.selectedSubLocation.trim();
-      final dept = widget.selectedDepartment.trim();
-      final team = widget.selectedTeam.trim();
-
-      if (widget.isDeptLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
-      } else if (widget.isTeamLeader && widget.userTeam.isNotEmpty) {
-        mQuery = mQuery.eq('team', widget.userTeam);
-      } else if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
-        mQuery = mQuery.eq('sub_location', widget.userSub);
-      } else if (widget.isLocationLeader && widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
-        mQuery = mQuery.eq('location', widget.userLoc);
+      // Scoping
+      if (_is24ChurchDept && widget.groupBy == 'Church') {
+        mQuery = mQuery.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,location.is.null');
+        if (widget.userDept.isNotEmpty && widget.userDept != 'Church') {
+          mQuery = mQuery.eq('department', widget.userDept);
+        }
       } else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
+        mQuery = mQuery.eq('department', widget.userDept).neq('location', 'Mou').neq('location', 'New Saints');
+      } else if (!widget.isChurchWide) {
+        if (widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
+          mQuery = mQuery.eq('location', widget.userLoc);
+        }
+        if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
+          mQuery = mQuery.eq('sub_location', widget.userSub);
+        }
+        if (widget.isDeptLeader && widget.userDept.isNotEmpty) {
+          mQuery = mQuery.eq('department', widget.userDept);
+        }
       }
 
       if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church') mQuery = mQuery.eq('location', loc);
-      } else if (lvl.contains('dept')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church') mQuery = mQuery.eq('location', loc);
-        if (sub.isNotEmpty) mQuery = mQuery.eq('sub_location', sub);
+        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
+          mQuery = mQuery.eq('location', widget.selectedLocation);
+        }
+      } else if (lvl.contains('dept') && !_is24ChurchDept) {
+        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
+          mQuery = mQuery.eq('location', widget.selectedLocation);
+        }
+        if (widget.selectedSubLocation.isNotEmpty) {
+          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
+        }
       } else if (lvl.contains('team')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church') mQuery = mQuery.eq('location', loc);
-        if (sub.isNotEmpty) mQuery = mQuery.eq('sub_location', sub);
-        if (dept.isNotEmpty) mQuery = mQuery.eq('department', dept);
+        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
+          mQuery = mQuery.eq('location', widget.selectedLocation);
+        }
+        if (widget.selectedSubLocation.isNotEmpty) {
+          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
+        }
+        if (widget.selectedDepartment.isNotEmpty) {
+          mQuery = mQuery.eq('department', widget.selectedDepartment);
+        }
       } else if (lvl.contains('cell')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church') mQuery = mQuery.eq('location', loc);
-        if (sub.isNotEmpty) mQuery = mQuery.eq('sub_location', sub);
-        if (dept.isNotEmpty) mQuery = mQuery.eq('department', dept);
-        if (team.isNotEmpty) mQuery = mQuery.eq('team', team);
+        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
+          mQuery = mQuery.eq('location', widget.selectedLocation);
+        }
+        if (widget.selectedSubLocation.isNotEmpty) {
+          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
+        }
+        if (widget.selectedDepartment.isNotEmpty) {
+          mQuery = mQuery.eq('department', widget.selectedDepartment);
+        }
+        if (widget.selectedTeam.isNotEmpty) {
+          mQuery = mQuery.eq('team', widget.selectedTeam);
+        }
       }
 
       List<Map<String, dynamic>> allMembers = [];
@@ -279,17 +357,18 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     return _sortAscending(cells.toList());
   }
 
+  // Strictly 5 Worker Days: Mon, Tue, Thu, Fri, Sat (Divided by n * 5)
   Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers}) {
     int n = officialMembers != null ? officialMembers.length : logsList.length;
 
-    int mon = logsList.where((l) => _isParticipated(l['mon_part'])).length;
-    int tue = logsList.where((l) => _isParticipated(l['tue_part'])).length;
-    int wed = logsList.where((l) => _isParticipated(l['wed_part'])).length;
-    int thu = logsList.where((l) => _isParticipated(l['thu_part'])).length;
-    int fri = logsList.where((l) => _isParticipated(l['fri_part'])).length;
+    int mon = logsList.where((l) => _isDayDone(l, 'Mon', 'mon_part')).length;
+    int tue = logsList.where((l) => _isDayDone(l, 'Tue', 'tue_part')).length;
+    int thu = logsList.where((l) => _isDayDone(l, 'Thu', 'thu_part')).length;
+    int fri = logsList.where((l) => _isDayDone(l, 'Fri', 'fri_part')).length;
+    int sat = logsList.where((l) => _isDayDone(l, 'Sat', 'sat_part')).length;
 
     double avgPct = (n > 0)
-        ? ((mon + tue + wed + thu + fri) / (n * 5)) * 100
+        ? ((mon + tue + thu + fri + sat) / (n * 5.0)) * 100.0
         : 0.0;
 
     return {
@@ -298,12 +377,12 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
       "monp": n > 0 ? (mon / n * 100) : 0.0,
       "tue": tue,
       "tuep": n > 0 ? (tue / n * 100) : 0.0,
-      "wed": wed,
-      "wedp": n > 0 ? (wed / n * 100) : 0.0,
       "thu": thu,
       "thup": n > 0 ? (thu / n * 100) : 0.0,
       "fri": fri,
       "frip": n > 0 ? (fri / n * 100) : 0.0,
+      "sat": sat,
+      "satp": n > 0 ? (sat / n * 100) : 0.0,
       "avg": avgPct,
     };
   }
@@ -320,21 +399,25 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
 
     final Map<String, Map<String, dynamic>> blockData = _getCalculatedBlocksMap();
 
-    // Determine active chart data based on unit selection
     Map<String, dynamic> activeChartData = totS;
     if (_selectedChartUnit != "General total" && blockData.containsKey(_selectedChartUnit)) {
       activeChartData = blockData[_selectedChartUnit]!;
     }
 
+    bool isTrend = widget.timePeriod != "Current status" || widget.analyticsMode == "Trend";
+
     return Column(children: [
       _buildToolbar(),
       _section("Workers daily participation summary", _buildExcelGrid(totS), context),
       const SizedBox(height: 8),
-      _section(
-        "Weekly breakdown (%) - $_selectedChartUnit",
-        _buildChartSection(totS, blockData, activeChartData),
-        context,
-      ),
+      if (isTrend)
+        _section("Historical trend over time", _buildTrendChart(blockData), context)
+      else
+        _section(
+          "Weekly breakdown (%) - $_selectedChartUnit",
+          _buildChartSection(totS, blockData, activeChartData),
+          context,
+        ),
     ]);
   }
 
@@ -346,23 +429,39 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     ],
   );
 
+  // RESPONSIVE 100% FULL-WIDTH SCALING TABLE
   Widget _buildExcelGrid(Map<String, dynamic> tot) {
-    Widget? childRows = _buildDynamicHierarchicalRows();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double availWidth = constraints.maxWidth;
+        final double baseWidth = lw * 2 + baseCw * 12;
+        final double effectiveCw = availWidth > baseWidth
+            ? (availWidth - (lw * 2)) / 12.0
+            : baseCw;
+        final double effectiveTotalWidth = lw * 2 + effectiveCw * 12;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Container(
-          decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 1.0)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _buildMergedHeader(),
-            _mergedRow("Total", "General total", tot, b: true),
-            if (childRows != null) childRows,
-          ]),
-        ),
-      ),
+        Widget? childRows = _buildDynamicHierarchicalRows(effectiveCw);
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Container(
+              width: effectiveTotalWidth,
+              decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 1.0)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildMergedHeader(effectiveCw),
+                  _mergedRow("Total", "General total", tot, effectiveCw, b: true),
+                  if (childRows != null) childRows,
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -398,6 +497,11 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
         String sub = m['sub_location']?.toString().trim() ?? '';
         if (sub.isNotEmpty) subLocs.add(sub);
       }
+      for (var l in scopedLogs) {
+        String sub = extract(l, ['sub_location', 'sub_loc']);
+        if (sub.isNotEmpty) subLocs.add(sub);
+      }
+
       for (var sub in subLocs) { groupedLogs[sub] = []; groupedMembers[sub] = []; }
       for (var m in scopedMembers) {
         String sub = m['sub_location']?.toString().trim() ?? '';
@@ -408,27 +512,42 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
         if (sub.isNotEmpty) groupedLogs.putIfAbsent(sub, () => []).add(l);
       }
     } else if (lvl.contains('location status')) {
-      for (var loc in _orderedLocations) { groupedLogs[loc] = []; groupedMembers[loc] = []; }
+      // Location leaders only see their location, not all 13
+      final List<String> locsToShow = _isLocationRestricted
+          ? [widget.userLoc]
+          : _orderedLocations;
+
+      for (var loc in locsToShow) { groupedLogs[loc] = []; groupedMembers[loc] = []; }
       for (var m in scopedMembers) {
         String bucket = _resolveLocationBucket(m);
-        if (groupedMembers.containsKey(bucket)) groupedMembers[bucket]!.add(m);
-        else if (bucket.isNotEmpty) groupedMembers.putIfAbsent(bucket, () => []).add(m);
+        if (groupedMembers.containsKey(bucket)) {
+          groupedMembers[bucket]!.add(m);
+        } else if (bucket.isNotEmpty && !_isLocationRestricted) {
+          groupedMembers.putIfAbsent(bucket, () => []).add(m);
+        }
       }
       for (var l in scopedLogs) {
         String bucket = _resolveLocationBucket(l);
-        if (groupedLogs.containsKey(bucket)) groupedLogs[bucket]!.add(l);
-        else if (bucket.isNotEmpty && bucket.toLowerCase() != 'church') groupedLogs.putIfAbsent(bucket, () => []).add(l);
+        if (groupedLogs.containsKey(bucket)) {
+          groupedLogs[bucket]!.add(l);
+        } else if (bucket.isNotEmpty && bucket.toLowerCase() != 'church' && !_isLocationRestricted) {
+          groupedLogs.putIfAbsent(bucket, () => []).add(l);
+        }
       }
     } else if (lvl.contains('dept')) {
       List<String> deptsToShow = widget.isDeptLeader && widget.userDept.isNotEmpty ? [widget.userDept] : _orderedDepartments;
       for (var d in deptsToShow) { groupedLogs[d] = []; groupedMembers[d] = []; }
       for (var m in scopedMembers) {
         String dept = m['department']?.toString().trim() ?? '';
-        if (groupedMembers.containsKey(dept)) groupedMembers[dept]!.add(m);
+        if (groupedMembers.containsKey(dept)) {
+          groupedMembers[dept]!.add(m);
+        }
       }
       for (var l in scopedLogs) {
         String dept = extract(l, ['department', 'dept', 'dept_name']);
-        if (groupedLogs.containsKey(dept)) groupedLogs[dept]!.add(l);
+        if (groupedLogs.containsKey(dept)) {
+          groupedLogs[dept]!.add(l);
+        }
       }
     } else if (lvl.contains('team')) {
       final List<String> distinctTeams = _getScopedTeams();
@@ -462,16 +581,16 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     return calculatedBlocks;
   }
 
-  Widget? _buildDynamicHierarchicalRows() {
+  Widget? _buildDynamicHierarchicalRows(double colW) {
     final String lvl = widget.level.trim().toLowerCase();
 
-    if (lvl == 'church status' ||
-        (widget.isLocationLeader && lvl == 'location status') ||
-        (widget.isSubLocationLeader && lvl.contains('sub location')) ||
-        (widget.isDeptLeader && lvl.contains('dept')) ||
-        (widget.isTeamLeader && lvl.contains('team'))) {
-      return null;
-    }
+    if (lvl == 'church status') return null;
+    if (_is24ChurchDept || widget.groupBy == 'Church') return null;
+    if (widget.isLocationLeader && lvl == 'location status') return null;
+    if (widget.isSubLocationLeader && (lvl.contains('sub location') || lvl.contains('sub-location'))) return null;
+    if (widget.isDeptLeader && lvl == 'dept status') return null;
+    if (widget.isTeamLeader && lvl == 'team status') return null;
+    if (widget.isGroupLeader && lvl.contains('group')) return null;
 
     final blockData = _getCalculatedBlocksMap();
     if (blockData.isEmpty) return null;
@@ -479,69 +598,72 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     String categoryName = (widget.activeUnitLabel != null && widget.activeUnitLabel!.isNotEmpty)
         ? widget.activeUnitLabel!
         : "Unit";
-    return _mergedBlock(categoryName, blockData);
+    return _mergedBlock(categoryName, blockData, colW);
   }
 
-  Widget _buildMergedHeader() {
+  // 12 COLUMNS: BASE + MON, TUE, THU, FRI, SAT + OVERALL AVG %
+  Widget _buildMergedHeader(double colW) {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _cell("Classification", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
       _cell("Unit", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
       Column(children: [
         Row(children: [
-          _cell("Participation by Day", w: cw * 12, h: hh, b: true, bg: const Color(0xFFF8FAFC)),
+          _cell("Participation by Day", w: colW * 12, h: hh, b: true, bg: const Color(0xFFF8FAFC)),
         ]),
         Row(children: [
-          _cell("Base", w: cw, h: hh, b: true),
-          _cell("Monday", w: cw * 2, h: hh, b: true),
-          _cell("Tuesday", w: cw * 2, h: hh, b: true),
-          _cell("Wednesday", w: cw * 2, h: hh, b: true),
-          _cell("Thursday", w: cw * 2, h: hh, b: true),
-          _cell("Friday", w: cw * 2, h: hh, b: true),
-          _cell("Overall", w: cw, h: hh, b: true),
+          _cell("Base", w: colW, h: hh, b: true),
+          _cell("Monday", w: colW * 2, h: hh, b: true),
+          _cell("Tuesday", w: colW * 2, h: hh, b: true),
+          _cell("Thursday", w: colW * 2, h: hh, b: true),
+          _cell("Friday", w: colW * 2, h: hh, b: true),
+          _cell("Saturday", w: colW * 2, h: hh, b: true),
+          _cell("Overall", w: colW, h: hh, b: true),
         ]),
         Row(children: [
-          _cell("Workers", w: cw, h: sh),
-          _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
-          _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
-          _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
-          _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
-          _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
-          _cell("Avg %", w: cw, h: sh),
+          _cell("Workers", w: colW, h: sh),
+          _cell("Total", w: colW, h: sh), _cell("%", w: colW, h: sh),
+          _cell("Total", w: colW, h: sh), _cell("%", w: colW, h: sh),
+          _cell("Total", w: colW, h: sh), _cell("%", w: colW, h: sh),
+          _cell("Total", w: colW, h: sh), _cell("%", w: colW, h: sh),
+          _cell("Total", w: colW, h: sh), _cell("%", w: colW, h: sh),
+          _cell("Avg %", w: colW, h: sh),
         ]),
       ]),
     ]);
   }
 
-  Widget _mergedBlock(String label, Map<String, dynamic> children) {
+  Widget _mergedBlock(String label, Map<String, dynamic> children, double colW) {
     List<Widget> rows = [];
-    children.forEach((k, v) => rows.add(_dataRow(k, v)));
+    children.forEach((k, v) => rows.add(_dataRow(k, v, colW)));
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _cell(label, w: lw, h: (rows.length * rh).toDouble(), b: true, bg: const Color(0xFFFAF5FF)),
       Column(children: rows),
     ]);
   }
 
-  Widget _mergedRow(String c1, String c2, Map<String, dynamic> d, {bool b = false}) => Row(children: [
+  Widget _mergedRow(String c1, String c2, Map<String, dynamic> d, double colW, {bool b = false}) => Row(children: [
     _cell(c1, w: lw, h: rh, b: b, bg: const Color(0xFFF3E5F5)),
-    _dataRow(c2, d, b: b),
+    _dataRow(c2, d, colW, b: b),
   ]);
 
-  Widget _dataRow(String label, Map<String, dynamic> d, {bool b = false}) {
+  // DATA ROW: MON, TUE, THU, FRI, SAT, AVG %
+  Widget _dataRow(String label, Map<String, dynamic> d, double colW, {bool b = false}) {
     return Row(children: [
       _cell(label, w: lw, h: rh, b: b, a: Alignment.center),
-      _cell("${d['n']}", a: Alignment.center),
-      _cell("${d['mon']}", a: Alignment.center),
-      _cell("${d['monp'].toStringAsFixed(1)}%", a: Alignment.center, color: pPurple, b: true),
-      _cell("${d['tue']}", a: Alignment.center),
-      _cell("${d['tuep'].toStringAsFixed(1)}%", a: Alignment.center, color: pPurple, b: true),
-      _cell("${d['wed']}", a: Alignment.center),
-      _cell("${d['wedp'].toStringAsFixed(1)}%", a: Alignment.center, color: pPurple, b: true),
-      _cell("${d['thu']}", a: Alignment.center),
-      _cell("${d['thup'].toStringAsFixed(1)}%", a: Alignment.center, color: pPurple, b: true),
-      _cell("${d['fri']}", a: Alignment.center),
-      _cell("${d['frip'].toStringAsFixed(1)}%", a: Alignment.center, color: pPurple, b: true),
+      _cell("${d['n']}", w: colW, a: Alignment.center),
+      _cell("${d['mon']}", w: colW, a: Alignment.center),
+      _cell("${d['monp'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
+      _cell("${d['tue']}", w: colW, a: Alignment.center),
+      _cell("${d['tuep'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
+      _cell("${d['thu']}", w: colW, a: Alignment.center),
+      _cell("${d['thup'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
+      _cell("${d['fri']}", w: colW, a: Alignment.center),
+      _cell("${d['frip'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
+      _cell("${d['sat']}", w: colW, a: Alignment.center),
+      _cell("${d['satp'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
       _cell(
         "${d['avg'].toStringAsFixed(1)}%",
+        w: colW,
         b: true,
         a: Alignment.center,
         color: (d['avg'] >= widget.targetValue) ? Colors.green[800] : Colors.red[800],
@@ -559,7 +681,7 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     Alignment a = Alignment.center,
   }) {
     return Container(
-      width: w ?? cw,
+      width: w ?? baseCw,
       height: h,
       alignment: a,
       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -582,8 +704,8 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Column(
         children: [
-          // Dynamic Unit Selector Pill Bar
-          if (unitsList.length > 1)
+          // Do not show selection pills if user is restricted to a single location or 24-dept
+          if (unitsList.length > 1 && !_is24ChurchDept && !_isLocationRestricted && widget.groupBy != 'Church')
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               physics: const BouncingScrollPhysics(),
@@ -617,22 +739,22 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
               ),
             ),
           const SizedBox(height: 8),
-
           _buildBarChart(activeData),
         ],
       ),
     );
   }
 
+  // 5 BARS: MON, TUE, THU, FRI, SAT
   Widget _buildBarChart(Map<String, dynamic> data) {
     List<double> vals = [
       (data['monp'] as num).toDouble(),
       (data['tuep'] as num).toDouble(),
-      (data['wedp'] as num).toDouble(),
       (data['thup'] as num).toDouble(),
       (data['frip'] as num).toDouble(),
+      (data['satp'] as num).toDouble(),
     ];
-    List<String> days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+    List<String> days = ["Monday", "Tuesday", "Thursday", "Friday", "Saturday"];
 
     return Column(children: [
       Container(
@@ -696,6 +818,167 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     ]);
   }
 
+  Widget _buildTrendChart(Map<String, Map<String, dynamic>> blockData) {
+    final Set<String> rawDates = {};
+    for (var l in _scopedWorkerLogs) {
+      final d = l['report_date']?.toString();
+      if (d != null && d.isNotEmpty) rawDates.add(d);
+    }
+    final List<String> sortedDates = rawDates.toList()..sort();
+
+    if (sortedDates.isEmpty) {
+      return SizedBox(
+        height: 180, 
+        child: Center(
+          child: Text(
+            "No historical records found for this period",
+            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ),
+      );
+    }
+
+    final List<String> unitKeys = _isLocationRestricted
+        ? [widget.userLoc]
+        : blockData.keys.toList();
+
+    final List<Color> palette = [
+      pPurple,
+      Colors.blue.shade700,
+      Colors.teal.shade600,
+      Colors.orange.shade800,
+      Colors.deepOrange,
+      Colors.pink.shade700,
+      Colors.indigo.shade600,
+      Colors.green.shade800,
+      Colors.brown,
+      Colors.amber.shade900,
+      Colors.cyan.shade800,
+      Colors.blueGrey,
+    ];
+
+    double maxPct = 10.0;
+    final List<LineChartBarData> lineBars = [];
+
+    if (unitKeys.isEmpty || _is24ChurchDept || _isLocationRestricted || widget.groupBy == 'Church') {
+      final List<FlSpot> spots = [];
+      for (int d = 0; d < sortedDates.length; d++) {
+        final dateStr = sortedDates[d];
+        final dateLogs = _scopedWorkerLogs.where((l) => l['report_date']?.toString() == dateStr).toList();
+        final calc = _calc(dateLogs);
+        final double avgP = (calc['avg'] as num).toDouble();
+        if (avgP > maxPct) maxPct = avgP;
+        spots.add(FlSpot(d.toDouble(), avgP));
+      }
+      lineBars.add(LineChartBarData(
+        spots: spots,
+        color: pPurple,
+        barWidth: 3.0,
+        isCurved: true,
+        dotData: const FlDotData(show: true),
+      ));
+    } else {
+      for (int u = 0; u < unitKeys.length; u++) {
+        final unitName = unitKeys[u];
+        final Color unitColor = palette[u % palette.length];
+        final List<FlSpot> spots = [];
+
+        for (int d = 0; d < sortedDates.length; d++) {
+          final dateStr = sortedDates[d];
+          final dateLogs = _scopedWorkerLogs.where((l) {
+            final matchesDate = l['report_date']?.toString() == dateStr;
+            final matchesUnit = _getUnitKey(l) == unitName;
+            return matchesDate && matchesUnit;
+          }).toList();
+
+          final calc = _calc(dateLogs);
+          final double avgP = (calc['avg'] as num).toDouble();
+          if (avgP > maxPct) maxPct = avgP;
+          spots.add(FlSpot(d.toDouble(), avgP));
+        }
+
+        lineBars.add(LineChartBarData(
+          spots: spots,
+          color: unitColor,
+          barWidth: 2.2,
+          isCurved: true,
+          dotData: const FlDotData(show: true),
+        ));
+      }
+    }
+
+    List<String> formattedDates = sortedDates.map((d) {
+      if (d.length >= 10) return "${d.substring(5, 7)}/${d.substring(8, 10)}";
+      return d;
+    }).toList();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 280,
+            child: LineChart(LineChartData(
+              maxY: min(100.0, max(maxPct * 1.25, 40.0)),
+              borderData: FlBorderData(
+                show: true, 
+                border: const Border(
+                  left: BorderSide(color: Colors.black, width: 1.0), 
+                  bottom: BorderSide(color: Colors.black, width: 1.0),
+                ),
+              ),
+              gridData: const FlGridData(show: true, drawVerticalLine: false),
+              titlesData: FlTitlesData(
+                bottomTitles: AxisTitles(
+                  axisNameWidget: Text("Service Date (MM/DD)", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold)),
+                  axisNameSize: 22,
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    interval: 1.0,
+                    getTitlesWidget: (v, m) {
+                      int idx = v.toInt();
+                      if (idx < 0 || idx >= formattedDates.length || v != idx.toDouble()) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(formattedDates[idx], style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                      );
+                    },
+                  ),
+                ),
+                leftTitles: AxisTitles(
+                  axisNameWidget: Text("Average Participation (%)", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold)),
+                  axisNameSize: 22,
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 38,
+                    getTitlesWidget: (v, m) => Text("${v.toInt()}%", style: GoogleFonts.merriweather(fontSize: 9.5)),
+                  ),
+                ),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              lineBarsData: lineBars,
+            )),
+          ),
+          if (unitKeys.isNotEmpty && !_is24ChurchDept && !_isLocationRestricted && widget.groupBy != 'Church')
+            Padding(
+              padding: const EdgeInsets.only(top: 12, bottom: 4),
+              child: Wrap(
+                spacing: 16,
+                runSpacing: 6,
+                alignment: WrapAlignment.center,
+                children: List.generate(
+                  unitKeys.length,
+                  (i) => _lgItem(unitKeys[i], palette[i % palette.length]),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _lgItem(String t, Color c, {bool isDashed = false}) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -717,7 +1000,13 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
       border: Border.all(color: Colors.black, width: 1.0),
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.04),
+          blurRadius: 8,
+          offset: const Offset(0, 3),
+        ),
+      ],
     ),
     child: Column(children: [
       ListTile(

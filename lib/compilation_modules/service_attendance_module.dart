@@ -68,6 +68,8 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
   final Color pPurple = const Color(0xFF4A148C);
 
   String _selectedTrendMetric = "General Attendance"; 
+  // ONLY 'Sun' AND 'Wed'
+  String _selectedServiceDay = "Sun"; 
 
   final List<String> _orderedBOLGroups = ["교역자", "자문회", "장년회", "부녀회", "청년회"];
 
@@ -92,7 +94,47 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
   bool get _is24ChurchDept {
     final r = widget.userRole.toLowerCase();
     final d = widget.userDept.toLowerCase();
-    return (r.contains('_dept_') || r.startsWith('ia_') || d.contains('내무')) && !widget.isLocationLeader && !widget.isSubLocationLeader && !widget.isDeptLeader && !widget.isTeamLeader && !widget.isGroupLeader;
+    return (r.contains('_dept_') || r.startsWith('ia_') || d.contains('내무')) && 
+           !widget.isLocationLeader && 
+           !widget.isSubLocationLeader && 
+           !widget.isDeptLeader && 
+           !widget.isTeamLeader && 
+           !widget.isGroupLeader;
+  }
+
+  bool _isSundayRecord(dynamic l) {
+    final day = (l['service_day'] ?? '').toString().toLowerCase();
+    if (day == 'sunday' || day == 'sun') return true;
+    final dateStr = (l['report_date'] ?? '').toString();
+    try {
+      final dt = DateTime.parse(dateStr);
+      return dt.weekday == DateTime.sunday;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isWednesdayRecord(dynamic l) {
+    final day = (l['service_day'] ?? '').toString().toLowerCase();
+    if (day == 'wednesday' || day == 'wed') return true;
+    final dateStr = (l['report_date'] ?? '').toString();
+    try {
+      final dt = DateTime.parse(dateStr);
+      return dt.weekday == DateTime.wednesday;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  List<dynamic> get _filteredLogs {
+    if (widget.timePeriod == "Current status") {
+      return widget.logs;
+    }
+    if (_selectedServiceDay == "Sun") {
+      return widget.logs.where(_isSundayRecord).toList();
+    } else {
+      return widget.logs.where(_isWednesdayRecord).toList();
+    }
   }
 
   @override
@@ -111,7 +153,8 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         oldWidget.level != widget.level ||
         oldWidget.timePeriod != widget.timePeriod ||
         oldWidget.analyticsMode != widget.analyticsMode ||
-        oldWidget.groupBy != widget.groupBy) {
+        oldWidget.groupBy != widget.groupBy ||
+        oldWidget.logs != widget.logs) {
       _fetchMasterUnitsAndMembers();
     }
   }
@@ -120,7 +163,6 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     try {
       final lvl = widget.level.toLowerCase();
 
-      // 1. SUB-LOCATION STATUS: Fetch Sub-Locations from DB for selected Location
       String locToFetch = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : widget.userLoc;
       if ((lvl.contains('sub location') || lvl.contains('sub-location')) && locToFetch.isNotEmpty && locToFetch.toLowerCase() != 'church') {
         final locRes = await _supabase.from('locations').select('id, location, name').or('location.eq.$locToFetch,name.eq.$locToFetch').maybeSingle();
@@ -138,24 +180,18 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         }
       }
 
-      // 2. TARGETED FETCH FOR MEMBERS (Scoped by user track to avoid 8000-member dump)
       dynamic mQuery = _supabase.from('members').select(
         'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id'
       );
 
-      // A. Church 24-Department in Dept Mode: Only fetch Church staff (< 20 members)
       if (_is24ChurchDept && widget.groupBy == 'Church') {
         mQuery = mQuery.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,location.is.null');
         if (widget.userDept.isNotEmpty && widget.userDept != 'Church') {
           mQuery = mQuery.eq('department', widget.userDept);
         }
-      }
-      // B. Cross-Region Group Leader constraint
-      else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
+      } else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
         mQuery = mQuery.eq('department', widget.userDept).neq('location', 'Mou').neq('location', 'New Saints');
-      }
-      // C. Location Overseers / Workers
-      else if (!widget.isChurchWide) {
+      } else if (!widget.isChurchWide) {
         if (widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
           mQuery = mQuery.eq('location', widget.userLoc);
         }
@@ -167,7 +203,6 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         }
       }
 
-      // Drill-down filters
       if (lvl.contains('sub location') || lvl.contains('sub-location')) {
         if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
           mQuery = mQuery.eq('location', widget.selectedLocation);
@@ -320,11 +355,13 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
   @override
   Widget build(BuildContext context) {
+    final activeLogs = _filteredLogs;
+
     final hqMembers = _masterMembers.where((m) => ["교회등록", "총회등록"].contains(m['reg_status']?.toString())).toList();
     final enMembers = _masterMembers.where((m) => m['reg_status']?.toString() == "입교").toList();
 
-    final hqLogs = widget.logs.where((l) => ["교회등록", "총회등록"].contains(l['reg_status']?.toString())).toList();
-    final enLogs = widget.logs.where((l) => l['reg_status']?.toString() == "입교").toList();
+    final hqLogs = activeLogs.where((l) => ["교회등록", "총회등록"].contains(l['reg_status']?.toString())).toList();
+    final enLogs = activeLogs.where((l) => l['reg_status']?.toString() == "입교").toList();
 
     final Map<String, dynamic> hqS = _calc(hqLogs, officialMembers: hqMembers.isNotEmpty ? hqMembers : null); 
     final Map<String, dynamic> enS = _calc(enLogs, officialMembers: enMembers.isNotEmpty ? enMembers : null);
@@ -360,19 +397,69 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     ]);
   }
 
-  Widget _buildToolbar() => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-    Row(children: [
-      IconButton(onPressed: _printReport, icon: const Icon(Icons.print, color: Colors.blueGrey, size: 18)),
-      IconButton(onPressed: () {}, icon: const Icon(Icons.download, color: Colors.green, size: 18)),
-    ]),
-    TextButton.icon(
-      onPressed: () => setState(() => _isExpanded = !_isExpanded), 
-      icon: Icon(_isExpanded ? Icons.close_fullscreen : Icons.open_in_full, size: 14), 
-      label: Text(_isExpanded ? "Collapse regional grid" : "Expand regional grid", 
-        style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple)
-      )
-    ),
-  ]);
+  Widget _buildToolbar() => Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      Row(children: [
+        IconButton(onPressed: _printReport, icon: const Icon(Icons.print, color: Colors.blueGrey, size: 18)),
+        IconButton(onPressed: () {}, icon: const Icon(Icons.download, color: Colors.green, size: 18)),
+        const SizedBox(width: 8),
+
+        // ONLY "Sun" AND "Wed" TOGGLE
+        if (widget.timePeriod != "Current status")
+          Container(
+            height: 28,
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3E5F5),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.purple.shade200),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _serviceDayTab("Sun", "Sun"),
+                _serviceDayTab("Wed", "Wed"),
+              ],
+            ),
+          ),
+      ]),
+      TextButton.icon(
+        onPressed: () => setState(() => _isExpanded = !_isExpanded), 
+        icon: Icon(_isExpanded ? Icons.close_fullscreen : Icons.open_in_full, size: 14), 
+        label: Text(_isExpanded ? "Collapse regional grid" : "Expand regional grid", 
+          style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple)
+        )
+      ),
+    ],
+  );
+
+  Widget _serviceDayTab(String key, String label) {
+    final isSel = _selectedServiceDay == key;
+    return InkWell(
+      onTap: () {
+        if (_selectedServiceDay != key) {
+          setState(() => _selectedServiceDay = key);
+        }
+      },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(
+          color: isSel ? pPurple : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.merriweather(
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            color: isSel ? Colors.white : Colors.black87,
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildExcelGrid(Map<String, dynamic> hq, Map<String, dynamic> en, Map<String, dynamic> tot) {
     Widget? childRows = _buildDynamicHierarchicalRows();
@@ -394,29 +481,15 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     );
   }
 
-  // --- DYNAMIC ROWS (ELIMINATES DUPLICATES AND MISPLACED 24-DEPT ROWS) ---
   Widget? _buildDynamicHierarchicalRows() {
     final String lvl = widget.level.trim().toLowerCase();
 
-    // 1. Church status top row already represents Church
     if (lvl == 'church status') return null;
-
-    // 2. 24 Departments at Church: No demographic sub-departments (장년회, 부녀회...)
     if (_is24ChurchDept || widget.groupBy == 'Church') return null;
-
-    // 3. Location leader viewing location status: Summary is already at top
     if (widget.isLocationLeader && lvl == 'location status') return null;
-
-    // 4. Sub-location leader viewing sub-location status: Prevent duplicate row
     if (widget.isSubLocationLeader && (lvl.contains('sub location') || lvl.contains('sub-location'))) return null;
-
-    // 5. Dept leader viewing dept status: Prevent duplicate row
     if (widget.isDeptLeader && lvl == 'dept status') return null;
-
-    // 6. Team leader viewing team status: Prevent duplicate row
     if (widget.isTeamLeader && lvl == 'team status') return null;
-
-    // 7. Group leader viewing group status: Summary is already at top
     if (widget.isGroupLeader && lvl.contains('group')) return null;
 
     Map<String, List<dynamic>> groupedLogs = {};
@@ -431,6 +504,8 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       return '';
     }
 
+    final activeLogs = _filteredLogs;
+
     // 1. GROUP STATUS (BOOK OF LIFE)
     if (lvl.contains('group status')) {
       categoryName = "Book of Life";
@@ -442,13 +517,12 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         String bol = m['book_of_life']?.toString() ?? m['bol_dept']?.toString() ?? '';
         if (groupedMembers.containsKey(bol)) groupedMembers[bol]!.add(m);
       }
-      for (var l in widget.logs) {
+      for (var l in activeLogs) {
         String bol = extract(l, ['book_of_life', 'bol_dept']);
         if (groupedLogs.containsKey(bol)) groupedLogs[bol]!.add(l);
       }
     } 
-
-    // 2. SUB-LOCATION STATUS (Supports Dept Leader overseeing all sub-locations)
+    // 2. SUB-LOCATION STATUS
     else if (lvl.contains('sub location') || lvl.contains('sub-location')) {
       categoryName = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : (widget.userLoc.isNotEmpty ? widget.userLoc : "Sub-locations");
 
@@ -457,7 +531,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         String sub = m['sub_location']?.toString().trim() ?? '';
         if (sub.isNotEmpty) subLocs.add(sub);
       }
-      for (var l in widget.logs) {
+      for (var l in activeLogs) {
         String sub = extract(l, ['sub_location', 'sub_loc']);
         if (sub.isNotEmpty) subLocs.add(sub);
       }
@@ -470,12 +544,11 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         String sub = m['sub_location']?.toString().trim() ?? '';
         if (sub.isNotEmpty) groupedMembers.putIfAbsent(sub, () => []).add(m);
       }
-      for (var l in widget.logs) {
+      for (var l in activeLogs) {
         String sub = extract(l, ['sub_location', 'sub_loc']);
         if (sub.isNotEmpty) groupedLogs.putIfAbsent(sub, () => []).add(l);
       }
-    }
-
+    } 
     // 3. LOCATION STATUS
     else if (lvl.contains('location status')) {
       categoryName = "Location";
@@ -491,7 +564,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
           groupedMembers.putIfAbsent(bucket, () => []).add(m);
         }
       }
-      for (var l in widget.logs) {
+      for (var l in activeLogs) {
         String bucket = _resolveLocationBucket(l);
         if (groupedLogs.containsKey(bucket)) {
           groupedLogs[bucket]!.add(l);
@@ -500,8 +573,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         }
       }
     } 
-
-    // 4. DEPT STATUS (Location Departments only)
+    // 4. DEPT STATUS
     else if (lvl.contains('dept')) {
       categoryName = widget.selectedSubLocation.isNotEmpty ? widget.selectedSubLocation : "Department";
       
@@ -517,7 +589,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
           groupedMembers.putIfAbsent(dept, () => []).add(m);
         }
       }
-      for (var l in widget.logs) {
+      for (var l in activeLogs) {
         String dept = extract(l, ['department', 'dept', 'dept_name']);
         if (groupedLogs.containsKey(dept)) {
           groupedLogs[dept]!.add(l);
@@ -526,7 +598,6 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         }
       }
     } 
-
     // 5. TEAM STATUS
     else if (lvl.contains('team')) {
       categoryName = widget.selectedDepartment.isNotEmpty ? widget.selectedDepartment : "Team";
@@ -540,12 +611,11 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         String team = m['team']?.toString().trim() ?? '';
         if (team.isNotEmpty) groupedMembers.putIfAbsent(team, () => []).add(m);
       }
-      for (var l in widget.logs) {
+      for (var l in activeLogs) {
         String team = extract(l, ['team', 'team_name']);
         if (team.isNotEmpty) groupedLogs.putIfAbsent(team, () => []).add(l);
       }
     } 
-
     // 6. CELL STATUS
     else if (lvl.contains('cell')) {
       categoryName = widget.selectedTeam.isNotEmpty ? widget.selectedTeam : "Cell groups";
@@ -559,7 +629,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         String cell = m['cell_group']?.toString().trim() ?? '';
         if (cell.isNotEmpty) groupedMembers.putIfAbsent(cell, () => []).add(m);
       }
-      for (var l in widget.logs) {
+      for (var l in activeLogs) {
         String cell = extract(l, ['unit_name', 'cell_group', 'cell', 'cell_name']);
         if (cell.isNotEmpty) groupedLogs.putIfAbsent(cell, () => []).add(l);
       }
@@ -669,7 +739,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
   String _getDynamicXAxisLabel() {
     final lvl = widget.level.toLowerCase();
-    if (_is24ChurchDept || widget.groupBy == 'Church') {
+    if (_is24ChurchDept) {
       return widget.userDept.isNotEmpty ? widget.userDept : 'Department Summary';
     }
     if (widget.isGroupLeader && lvl.contains('location status')) {
@@ -693,21 +763,20 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     return widget.groupBy;
   }
 
-  // --- CONNECTED CHART (ALIGNED WITH SIDEBAR MODE AND TIME PERIOD) ---
+  // --- RESTORED: MULTI-DAY PERIODS ALWAYS RENDER LINE CHART ---
   Widget _buildChart(Map<String, dynamic> totSummary) {
-    // Respects sidebar mode: if Analytics mode is Trend, or if multi-day period, show Trend
-    bool isTrend = widget.analyticsMode == "Trend" || (widget.timePeriod != "Current status" && widget.analyticsMode != "Summary");
+    // RESTORED ORIGINAL LOGIC: Any multi-day period always renders the Line Chart
+    bool isTrend = widget.timePeriod != "Current status";
     final lvl = widget.level.toLowerCase();
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CASE A: SNAPSHOT / SUMMARY MODE -> BAR CHART
+    // CASE A: 1-DAY SNAPSHOT (CURRENT STATUS ONLY) -> BAR CHART
     // ─────────────────────────────────────────────────────────────────────────
     if (!isTrend) {
       String xName = _getDynamicXAxisLabel();
       List<String> keys = _getUnitKeysForLevel(lvl);
 
-      // SINGLE UNIT / DEPARTMENT VIEW: Chart displays metric breakdown
-      if (keys.isEmpty || keys.length == 1 || _is24ChurchDept || widget.groupBy == 'Church') {
+      if (keys.isEmpty || keys.length == 1 || _is24ChurchDept) {
         final double nVal = (totSummary['n'] as num?)?.toDouble() ?? 0.0;
         final double attVal = (totSummary['att'] as num?)?.toDouble() ?? 0.0;
         final double ipVal = (totSummary['ip'] as num?)?.toDouble() ?? 0.0;
@@ -780,7 +849,6 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         ]);
       }
 
-      // MULTI-UNIT VIEW: Compares units across level
       Map<String, List<dynamic>> cgLogs = {};
       Map<String, List<dynamic>> cgMembers = {};
 
@@ -793,7 +861,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         String b = _resolveUnitKeyForRecord(m, lvl);
         if (cgMembers.containsKey(b)) cgMembers[b]!.add(m);
       }
-      for (var l in widget.logs) {
+      for (var l in _filteredLogs) {
         String b = _resolveUnitKeyForRecord(l, lvl);
         if (cgLogs.containsKey(b)) cgLogs[b]!.add(l);
       }
@@ -821,19 +889,25 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CASE B: TREND OVER TIME (WEEKLY / MONTHLY) -> MULTI-LINE OVER DATES
+    // CASE B: TREND OVER TIME (WEEKLY, MONTHLY, YEARLY) -> MULTI-LINE OVER DATES
     // ─────────────────────────────────────────────────────────────────────────
+    final activeLogs = _filteredLogs;
     final Set<String> rawDates = {};
-    for (var l in widget.logs) {
+    for (var l in activeLogs) {
       final d = l['report_date']?.toString();
       if (d != null && d.isNotEmpty) rawDates.add(d);
     }
     final List<String> sortedDates = rawDates.toList()..sort();
 
     if (sortedDates.isEmpty) {
-      return const SizedBox(
+      return SizedBox(
         height: 200, 
-        child: Center(child: Text("No historical records found for this period"))
+        child: Center(
+          child: Text(
+            "No historical records found for $_selectedServiceDay in this period",
+            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ),
       );
     }
 
@@ -858,12 +932,12 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     double maxTrendValue = 10.0;
     final List<LineChartBarData> lineBars = [];
 
-    // If viewing single department: show single line trend
-    if (unitKeys.isEmpty || _is24ChurchDept || widget.groupBy == 'Church') {
+    // Single unit/dept: clean single trend curve
+    if (unitKeys.isEmpty || _is24ChurchDept) {
       final List<FlSpot> spots = [];
       for (int d = 0; d < sortedDates.length; d++) {
         final dateStr = sortedDates[d];
-        final dateLogs = widget.logs.where((l) => l['report_date']?.toString() == dateStr).toList();
+        final dateLogs = activeLogs.where((l) => l['report_date']?.toString() == dateStr).toList();
         final calc = _calc(dateLogs);
         double val = _selectedTrendMetric == "General Attendance" ? (calc['att'] as num).toDouble() : (calc['ip'] as num).toDouble();
         if (val > maxTrendValue) maxTrendValue = val;
@@ -877,6 +951,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         dotData: const FlDotData(show: true),
       ));
     } else {
+      // Multi-unit: Dedicated curve per unit across the selected service day
       for (int u = 0; u < unitKeys.length; u++) {
         final unitName = unitKeys[u];
         final Color unitColor = palette[u % palette.length];
@@ -884,7 +959,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
         for (int d = 0; d < sortedDates.length; d++) {
           final dateStr = sortedDates[d];
-          final dateLogs = widget.logs.where((l) {
+          final dateLogs = activeLogs.where((l) {
             final matchesDate = l['report_date']?.toString() == dateStr;
             final matchesUnit = _resolveUnitKeyForRecord(l, lvl) == unitName;
             return matchesDate && matchesUnit;
@@ -919,7 +994,10 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text("Trend by Date", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)),
+            Text(
+              "Trend: $_selectedServiceDay Services", 
+              style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)
+            ),
             Container(
               height: 30,
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -984,7 +1062,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
           lineBarsData: lineBars,
         )),
       ),
-      if (unitKeys.isNotEmpty && !_is24ChurchDept && widget.groupBy != 'Church')
+      if (unitKeys.isNotEmpty && !_is24ChurchDept)
         Padding(
           padding: const EdgeInsets.only(top: 12, bottom: 6),
           child: Center(
@@ -992,6 +1070,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
               spacing: 16,
               runSpacing: 8,
               alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: List.generate(
                 unitKeys.length, 
                 (i) => _lgItem(unitKeys[i], palette[i % palette.length])
@@ -1003,9 +1082,10 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
   }
 
   List<String> _getUnitKeysForLevel(String lvl) {
-    if (_is24ChurchDept || widget.groupBy == 'Church' || lvl.contains('church')) {
+    if (_is24ChurchDept) {
       return [];
     }
+    if (lvl.contains('church')) return ["Church (Overall)"];
     if (lvl.contains('group')) return List.from(_orderedBOLGroups);
     if (lvl.contains('sub location') || lvl.contains('sub-location')) {
       final Set<String> subs = Set.from(_masterSubLocations);

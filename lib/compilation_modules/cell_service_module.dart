@@ -113,7 +113,8 @@ class _CellServiceModuleState extends State<CellServiceModule> {
         oldWidget.level != widget.level ||
         oldWidget.timePeriod != widget.timePeriod ||
         oldWidget.analyticsMode != widget.analyticsMode ||
-        oldWidget.groupBy != widget.groupBy) {
+        oldWidget.groupBy != widget.groupBy ||
+        oldWidget.logs != widget.logs) {
       _fetchMasterUnitsAndMembers();
     }
   }
@@ -140,24 +141,19 @@ class _CellServiceModuleState extends State<CellServiceModule> {
         }
       }
 
-      // 2. Targeted fetch of members (Scoped to prevent 8000-member dump)
+      // 2. Targeted fetch of members (Scoped to prevent 8,000-member dump)
       dynamic mQuery = _supabase.from('members').select(
         'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id'
       );
 
-      // A. Church 24-Department in Dept Mode: Only fetch Church staff (< 20 members)
       if (_is24ChurchDept && widget.groupBy == 'Church') {
         mQuery = mQuery.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,location.is.null');
         if (widget.userDept.isNotEmpty && widget.userDept != 'Church') {
           mQuery = mQuery.eq('department', widget.userDept);
         }
-      }
-      // B. Cross-Region Group Leader constraint
-      else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
+      } else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
         mQuery = mQuery.eq('department', widget.userDept).neq('location', 'Mou').neq('location', 'New Saints');
-      }
-      // C. Location Overseers / Workers
-      else if (!widget.isChurchWide) {
+      } else if (!widget.isChurchWide) {
         if (widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
           mQuery = mQuery.eq('location', widget.userLoc);
         }
@@ -169,7 +165,6 @@ class _CellServiceModuleState extends State<CellServiceModule> {
         }
       }
 
-      // Hierarchical drill-down filter overrides
       if (lvl.contains('sub location') || lvl.contains('sub-location')) {
         if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
           mQuery = mQuery.eq('location', widget.selectedLocation);
@@ -333,29 +328,17 @@ class _CellServiceModuleState extends State<CellServiceModule> {
     );
   }
 
-  // --- DYNAMIC ROWS (NO DUPLICATES, NO PHANTOM 24-DEPT ROWS) ---
+  // --- DYNAMIC ROWS (ELIMINATES DUPLICATES IN TABLE) ---
   Widget? _buildDynamicHierarchicalRows() {
     final String lvl = widget.level.trim().toLowerCase();
 
-    // 1. Church status top row already represents Church
+    // Avoid redundant row when viewing own unit tier
     if (lvl == 'church status') return null;
-
-    // 2. 24 Departments at Church: No demographic sub-departments (장년회, 부녀회...)
     if (_is24ChurchDept || widget.groupBy == 'Church') return null;
-
-    // 3. Location leader viewing location status: Summary is already at top
     if (widget.isLocationLeader && lvl == 'location status') return null;
-
-    // 4. Sub-location leader viewing sub-location status: Prevent duplicate row
     if (widget.isSubLocationLeader && (lvl.contains('sub location') || lvl.contains('sub-location'))) return null;
-
-    // 5. Dept leader viewing dept status: Prevent duplicate row
     if (widget.isDeptLeader && lvl == 'dept status') return null;
-
-    // 6. Team leader viewing team status: Prevent duplicate row
     if (widget.isTeamLeader && lvl == 'team status') return null;
-
-    // 7. Group leader viewing group status: Summary is already at top
     if (widget.isGroupLeader && lvl.contains('group')) return null;
 
     Map<String, List<dynamic>> groupedLogs = {};
@@ -515,17 +498,17 @@ class _CellServiceModuleState extends State<CellServiceModule> {
       _cell("Unit", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
       Column(children: [
         Row(children: [
-          _cell("Summary", w: cw * 10, h: hh, b: true, bg: const Color(0xFFF8FAFC)),
+          _cell("Summary", w: cw * 11, h: hh, b: true, bg: const Color(0xFFF8FAFC)),
         ]),
         Row(children: [
-          _cell("Overall metrics", w: cw * 2, h: hh, b: true),
+          _cell("Overall metrics", w: cw * 3, h: hh, b: true),
           _cell("In-person", w: cw * 2, h: hh, b: true),
           _cell("Online", w: cw * 2, h: hh, b: true),
           _cell("Makeup", w: cw * 2, h: hh, b: true),
           _cell("Absentees", w: cw * 2, h: hh, b: true),
         ]),
         Row(children: [
-          _cell("Num", w: cw, h: sh), _cell("Att", w: cw, h: sh),
+          _cell("Num", w: cw, h: sh), _cell("Att", w: cw, h: sh), _cell("%", w: cw, h: sh),
           _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
           _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
           _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
@@ -549,14 +532,14 @@ class _CellServiceModuleState extends State<CellServiceModule> {
     _dataRow(c2, d, b: b),
   ]);
 
-  // ALL CELLS CENTER ALIGNED
   Widget _dataRow(String label, Map<String, dynamic> d, {bool b = false}) {
     return Row(children: [
       _cell(label, w: lw, h: rh, b: b, a: Alignment.center),
       _cell("${d['n']}", a: Alignment.center),
       _cell("${d['att']}", a: Alignment.center),
+      _cell("${d['pct'].toStringAsFixed(1)}%", b: true, a: Alignment.center),
       _cell("${d['ip']}", a: Alignment.center),
-      _cell("${d['ipp'].toStringAsFixed(1)}%", b: true, a: Alignment.center),
+      _cell("${d['ipp'].toStringAsFixed(1)}%", a: Alignment.center),
       _cell("${d['on']}", a: Alignment.center),
       _cell("${d['onp'].toStringAsFixed(1)}%", a: Alignment.center),
       _cell("${d['mu']}", a: Alignment.center),
@@ -590,8 +573,7 @@ class _CellServiceModuleState extends State<CellServiceModule> {
       ),
     );
   }
-
-  // --- CONNECTED CHART LOGIC ---
+  // Generates the dynamic X-axis label based on the active level
   String _getDynamicXAxisLabel() {
     final lvl = widget.level.toLowerCase();
     if (_is24ChurchDept || widget.groupBy == 'Church') {
@@ -617,20 +599,22 @@ class _CellServiceModuleState extends State<CellServiceModule> {
     }
     return widget.groupBy;
   }
-
+  
+  // --- RESTORED: MULTI-DAY PERIODS ALWAYS RENDER LINE CHART ---
   Widget _buildChart(Map<String, dynamic> totSummary) {
-    bool isTrend = widget.analyticsMode == "Trend" || (widget.timePeriod != "Current status" && widget.analyticsMode != "Summary");
+    // RESTORED ORIGINAL LOGIC: Any multi-day period always renders the Line Chart
+    bool isTrend = widget.timePeriod != "Current status";
     final lvl = widget.level.toLowerCase();
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CASE A: SNAPSHOT / SUMMARY MODE -> BAR CHART
+    // CASE A: 1-DAY SNAPSHOT (CURRENT STATUS ONLY) -> BAR CHART
     // ─────────────────────────────────────────────────────────────────────────
     if (!isTrend) {
       String xName = _getDynamicXAxisLabel();
       List<String> keys = _getUnitKeysForLevel(lvl);
 
-      // SINGLE UNIT / DEPARTMENT VIEW: Chart displays metric breakdown
-      if (keys.isEmpty || keys.length == 1 || _is24ChurchDept || widget.groupBy == 'Church') {
+      // Single unit/24-dept: clean breakdown bars
+      if (keys.isEmpty || keys.length == 1 || _is24ChurchDept) {
         final double nVal = (totSummary['n'] as num?)?.toDouble() ?? 0.0;
         final double attVal = (totSummary['att'] as num?)?.toDouble() ?? 0.0;
         final double ipVal = (totSummary['ip'] as num?)?.toDouble() ?? 0.0;
@@ -705,7 +689,7 @@ class _CellServiceModuleState extends State<CellServiceModule> {
         ]);
       }
 
-      // MULTI-UNIT VIEW: Compares units across level
+      // RESTORED ORIGINAL: Multi-unit 3-rod comparison bar chart
       Map<String, List<dynamic>> cgLogs = {};
       Map<String, List<dynamic>> cgMembers = {};
 
@@ -746,7 +730,7 @@ class _CellServiceModuleState extends State<CellServiceModule> {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CASE B: TREND OVER TIME (WEEKLY / MONTHLY) -> MULTI-LINE OVER DATES
+    // CASE B: TREND OVER TIME (WEEKLY / MONTHLY / YEARLY) -> MULTI-LINE OVER DATES
     // ─────────────────────────────────────────────────────────────────────────
     final Set<String> rawDates = {};
     for (var l in widget.logs) {
@@ -756,21 +740,41 @@ class _CellServiceModuleState extends State<CellServiceModule> {
     final List<String> sortedDates = rawDates.toList()..sort();
 
     if (sortedDates.isEmpty) {
-      return const SizedBox(height: 200, child: Center(child: Text("No historical records found for this period")));
+      return SizedBox(
+        height: 200, 
+        child: Center(
+          child: Text(
+            "No historical records found for this period",
+            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey.shade700),
+          ),
+        ),
+      );
     }
 
+    // RESTORED: Generates the true unit keys for plotting all line curves
     final List<String> unitKeys = _getUnitKeysForLevel(lvl);
+
     final List<Color> palette = [
-      pPurple, Colors.blue.shade700, Colors.teal.shade600, Colors.orange.shade800,
-      Colors.deepOrange, Colors.pink.shade700, Colors.indigo.shade600, Colors.green.shade800,
-      Colors.brown, Colors.amber.shade900, Colors.cyan.shade800, Colors.purpleAccent.shade700, Colors.blueGrey,
+      pPurple,
+      Colors.blue.shade700,
+      Colors.teal.shade600,
+      Colors.orange.shade800,
+      Colors.deepOrange,
+      Colors.pink.shade700,
+      Colors.indigo.shade600,
+      Colors.green.shade800,
+      Colors.brown,
+      Colors.amber.shade900,
+      Colors.cyan.shade800,
+      Colors.purpleAccent.shade700,
+      Colors.blueGrey,
     ];
 
     double maxTrendValue = 10.0;
     final List<LineChartBarData> lineBars = [];
 
-    // Single department/unit: Single clean trendline
-    if (unitKeys.isEmpty || _is24ChurchDept || widget.groupBy == 'Church') {
+    // Single unit/dept: clean single trend curve
+    if (unitKeys.isEmpty || _is24ChurchDept) {
       final List<FlSpot> spots = [];
       for (int d = 0; d < sortedDates.length; d++) {
         final dateStr = sortedDates[d];
@@ -788,6 +792,7 @@ class _CellServiceModuleState extends State<CellServiceModule> {
         dotData: const FlDotData(show: true),
       ));
     } else {
+      // Multi-unit: Dedicated curve per unit across the selected level
       for (int u = 0; u < unitKeys.length; u++) {
         final unitName = unitKeys[u];
         final Color unitColor = palette[u % palette.length];
@@ -802,10 +807,7 @@ class _CellServiceModuleState extends State<CellServiceModule> {
           }).toList();
 
           final calc = _calc(dateLogs);
-          double val = _selectedTrendMetric == "General Attendance"
-              ? (calc['att'] as num).toDouble()
-              : (calc['ip'] as num).toDouble();
-
+          double val = _selectedTrendMetric == "General Attendance" ? (calc['att'] as num).toDouble() : (calc['ip'] as num).toDouble();
           if (val > maxTrendValue) maxTrendValue = val;
           spots.add(FlSpot(d.toDouble(), val));
         }
@@ -894,7 +896,8 @@ class _CellServiceModuleState extends State<CellServiceModule> {
           lineBarsData: lineBars,
         )),
       ),
-      if (unitKeys.isNotEmpty && !_is24ChurchDept && widget.groupBy != 'Church')
+      // FULL RESTORED LEGEND FOR MULTI-LINE CURVES
+      if (unitKeys.isNotEmpty && !_is24ChurchDept)
         Padding(
           padding: const EdgeInsets.only(top: 12, bottom: 6),
           child: Center(
@@ -910,10 +913,12 @@ class _CellServiceModuleState extends State<CellServiceModule> {
     ]);
   }
 
+  // RESTORED: Provides all units for the current level to plot multi-line curves
   List<String> _getUnitKeysForLevel(String lvl) {
-    if (_is24ChurchDept || widget.groupBy == 'Church' || lvl.contains('church')) {
+    if (_is24ChurchDept) {
       return [];
     }
+    if (lvl.contains('church')) return ["Church (Overall)"];
     if (lvl.contains('group')) return List.from(_orderedBOLGroups);
     if (lvl.contains('sub location') || lvl.contains('sub-location')) {
       final Set<String> subs = Set.from(_masterSubLocations);

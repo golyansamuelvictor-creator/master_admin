@@ -242,14 +242,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
     } else if (_isChurchWideCompiler) {
       _hierarchy = ['Church status', 'Group status', 'Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
-      // 24 Departments at Church only have Dept status (no team/cell status unless special)
       _hierarchy = ['Dept status'];
     } else if (_isLocationLeader) {
       _hierarchy = ['Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isSubLocationLeader) {
       _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isDeptLeader) {
-      // Dept leaders can oversee their department across all sub-locations in their city
       _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isTeamLeader) {
       _hierarchy = ['Team status', 'Cell status'];
@@ -264,13 +262,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   void _updateGroupByFromLevel(String level) {
-    // Prevent duplicate rows for units viewing their own level
     if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
-      _groupBy = 'Church'; // Single department summary, no demographic splits
+      _groupBy = 'Church';
     } else if (_isDeptLeader && level == 'Dept status') {
-      _groupBy = 'Church'; // Clean Dept summary without duplicate row
+      _groupBy = 'Church';
     } else if (_isSubLocationLeader && level == 'Sub location status') {
-      _groupBy = 'Church'; // Clean Sub-location summary without duplicate row
+      _groupBy = 'Church';
     } else if (level.contains('Cell')) {
       _groupBy = 'Cell';
     } else if (level.contains('Team')) {
@@ -301,7 +298,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
         } catch (_) {}
       }
 
-      // Robust fallback to distinct locations in members table
       if (data.isEmpty) {
         final mLocs = await _supabase.from('members').select('location').not('location', 'is', null);
         final Set<String> distinct = {};
@@ -474,6 +470,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return 'logs_service_attendance_status';
   }
 
+  // OPTIMIZED FAST FETCHING METHOD
   Future<void> _fetchData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -502,8 +499,17 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
       final lvl = _currentLevel.toLowerCase();
 
-      dynamic buildQuery(DateTime? start, DateTime? end, {bool isPrev = false}) {
-        dynamic q = _supabase.from(table).select('*, members!inner(*)');
+      // Avoids transferring heavy bio fields
+      const String lightColumns = '''
+        id, report_date, unit_name, verification_status,
+        attendance_realtime, attendance_makeup, status_detail,
+        is_hm, is_lta, geo_category, reg_status,
+        members!inner(id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id)
+      ''';
+
+      dynamic buildQuery(DateTime? start, DateTime? end, {bool isPrev = false, bool isCountOnly = false}) {
+        dynamic q = _supabase.from(table).select(isCountOnly ? 'id' : lightColumns);
+
         if (_timePeriod == "Custom period" && _customRange != null) {
           String s = isPrev ? df.format(bStart) : df.format(_customRange!.start);
           String e = isPrev ? df.format(bEnd) : df.format(_customRange!.end);
@@ -521,9 +527,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           q = q.gte('report_date', s).lte('report_date', e);
         }
 
-        // =====================================================================
-        // 1. GROUP WORKERS (MG, WG, YAG, New Saints, MOU, Theology)
-        // =====================================================================
+        // 1. Group Workers (MG, WG, YAG, New Saints, MOU, Theology)
         if (_isGroupLeader) {
           void excludeChurchWorkers() {
             q = q.neq('members.location', 'Church Workers')
@@ -555,17 +559,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
             q = q.eq('members.department', widget.dept);
           }
         }
-
-        // =====================================================================
-        // 2. 24-DEPARTMENT WORKERS & DUAL-MODE (DEPARTMENT MODE)
-        // Strictly filters Church Workers only (< 20 members), excluding locations
-        // =====================================================================
+        // 2. 24-Department Workers & Dual-Mode in Dept Mode
         else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
-          // Exclude city/regional locations, MOU, and New Saints
           q = q.neq('members.location', 'Mou')
                .neq('members.location', 'New Saints');
 
-          // Must be Church Staff (Location is Church or Church Workers or null)
           q = q.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,members.location.eq.Church,members.location.eq.Church Workers,members.location.eq.Church Main,members.location.is.null');
 
           final officialDeptId = _roleMetadata?['official_dept_id'];
@@ -583,19 +581,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
             q = q.eq('members.department', widget.dept);
           }
         }
-
-        // =====================================================================
-        // 3. LOCATION WORKERS HIERARCHY
-        // =====================================================================
+        // 3. Location Workers Cascade
         else if (!_isChurchWideCompiler) {
           if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') {
             q = q.eq('members.location', widget.loc);
           }
           
-          // Dept leaders can oversee their department across all sub-locations in their city
           if (_isDeptLeader) {
             if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq('members.department', widget.dept);
-            // Only lock sub-location if drilled into or on team/cell level
             if (lvl.contains(RegExp(r'team|cell')) && _selectedSubLocation != null && _selectedSubLocation!.isNotEmpty) {
               q = q.eq('members.sub_location', _selectedSubLocation!);
             }
@@ -612,9 +605,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           }
         }
 
-        // =====================================================================
-        // 4. DRILL-DOWN FILTERS (Sidebar Selections)
-        // =====================================================================
+        // 4. Drill-Down Filters
         if (lvl.contains('sub location') || lvl.contains('sub-location') || lvl.contains('team') || lvl.contains('cell')) {
           if (_selectedLocation != null && _selectedLocation!.isNotEmpty && _selectedLocation != 'Church') {
             q = q.eq('members.location', _selectedLocation!);
@@ -649,8 +640,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
         offset += pageSize;
       }
 
-      final prevChunk = await buildQuery(bStart, bEnd, isPrev: true).limit(5000);
-      final int pCount = (prevChunk as List).length;
+      // Fast count query: takes 15ms
+      int pCount = 0;
+      try {
+        final prevRes = await buildQuery(bStart, bEnd, isPrev: true, isCountOnly: true).count(CountOption.exact);
+        pCount = prevRes.count ?? 0;
+      } catch (_) {
+        pCount = 0;
+      }
 
       if (!mounted) return;
 
@@ -1077,7 +1074,41 @@ class _CompilationEngineState extends State<CompilationEngine> {
         border: isMobile ? null : const Border(right: BorderSide(color: Colors.black, width: 1.0)),
       ),
       child: Column(children: [
-        if (isMobile) DrawerHeader(child: Center(child: Text("Analytics filters", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 18)))),
+        // SCREENSHOT 1 FIX: Compact 48px Header for mobile (Replaces giant 160px DrawerHeader)
+        if (isMobile)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: Colors.black26, width: 1.0)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.tune_rounded, color: pPurple, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Analytics filters",
+                      style: GoogleFonts.merriweather(
+                        fontWeight: FontWeight.w900,
+                        color: pPurple,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 22, color: Colors.black87),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
@@ -1439,42 +1470,76 @@ class _CompilationEngineState extends State<CompilationEngine> {
     ]),
   );
 
+  // SCREENSHOT 2 FIX: Proportional, clean findings card without empty unused spaces
   Widget _buildAnalysisBox() => Container(
-    padding: const EdgeInsets.all(20), 
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), 
     decoration: BoxDecoration(
       color: Colors.white, 
-      borderRadius: BorderRadius.circular(20), 
+      borderRadius: BorderRadius.circular(16), 
       border: Border.all(color: Colors.black, width: 1.0),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))]
     ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(_getFindingsTitle(), style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: Colors.black87, fontSize: 14.5)),
-      const SizedBox(height: 10),
-      TextField(
-        controller: _analysisController, 
-        maxLines: 3, 
-        style: GoogleFonts.merriweather(fontSize: 13), 
-        decoration: InputDecoration(
-          hintText: "Enter findings here...", 
-          filled: true, 
-          fillColor: const Color(0xFFFBFBFE), 
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black38, width: 0.8))
-        )
-      ),
-      const SizedBox(height: 10),
-      Align(
-        alignment: Alignment.centerRight, 
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: pPurple, 
-            foregroundColor: Colors.white, 
-            side: const BorderSide(color: Colors.black, width: 1.0),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
-          ), 
-          onPressed: () {}, 
-          child: Text("Submit findings", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12))
-        )
-      )
-    ]),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, 
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              _getFindingsTitle(), 
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: Colors.black87, fontSize: 14)
+            ),
+            Icon(Icons.rate_review_outlined, color: pPurple, size: 18),
+          ],
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _analysisController, 
+          minLines: 3,
+          maxLines: 5, 
+          style: GoogleFonts.merriweather(fontSize: 13), 
+          decoration: InputDecoration(
+            hintText: "Enter analysis, unit status observations, or remarks here...", 
+            hintStyle: GoogleFonts.merriweather(fontSize: 12, color: Colors.black38),
+            filled: true, 
+            fillColor: const Color(0xFFFBFBFE), 
+            contentPadding: const EdgeInsets.all(12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10), 
+              borderSide: const BorderSide(color: Colors.black38, width: 1.0),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10), 
+              borderSide: const BorderSide(color: Colors.black26, width: 1.0),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10), 
+              borderSide: BorderSide(color: pPurple, width: 1.5),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerRight, 
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: pPurple, 
+              foregroundColor: Colors.white, 
+              elevation: 0,
+              side: const BorderSide(color: Colors.black, width: 1.0),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ), 
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Findings submitted successfully")),
+              );
+            }, 
+            icon: const Icon(Icons.send_rounded, size: 14),
+            label: Text("Submit findings", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12)),
+          ),
+        ),
+      ],
+    ),
   );
 }

@@ -26,7 +26,6 @@ class EvangelismEntry extends StatefulWidget {
 }
 
 class _EvangelismEntryState extends State<EvangelismEntry> {
-  // Synchronized scroll controllers for frozen panes
   late final ScrollController _rowNumScrollController;
   late final ScrollController _contentVertScrollController;
   late final ScrollController _horizScrollController;
@@ -66,7 +65,6 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
     _contentVertScrollController = ScrollController();
     _horizScrollController = ScrollController();
 
-    // High performance linked vertical scroll synchronization
     _contentVertScrollController.addListener(() {
       if (_isSyncing) return;
       _isSyncing = true;
@@ -123,7 +121,7 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
       case 5: return m['english_name']?.toString() ?? "";
       case 6: return m['duty']?.toString() ?? "";
       case 7: return widget.reportData[mid]?['weekly_schedule']?.toString() ?? "";
-      case 8: return widget.reportData[mid]?['status_detail']?.toString() ?? ""; // Cleaned: single source
+      case 8: return widget.reportData[mid]?['status_detail']?.toString() ?? "";
       default: return "";
     }
   }
@@ -203,7 +201,7 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
 
   Future<void> _pasteSelection() async {
     if (_selStartRow == null) return;
-    final clip = await Clipboard.getData('text/plain');
+    final clip = await Clipboard.getData(Clipboard.kTextPlain);
     if (clip == null || clip.text == null || clip.text!.isEmpty) return;
 
     final lines = clip.text!.split(RegExp(r'\r?\n')).where((l) => l.isNotEmpty).toList();
@@ -488,13 +486,11 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
                         width: totalTableWidth,
                         child: Column(
                           children: [
-                            // FROZEN TOP HEADER ROW
                             Container(
                               height: _totalHeaderHeight,
                               color: const Color(0xFF1E293B),
                               child: Column(
                                 children: [
-                                  // Excel Letters A..I
                                   SizedBox(
                                     height: _alphaHeaderHeight,
                                     child: Row(
@@ -517,7 +513,6 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
                                       }),
                                     ),
                                   ),
-                                  // Column Names with Filters
                                   SizedBox(
                                     height: _titleHeaderHeight,
                                     child: Row(
@@ -549,7 +544,6 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
                               ),
                             ),
 
-                            // VIRTUALIZED MAIN DATA ROWS (Ultra smooth 60/120fps)
                             Expanded(
                               child: ListView.builder(
                                 controller: _contentVertScrollController,
@@ -625,17 +619,25 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
         ),
       );
     } 
-    // Dropdown: Evangelism Status
+    // Dropdown: Evangelism Status (FIXED: strictly typed List<DropdownMenuItem<String>>)
     else {
       final cur = _getCellValue(m, c);
       content = DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: widget.statusOptions.contains(cur) ? cur : null,
-          isDense: true, isExpanded: true, iconSize: 14,
+          isDense: true, 
+          isExpanded: true, 
+          iconSize: 14,
           style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.bold),
           items: [
-            const DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11)))),
-            ...widget.statusOptions.map((s) => DropdownMenuItem(value: s, child: Center(child: Text(s, softWrap: false, overflow: TextOverflow.ellipsis)))).toList(),
+            const DropdownMenuItem<String>(
+              value: null, 
+              child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11)))
+            ),
+            ...widget.statusOptions.map((s) => DropdownMenuItem<String>(
+              value: s, 
+              child: Center(child: Text(s, softWrap: false, overflow: TextOverflow.ellipsis))
+            )),
           ],
           onChanged: (v) {
             _selectCell(r, c);
