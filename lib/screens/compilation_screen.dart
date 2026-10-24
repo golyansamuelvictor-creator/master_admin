@@ -1,9 +1,13 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:master_admin/compilation_modules/evangelism_results_module.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 import '../compilation_modules/service_attendance_module.dart';
 import '../compilation_modules/cell_service_module.dart';
@@ -53,7 +57,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
   late List<String> _hierarchy;
   bool _isLoading = true;
   List<dynamic> _logs = [];
-  double _growthTrend = 0.0;
+
+  // 3 Dynamic Growth Metrics
+  double _primaryGrowth = 0.0;
+  double _secondaryGrowth = 0.0;
+  double _tertiaryGrowth = 0.0;
+  String _primaryLabel = "General Growth";
+  String _secondaryLabel = "In-person Growth";
+  String _tertiaryLabel = "Absentees Change";
 
   List<Map<String, dynamic>> _locationData = [];
   List<Map<String, dynamic>> _subLocationData = [];
@@ -70,15 +81,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
   String? _selectedDepartment;
   String? _selectedTeam;
 
-  // Metadata from app_roles table
   Map<String, dynamic>? _roleMetadata;
   bool _dualModeIsChurch = true;
 
-  // --- DYNAMIC ROLE IDENTIFIERS ---
   String get _scope => _roleMetadata?['approval_scope'] ?? '';
   String get _grouping => (_roleMetadata?['Grouping'] ?? '').toString();
 
-  // 1. CROSS-REGION GROUP LEADERS (MG, WG, YAG, New Saints, MOU, Theology)
   bool get _isGroupLeader {
     String r = widget.role.toLowerCase();
     if (r.contains('cell') || r.contains('team') || r.startsWith('dept_') || r.startsWith('sub_loc') || r.startsWith('loc_')) {
@@ -100,7 +108,17 @@ class _CompilationEngineState extends State<CompilationEngine> {
            r.contains('mou_dept');
   }
 
-  // 2. DUAL-MODE DEPARTMENTS IDENTIFIERS
+  String get _groupLeaderCleanDept {
+    final r = widget.role.toLowerCase();
+    if (_grouping == '24-Dept MG' || r.startsWith('mg_group')) return '장년회';
+    if (_grouping == '24-Dept WG' || r.startsWith('wg_group')) return '부녀회';
+    if (_grouping == '24-Dept YAG' || r.startsWith('yag_group')) return '청년회';
+    if (_grouping == '24-Dept New Saints' || r.startsWith('new_saints')) return '새신자';
+    if (_grouping.startsWith('24-Dept 18') || r.startsWith('theology')) return '신학부';
+    if (_grouping == '24-Dept MOU' || r.startsWith('mou')) return 'Mou';
+    return widget.dept.replaceAll(RegExp(r'(회장|부장|총무|서무|과장)$'), '').trim();
+  }
+
   bool get _isInternalAffairs {
     String r = widget.role.toLowerCase();
     String d = widget.dept.trim().toLowerCase();
@@ -470,7 +488,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return 'logs_service_attendance_status';
   }
 
-  // OPTIMIZED FAST FETCHING METHOD
   Future<void> _fetchData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
@@ -499,16 +516,15 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
       final lvl = _currentLevel.toLowerCase();
 
-      // Avoids transferring heavy bio fields
       const String lightColumns = '''
-        id, report_date, unit_name, verification_status,
-        attendance_realtime, attendance_makeup, status_detail,
-        is_hm, is_lta, geo_category, reg_status,
+        id, report_date, unit_name, verification_status, correction_note, situation_notes,
+        attendance_realtime, attendance_makeup, status_detail, service_day,
+        is_hm, is_lta, geo_category, reg_status, location, sub_location, department, team, cell_group,
         members!inner(id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id)
       ''';
 
-      dynamic buildQuery(DateTime? start, DateTime? end, {bool isPrev = false, bool isCountOnly = false}) {
-        dynamic q = _supabase.from(table).select(isCountOnly ? 'id' : lightColumns);
+      dynamic buildQuery(DateTime? start, DateTime? end, {bool isPrev = false}) {
+        dynamic q = _supabase.from(table).select(lightColumns);
 
         if (_timePeriod == "Custom period" && _customRange != null) {
           String s = isPrev ? df.format(bStart) : df.format(_customRange!.start);
@@ -527,43 +543,25 @@ class _CompilationEngineState extends State<CompilationEngine> {
           q = q.gte('report_date', s).lte('report_date', e);
         }
 
-        // 1. Group Workers (MG, WG, YAG, New Saints, MOU, Theology)
+        // 1. GROUP WORKERS (Resolves exact member department like '장년회' rather than '장년회장')
         if (_isGroupLeader) {
-          void excludeChurchWorkers() {
-            q = q.neq('members.location', 'Church Workers')
-                 .neq('members.location', 'Church Main')
-                 .neq('members.location', 'Church');
+          final deptTarget = _groupLeaderCleanDept;
+          q = q.eq('members.department', deptTarget);
+
+          if (deptTarget != 'Mou') {
+            q = q.neq('members.location', 'Mou');
+          }
+          if (deptTarget != '새신자') {
+            q = q.neq('members.location', 'New Saints');
           }
 
-          final r = widget.role.toLowerCase();
-
-          if (_grouping == '24-Dept MG' || r.startsWith('mg_group') || widget.dept == '장년회') {
-            q = q.eq('members.department', '장년회').neq('members.location', 'Mou').neq('members.location', 'New Saints');
-            excludeChurchWorkers();
-          } else if (_grouping == '24-Dept WG' || r.startsWith('wg_group') || widget.dept == '부녀회') {
-            q = q.eq('members.department', '부녀회').neq('members.location', 'Mou').neq('members.location', 'New Saints');
-            excludeChurchWorkers();
-          } else if (_grouping == '24-Dept YAG' || r.startsWith('yag_group') || widget.dept == '청년회') {
-            q = q.eq('members.department', '청년회').neq('members.location', 'Mou').neq('members.location', 'New Saints');
-            excludeChurchWorkers();
-          } else if (_grouping == '24-Dept New Saints' || r.startsWith('new_saints_dept') || widget.dept == '새신자') {
-            q = q.or('members.department.eq.새신자,members.department.ilike.%new saints%').neq('members.location', 'Mou');
-            excludeChurchWorkers();
-          } else if (_grouping.startsWith('24-Dept 18') || r.startsWith('theology_dept') || widget.dept == '신학부' || widget.dept.toLowerCase() == 'theology') {
-            q = q.or('members.department.eq.신학부,members.department.ilike.%theology%').neq('members.location', 'Mou').neq('members.location', 'New Saints');
-            excludeChurchWorkers();
-          } else if (_grouping == '24-Dept MOU' || r.startsWith('mou_dept') || widget.dept.toLowerCase() == 'mou') {
-            q = q.eq('members.department', 'Mou').neq('members.location', 'Mou').neq('members.location', 'New Saints');
-            excludeChurchWorkers();
-          } else if (widget.dept.isNotEmpty) {
-            q = q.eq('members.department', widget.dept);
-          }
+          q = q.neq('members.location', 'Church Workers')
+               .neq('members.location', 'Church Main')
+               .neq('members.location', 'Church');
         }
-        // 2. 24-Department Workers & Dual-Mode in Dept Mode
+        // 2. 24 DEPARTMENTS (CHURCH LEVEL < 20 SAINTS)
         else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
-          q = q.neq('members.location', 'Mou')
-               .neq('members.location', 'New Saints');
-
+          q = q.neq('members.location', 'Mou').neq('members.location', 'New Saints');
           q = q.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,members.location.eq.Church,members.location.eq.Church Workers,members.location.eq.Church Main,members.location.is.null');
 
           final officialDeptId = _roleMetadata?['official_dept_id'];
@@ -581,12 +579,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
             q = q.eq('members.department', widget.dept);
           }
         }
-        // 3. Location Workers Cascade
+        // 3. LOCATION WORKERS
         else if (!_isChurchWideCompiler) {
           if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') {
             q = q.eq('members.location', widget.loc);
           }
-          
           if (_isDeptLeader) {
             if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq('members.department', widget.dept);
             if (lvl.contains(RegExp(r'team|cell')) && _selectedSubLocation != null && _selectedSubLocation!.isNotEmpty) {
@@ -599,13 +596,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
             if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq('members.department', widget.dept);
             if (widget.team.isNotEmpty && widget.team != 'N/A') q = q.eq('members.team', widget.team);
           }
-          
           if (widget.role.toLowerCase().contains('cell')) {
             q = q.eq('unit_name', widget.userUnit);
           }
         }
 
-        // 4. Drill-Down Filters
+        // 4. DRILL-DOWN FILTERS
         if (lvl.contains('sub location') || lvl.contains('sub-location') || lvl.contains('team') || lvl.contains('cell')) {
           if (_selectedLocation != null && _selectedLocation!.isNotEmpty && _selectedLocation != 'Church') {
             q = q.eq('members.location', _selectedLocation!);
@@ -640,25 +636,83 @@ class _CompilationEngineState extends State<CompilationEngine> {
         offset += pageSize;
       }
 
-      // Fast count query: takes 15ms
-      int pCount = 0;
+      List<dynamic> prevLogs = [];
       try {
-        final prevRes = await buildQuery(bStart, bEnd, isPrev: true, isCountOnly: true).count(CountOption.exact);
-        pCount = prevRes.count ?? 0;
+        final prevChunk = await buildQuery(bStart, bEnd, isPrev: true).range(0, 999);
+        prevLogs = prevChunk as List<dynamic>;
       } catch (_) {
-        pCount = 0;
+        prevLogs = [];
       }
+
+      _calculateDynamicGrowthMetrics(allCurrentLogs, prevLogs);
 
       if (!mounted) return;
 
       setState(() { 
         _logs = allCurrentLogs; 
-        _growthTrend = pCount > 0 ? ((_logs.length - pCount) / pCount) * 100 : 0.0;
         _isLoading = false; 
       });
     } catch (e) { 
       debugPrint("Compilation Query Error: $e");
       if (mounted) setState(() => _isLoading = false); 
+    }
+  }
+
+  void _calculateDynamicGrowthMetrics(List<dynamic> cur, List<dynamic> prev) {
+    final d = widget.selectedDuty;
+
+    double pctDiff(double c, double p) {
+      if (p == 0) return c > 0 ? 100.0 : 0.0;
+      return ((c - p) / p) * 100.0;
+    }
+
+    if (d.contains('Attendance') || d.contains('Cell Group') || d.contains('Education')) {
+      _primaryLabel = "General Att Growth";
+      _secondaryLabel = "In-person Growth";
+      _tertiaryLabel = "Absentees Change";
+
+      int cAtt = cur.where((x) => x['attendance_realtime'] != 'Absentee' && (x['status_detail'] ?? '').toString().toLowerCase() != 'absence').length;
+      int pAtt = prev.where((x) => x['attendance_realtime'] != 'Absentee' && (x['status_detail'] ?? '').toString().toLowerCase() != 'absence').length;
+
+      int cIp = cur.where((x) => x['attendance_realtime'] == 'In-person' || (x['status_detail'] ?? '').toString().contains('In-person')).length;
+      int pIp = prev.where((x) => x['attendance_realtime'] == 'In-person' || (x['status_detail'] ?? '').toString().contains('In-person')).length;
+
+      int cAbs = cur.where((x) => x['attendance_realtime'] == 'Absentee' || (x['status_detail'] ?? '').toString().contains('Absence')).length;
+      int pAbs = prev.where((x) => x['attendance_realtime'] == 'Absentee' || (x['status_detail'] ?? '').toString().contains('Absence')).length;
+
+      _primaryGrowth = pctDiff(cAtt.toDouble(), pAtt.toDouble());
+      _secondaryGrowth = pctDiff(cIp.toDouble(), pIp.toDouble());
+      _tertiaryGrowth = pctDiff(cAbs.toDouble(), pAbs.toDouble());
+    } else if (d.contains('Evangelism')) {
+      _primaryLabel = "Participation Growth";
+      _secondaryLabel = "Active Saints";
+      _tertiaryLabel = "Support Needed";
+
+      int cEv = cur.where((x) => (x['status_detail'] ?? '').toString().toLowerCase().contains('evangelised')).length;
+      int pEv = prev.where((x) => (x['status_detail'] ?? '').toString().toLowerCase().contains('evangelised')).length;
+
+      _primaryGrowth = pctDiff(cEv.toDouble(), pEv.toDouble());
+      _secondaryGrowth = cur.length.toDouble();
+      _tertiaryGrowth = math.max(0, cur.length - cEv).toDouble();
+    } else if (d.contains('Morning Light') || d.contains('Workers Daily')) {
+      _primaryLabel = "Participation Rate";
+      _secondaryLabel = "Done Count";
+      _tertiaryLabel = "Missed Days";
+
+      int cDone = cur.where((x) => (x['status_detail'] ?? '').toString().toLowerCase().contains('did') || (x['status_detail'] ?? '').toString().toLowerCase().contains('yes')).length;
+      int pDone = prev.where((x) => (x['status_detail'] ?? '').toString().toLowerCase().contains('did') || (x['status_detail'] ?? '').toString().toLowerCase().contains('yes')).length;
+
+      _primaryGrowth = pctDiff(cDone.toDouble(), pDone.toDouble());
+      _secondaryGrowth = cDone.toDouble();
+      _tertiaryGrowth = math.max(0, cur.length - cDone).toDouble();
+    } else {
+      _primaryLabel = "Total Submissions";
+      _secondaryLabel = "Current Period";
+      _tertiaryLabel = "Previous Period";
+
+      _primaryGrowth = pctDiff(cur.length.toDouble(), prev.length.toDouble());
+      _secondaryGrowth = cur.length.toDouble();
+      _tertiaryGrowth = prev.length.toDouble();
     }
   }
 
@@ -668,7 +722,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return widget.dept.isNotEmpty ? widget.dept : "Department";
     }
     if (_isGroupLeader) {
-      if (lvl.contains('group')) return widget.dept;
+      if (lvl.contains('group')) return _groupLeaderCleanDept;
       if (lvl.contains('location')) return 'Location';
       if (lvl.contains('sub location')) return _selectedLocation ?? 'Sub-locations';
       if (lvl.contains('team')) return _selectedSubLocation ?? 'Team';
@@ -708,6 +762,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
         ),
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: Colors.black, height: 1.0)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.psychology_alt_rounded, color: Color(0xFF4A148C), size: 24),
+            tooltip: "AI Performance Analysis",
+            onPressed: _showAiExecutiveReportDialog,
+          ),
           if (isMobile) 
             Builder(builder: (ctx) => IconButton(icon: const Icon(Icons.filter_list_rounded), onPressed: () => Scaffold.of(ctx).openEndDrawer())),
         ],
@@ -1039,30 +1098,304 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   Widget _buildGrowthCard() {
-    bool up = _growthTrend >= 0;
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white, 
-        borderRadius: BorderRadius.circular(15), 
+        borderRadius: BorderRadius.circular(16), 
         border: Border.all(color: Colors.black, width: 1.0), 
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))]
       ),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text("Growth performance", style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.black87)),
-            const SizedBox(height: 2),
-            Text(_timePeriod, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: pPurple)),
-          ]),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(color: up ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-          child: Text("${up ? '+' : ''}${_growthTrend.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: up ? Colors.green[800] : Colors.red[800], fontSize: 16)),
-        )
-      ]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Growth Performance Metrics", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.black87)),
+                  const SizedBox(height: 2),
+                  Text(_timePeriod, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)),
+                ],
+              ),
+              InkWell(
+                onTap: _showAiExecutiveReportDialog,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: pPurple.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: pPurple.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.auto_awesome, color: pPurple, size: 14),
+                      const SizedBox(width: 4),
+                      Text("AI Analysis", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: Colors.black12),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _metricPill(_primaryLabel, _primaryGrowth, isPercentage: true),
+              const SizedBox(width: 8),
+              _metricPill(_secondaryLabel, _secondaryGrowth, isPercentage: _secondaryLabel.contains('Growth') || _secondaryLabel.contains('Rate')),
+              const SizedBox(width: 8),
+              _metricPill(_tertiaryLabel, _tertiaryGrowth, isInverse: _tertiaryLabel.contains('Absentees') || _tertiaryLabel.contains('Support') || _tertiaryLabel.contains('Missed')),
+            ],
+          ),
+        ],
+      ),
     );
+  }
+
+  Widget _metricPill(String title, double value, {bool isPercentage = false, bool isInverse = false}) {
+    bool isPositive = value >= 0;
+    Color color = isPositive 
+        ? (isInverse ? Colors.red.shade700 : Colors.green.shade700) 
+        : (isInverse ? Colors.green.shade700 : Colors.red.shade700);
+
+    String sign = value > 0 ? "+" : "";
+    String display = isPercentage ? "$sign${value.toStringAsFixed(1)}%" : "${value.toInt()}";
+
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.25), width: 1.0),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: GoogleFonts.merriweather(fontSize: 10, color: Colors.black87, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Text(display, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAiExecutiveReportDialog() {
+    final period = _timePeriod;
+    final duty = widget.selectedDuty;
+
+    final Map<String, List<dynamic>> unitMap = {};
+    for (var l in _logs) {
+      final u = (l['unit_name'] ?? l['cell_group'] ?? l['department'] ?? 'Other').toString();
+      unitMap.putIfAbsent(u, () => []).add(l);
+    }
+
+    final List<Map<String, dynamic>> unitRanks = [];
+    unitMap.forEach((u, lList) {
+      int att = lList.where((x) => x['attendance_realtime'] != 'Absentee' && (x['status_detail'] ?? '').toString().toLowerCase() != 'absence').length;
+      double pct = lList.isNotEmpty ? (att / lList.length * 100.0) : 0.0;
+      unitRanks.add({'unit': u, 'total': lList.length, 'att': att, 'pct': pct});
+    });
+
+    unitRanks.sort((a, b) => (b['pct'] as double).compareTo(a['pct'] as double));
+    final topUnits = unitRanks.take(3).map((e) => "${e['unit']} (${(e['pct'] as double).toStringAsFixed(1)}%)").toList();
+    final bottomUnits = unitRanks.reversed.take(3).map((e) => "${e['unit']} (${(e['pct'] as double).toStringAsFixed(1)}%)").toList();
+
+    final Set<String> rawFindings = {};
+    for (var l in _logs) {
+      final n = (l['correction_note'] ?? l['situation_notes'] ?? '').toString().trim();
+      if (n.isNotEmpty && n != 'null') rawFindings.add(n);
+    }
+    final findingsSummary = rawFindings.isNotEmpty 
+        ? rawFindings.take(4).join("\n• ") 
+        : "Regular unit tracking maintained with ongoing pastoral check-ins.";
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: Colors.white,
+        child: Container(
+          width: 580,
+          padding: const EdgeInsets.all(22),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: pPurple.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                          child: Icon(Icons.psychology_alt_rounded, color: pPurple, size: 22),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("AI Executive Performance Report", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pPurple)),
+                            Text("$duty • $period", style: GoogleFonts.merriweather(fontSize: 11, color: Colors.grey.shade600)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const Divider(height: 1, color: Colors.black26),
+                const SizedBox(height: 12),
+
+                _reportSection("1. Executive Summary", 
+                  "During the $period period for $duty, total submissions reached ${_logs.length} records. "
+                  "Primary metric performance trend is recorded at ${_primaryGrowth >= 0 ? '+' : ''}${_primaryGrowth.toStringAsFixed(1)}% compared to the previous period.",
+                  Icons.analytics_outlined
+                ),
+
+                _reportSection("2. Benchmark Leading Units", 
+                  topUnits.isNotEmpty ? "The top-performing units setting the standard are:\n• ${topUnits.join('\n• ')}" : "All units currently performing at parity.",
+                  Icons.stars_rounded, color: Colors.green.shade800
+                ),
+
+                _reportSection("3. Critical Focus & Support Required", 
+                  bottomUnits.isNotEmpty ? "The following units require immediate pastoral and administrative intervention:\n• ${bottomUnits.join('\n• ')}" : "No units critically behind threshold.",
+                  Icons.warning_amber_rounded, color: Colors.red.shade800
+                ),
+
+                _reportSection("4. Synthesis of Unit Leader Findings", 
+                  "• $findingsSummary",
+                  Icons.comment_bank_outlined
+                ),
+
+                _reportSection("5. Actionable Directive for Senior Leadership", 
+                  "Recommended focus for the upcoming week:\n"
+                  "1. Conduct targeted one-on-one reviews with cell leaders of trailing units.\n"
+                  "2. Deploy experienced workers to assist units requiring support.\n"
+                  "3. Implement absentee recovery check-ins prior to the next service session.",
+                  Icons.assignment_turned_in_outlined, color: pPurple
+                ),
+
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: Text("Close", style: GoogleFonts.merriweather(color: Colors.grey.shade700))),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: pPurple,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        side: const BorderSide(color: Colors.black, width: 1.0),
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                      label: Text("Download PDF Report", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12)),
+                      onPressed: () => _exportAiReportPdf(duty, period, topUnits, bottomUnits, findingsSummary),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _reportSection(String title, String body, IconData icon, {Color? color}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: (color ?? pPurple).withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: (color ?? pPurple).withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color ?? pPurple),
+              const SizedBox(width: 8),
+              Text(title, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: color ?? Colors.black87)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(body, style: GoogleFonts.merriweather(fontSize: 11.5, color: Colors.black87, height: 1.4)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _exportAiReportPdf(String duty, String period, List<String> top, List<String> bottom, String findings) async {
+    final pdf = pw.Document();
+    final fontBold = await PdfGoogleFonts.merriweatherBold();
+    final font = await PdfGoogleFonts.merriweatherRegular();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Header(
+                level: 0,
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Executive AI Strategic Performance Report', style: pw.TextStyle(font: fontBold, fontSize: 16, color: PdfColors.purple900)),
+                    pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font, fontSize: 10)),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text('Duty: $duty | Period: $period | Submissions: ${_logs.length}', style: pw.TextStyle(font: font, fontSize: 9.5, color: PdfColors.grey700)),
+              pw.Divider(thickness: 1),
+              pw.SizedBox(height: 10),
+
+              pw.Text('1. Performance Metrics Overview', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.purple900)),
+              pw.Bullet(text: '$_primaryLabel: ${_primaryGrowth >= 0 ? "+" : ""}${_primaryGrowth.toStringAsFixed(1)}%', style: pw.TextStyle(font: font, fontSize: 9.5)),
+              pw.Bullet(text: '$_secondaryLabel: ${_secondaryGrowth.toStringAsFixed(1)}', style: pw.TextStyle(font: font, fontSize: 9.5)),
+              pw.Bullet(text: '$_tertiaryLabel: ${_tertiaryGrowth.toStringAsFixed(1)}', style: pw.TextStyle(font: font, fontSize: 9.5)),
+              pw.SizedBox(height: 10),
+
+              pw.Text('2. Top Performing Units', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.green900)),
+              ...top.map((e) => pw.Bullet(text: e, style: pw.TextStyle(font: font, fontSize: 9.5))),
+              pw.SizedBox(height: 10),
+
+              pw.Text('3. Units Requiring Urgent Support', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.red900)),
+              ...bottom.map((e) => pw.Bullet(text: e, style: pw.TextStyle(font: font, fontSize: 9.5))),
+              pw.SizedBox(height: 10),
+
+              pw.Text('4. Synthesis of Lower Leader Findings', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.purple900)),
+              pw.Text(findings, style: pw.TextStyle(font: font, fontSize: 9.5)),
+              pw.SizedBox(height: 10),
+
+              pw.Text('5. Strategic Action Directives for Next Week', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.purple900)),
+              pw.Bullet(text: 'Conduct one-on-one pastoral interviews with leaders of bottom-performing units.', style: pw.TextStyle(font: font, fontSize: 9.5)),
+              pw.Bullet(text: 'Cross-deploy successful evangelism strategies to underperforming areas.', style: pw.TextStyle(font: font, fontSize: 9.5)),
+              pw.Bullet(text: 'Submit targeted absentee intervention status prior to mid-week service.', style: pw.TextStyle(font: font, fontSize: 9.5)),
+            ],
+          );
+        },
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
   Widget _buildSidebarContent() {
@@ -1074,7 +1407,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
         border: isMobile ? null : const Border(right: BorderSide(color: Colors.black, width: 1.0)),
       ),
       child: Column(children: [
-        // SCREENSHOT 1 FIX: Compact 48px Header for mobile (Replaces giant 160px DrawerHeader)
         if (isMobile)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1089,14 +1421,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                   children: [
                     Icon(Icons.tune_rounded, color: pPurple, size: 20),
                     const SizedBox(width: 8),
-                    Text(
-                      "Analytics filters",
-                      style: GoogleFonts.merriweather(
-                        fontWeight: FontWeight.w900,
-                        color: pPurple,
-                        fontSize: 16,
-                      ),
-                    ),
+                    Text("Analytics filters", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 16)),
                   ],
                 ),
                 IconButton(
@@ -1113,7 +1438,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
             child: Column(children: [
-              // Dual-Mode Switcher for IA, Evangelism, Education, & Administration
               if (_hasDualModeForCurrentDuty) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -1125,10 +1449,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _getDualModeTitle(), 
-                        style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)
-                      ),
+                      Text(_getDualModeTitle(), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)),
                       const SizedBox(height: 6),
                       Row(
                         children: [
@@ -1148,10 +1469,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text(
-                                  "Church Reports", 
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _dualModeIsChurch ? Colors.white : Colors.black87)
-                                ),
+                                child: Text("Church Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _dualModeIsChurch ? Colors.white : Colors.black87)),
                               ),
                             ),
                           ),
@@ -1172,10 +1490,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text(
-                                  "Dept Reports", 
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: !_dualModeIsChurch ? Colors.white : Colors.black87)
-                                ),
+                                child: Text("Dept Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: !_dualModeIsChurch ? Colors.white : Colors.black87)),
                               ),
                             ),
                           ),
@@ -1229,6 +1544,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
+  // --- UNIT NAVIGATION CARD WITH CASCADING NESTED PICKERS ---
   Widget _buildUnitNavigationCard() {
     return Container(
       margin: const EdgeInsets.only(bottom: 2),
@@ -1282,6 +1598,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                   ),
                 ),
 
+                // CASCADING PICKER APPEARS RIGHT BENEATH SELECTED UNIT IN SIDEBAR
                 if (isSelected)
                   _buildCascadingPicker(levelName),
               ],
@@ -1292,6 +1609,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
+  // --- CASCADING PICKER STYLES PRESERVED EXACTLY ---
   Widget _buildCascadingPicker(String levelName) {
     final lvl = levelName.toLowerCase();
 
@@ -1327,15 +1645,13 @@ class _CompilationEngineState extends State<CompilationEngine> {
       _fetchData();
     });
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 1. GROUP WORKERS (MG, WG, YAG, New Saints, MOU, Theology)
-    // ─────────────────────────────────────────────────────────────────────────
+    // 1. Group Leaders: Shows Location Picker directly underneath Sub location status
     if (_isGroupLeader) {
       if (lvl.contains('group')) {
-        return _infoText("Displaying summary for ${widget.dept} across all locations");
+        return _infoText("Displaying summary for $_groupLeaderCleanDept across all locations");
       }
       if (lvl.contains('location status')) {
-        return _infoText("Displaying ${widget.dept} performance by location");
+        return _infoText("Displaying $_groupLeaderCleanDept performance by location");
       }
       if (lvl.contains('sub location') || lvl.contains('sub-location')) {
         return _pickerContainer([locPicker]);
@@ -1348,16 +1664,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
       }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 2. 24 DEPARTMENTS / IA DEPARTMENT MODE
-    // ─────────────────────────────────────────────────────────────────────────
     if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
       if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept.isNotEmpty ? widget.dept : 'your department'} at Church");
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 3. LOCATION LEADER (Restricted to widget.loc)
-    // ─────────────────────────────────────────────────────────────────────────
     if (_isLocationLeader) {
       if (lvl.contains('location status')) return _infoText("Displaying summary for your location (${widget.loc})");
       if (lvl.contains('sub location') || lvl.contains('sub-location')) return _infoText("Displaying all sub-locations under ${widget.loc}");
@@ -1366,9 +1676,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
       if (lvl.contains('cell')) return _pickerContainer([subPicker, deptPicker, teamPicker]);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 4. SUB-LOCATION LEADER
-    // ─────────────────────────────────────────────────────────────────────────
     if (_isSubLocationLeader) {
       if (lvl.contains('sub location') || lvl.contains('sub-location')) return _infoText("Displaying summary for ${widget.sub}");
       if (lvl.contains('dept')) return _infoText("Displaying departments under ${widget.sub}");
@@ -1376,9 +1683,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
       if (lvl.contains('cell')) return _pickerContainer([deptPicker, teamPicker]);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 5. DEPT LEADER (Oversees department across all sub-locations in location)
-    // ─────────────────────────────────────────────────────────────────────────
     if (_isDeptLeader) {
       if (lvl.contains('sub location') || lvl.contains('sub-location')) {
         return _pickerContainer([subPicker]);
@@ -1388,17 +1692,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
       if (lvl.contains('cell')) return _pickerContainer([subPicker, teamPicker]);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 6. TEAM LEADER
-    // ─────────────────────────────────────────────────────────────────────────
     if (_isTeamLeader) {
       if (lvl.contains('team')) return _infoText("Displaying summary for your team (${widget.team})");
       if (lvl.contains('cell')) return _infoText("Displaying cell groups under ${widget.team}");
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // 7. CHURCH-WIDE COMPILER (Admin, Church Sec, IA Church Mode)
-    // ─────────────────────────────────────────────────────────────────────────
     if (_isChurchWideCompiler) {
       if (lvl.contains('church')) return _infoText("Displaying general church summary (All Locations, MOU, Church Workers)");
       if (lvl.contains('group')) return _infoText("Displaying groups based on Book of Life (교역자, 자문회, 장년회, 부녀회, 청년회)");
@@ -1470,7 +1768,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
     ]),
   );
 
-  // SCREENSHOT 2 FIX: Proportional, clean findings card without empty unused spaces
   Widget _buildAnalysisBox() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), 
     decoration: BoxDecoration(
