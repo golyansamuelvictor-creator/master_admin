@@ -1,13 +1,12 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:master_admin/compilation_modules/evangelism_results_module.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:fl_chart/fl_chart.dart';
 
 import '../compilation_modules/service_attendance_module.dart';
 import '../compilation_modules/cell_service_module.dart';
@@ -15,12 +14,13 @@ import '../compilation_modules/workers_education_module.dart';
 import '../compilation_modules/all_saints_education_module.dart';
 import '../compilation_modules/offering_module.dart';
 import '../compilation_modules/evangelism_module.dart';
+import '../compilation_modules/evangelism_results_module.dart';
 import '../compilation_modules/daily_participation_module.dart';
 import '../compilation_modules/morning_light_module.dart';
 import '../compilation_modules/visitations_module.dart';
 import '../compilation_modules/growth_tracking_module.dart';
 import 'compilation_results_list.dart';
-import 'admin/hierarchy_leaderboard_screen.dart';
+import '../core/compilation_rules.dart';
 
 class CompilationEngine extends StatefulWidget {
   final String role, userUnit, selectedDuty, loc, sub, dept, team; 
@@ -46,8 +46,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
   final TextEditingController _analysisController = TextEditingController();
 
   List<String> _timeOptions = ["Current status", "Weekly status", "Monthly status", "Custom period"];
-  List<String> _modeOptions = ["Summary", "Ranking", "Trend"];
+  List<String> _modeOptions = ["Summary", "Ranking", "Trend Analysis"];
   List<String> _visitationCategories = ["Lta", "H.m", "Offline", "Offering", "Evangelism"];
+  List<String> _analysisDirectives = [];
   
   String _timePeriod = 'Weekly status';
   String _analyticsMode = 'Summary'; 
@@ -56,15 +57,23 @@ class _CompilationEngineState extends State<CompilationEngine> {
   DateTimeRange? _customRange;
   late List<String> _hierarchy;
   bool _isLoading = true;
-  List<dynamic> _logs = [];
+  bool _includePending = false; // compile approved reports only unless switched on
+  int _fetchSeq = 0;
+  String? _loadError;
+  DateTime? _periodStart;
+  DateTime? _periodEnd;
+  bool _savingFindings = false;
 
-  // 3 Dynamic Growth Metrics
+  List<dynamic> _logs = [];
+  List<Map<String, dynamic>> _masterMembers = [];
+
+  // Dynamic Growth Metrics
   double _primaryGrowth = 0.0;
   double _secondaryGrowth = 0.0;
   double _tertiaryGrowth = 0.0;
   String _primaryLabel = "General Growth";
-  String _secondaryLabel = "In-person Growth";
-  String _tertiaryLabel = "Absentees Change";
+  String _secondaryLabel = "Active Participation";
+  String _tertiaryLabel = "Support Needed";
 
   List<Map<String, dynamic>> _locationData = [];
   List<Map<String, dynamic>> _subLocationData = [];
@@ -84,8 +93,79 @@ class _CompilationEngineState extends State<CompilationEngine> {
   Map<String, dynamic>? _roleMetadata;
   bool _dualModeIsChurch = true;
 
-  String get _scope => _roleMetadata?['approval_scope'] ?? '';
+  String get _scope {
+    final s = (_roleMetadata?['approval_scope'] ?? '').toString().trim();
+    if (s.isNotEmpty && s != 'null') return s;
+    final r = widget.role.toLowerCase();
+    if (r.contains('cell')) return 'cell_group';
+    if (r == 'member' || r == 'saint') return 'member';
+    return '';
+  }
+
   String get _grouping => (_roleMetadata?['Grouping'] ?? '').toString();
+
+  // ---------------------------------------------------------------------
+  // Speed: results are kept for 5 minutes (shared by every compilation
+  // screen), so going back to a level / period / duty you already opened is
+  // instant. The refresh button in the app bar clears it.
+  // ---------------------------------------------------------------------
+  static final Map<String, (DateTime, List<dynamic>)> _cache = {};
+  static const Duration _cacheTtl = Duration(minutes: 5);
+
+  Future<List<T>> _cached<T>(String key, Future<List<T>> Function() load) async {
+    final hit = _cache[key];
+    if (hit != null && DateTime.now().difference(hit.$1) < _cacheTtl) {
+      return List<T>.from(hit.$2);
+    }
+    final data = await load();
+    _cache[key] = (DateTime.now(), data);
+    return data;
+  }
+
+  /// Who is looking and through which scope; part of every cache key.
+  String get _scopeKey => [
+        widget.role, widget.loc, widget.sub, widget.dept, widget.team, widget.userUnit,
+        _dualModeIsChurch, _roleMetadata?['official_dept_id'],
+        _sel('loc'), _sel('sub'), _sel('dept'), _sel('team'),
+      ].join('|');
+
+  /// Reads every row of a query. The first page comes alone (most views fit
+  /// in it); larger views then load 4 pages at a time instead of one by one.
+  Future<List<dynamic>> _fetchAllPages(dynamic Function() build) async {
+    const int pageSize = 1000;
+    const int parallel = 4;
+    final List<dynamic> all = List<dynamic>.from(await build().order('id').range(0, pageSize - 1) as List);
+    if (all.length < pageSize) return all;
+    int offset = pageSize;
+    while (true) {
+      final pages = await Future.wait([
+        for (int i = 0; i < parallel; i++)
+          (build().order('id').range(offset + i * pageSize, offset + (i + 1) * pageSize - 1) as Future)
+              .then((r) => List<dynamic>.from(r as List)),
+      ]);
+      bool done = false;
+      for (final page in pages) {
+        all.addAll(page);
+        if (page.length < pageSize) {
+          done = true;
+          break;
+        }
+      }
+      if (done) return all;
+      offset += parallel * pageSize;
+    }
+  }
+
+  void _refreshData() {
+    _cache.clear();
+    _fetchData();
+  }
+
+  /// Level the modules group by. A group leader's "Group status" (Men's,
+  /// Women's, Youth ...) is their group from the department column
+  /// (장년회, 부녀회 ...), not the Book of Life groups.
+  String get _moduleLevel =>
+      (_isGroupLeader && CompLevel.of(_currentLevel) == CompLevel.group) ? 'Dept status' : _currentLevel;
 
   bool get _isGroupLeader {
     String r = widget.role.toLowerCase();
@@ -115,7 +195,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (_grouping == '24-Dept YAG' || r.startsWith('yag_group')) return '청년회';
     if (_grouping == '24-Dept New Saints' || r.startsWith('new_saints')) return '새신자';
     if (_grouping.startsWith('24-Dept 18') || r.startsWith('theology')) return '신학부';
-    if (_grouping == '24-Dept MOU' || r.startsWith('mou')) return 'Mou';
+    if (_grouping == '24-Dept MOU' || r.startsWith('mou')) return 'MOU';
     return widget.dept.replaceAll(RegExp(r'(회장|부장|총무|서무|과장)$'), '').trim();
   }
 
@@ -182,13 +262,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   bool get _isChurchWideCompiler {
     if (_isGroupLeader) return false;
-    
-    if (_hasDualModeForCurrentDuty) {
-      return _dualModeIsChurch;
-    }
-
+    if (_hasDualModeForCurrentDuty) return _dualModeIsChurch;
     if (_scope == 'church_department' || _grouping.startsWith('24-Dept')) return false;
-
     if (_scope == 'church') return true;
 
     String r = widget.role.toLowerCase();
@@ -221,6 +296,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return _scope == 'team' || _grouping.startsWith('Team') || _grouping == 'Location Team' || widget.role.contains('team_');
   }
 
+  bool get _isCellLeader {
+    if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker || _isLocationLeader || _isSubLocationLeader || _isDeptLeader || _isTeamLeader) return false;
+    return _scope == 'cell_group' || widget.role.toLowerCase().contains('cell');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -229,9 +309,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   Future<void> _initHierarchyAndData() async {
-    await _fetchRoleMetadata();
+    await Future.wait([_fetchRoleMetadata(), _loadUIConfig()]);
     _setHierarchy();
-    await _loadUIConfig();
     await _fetchInitialLocations();
     await _fetchData();
   }
@@ -255,22 +334,22 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   void _setHierarchy() {
-    if (_isGroupLeader) {
-      _hierarchy = ['Group status', 'Location status', 'Sub location status', 'Team status', 'Cell status'];
-    } else if (_isChurchWideCompiler) {
-      _hierarchy = ['Church status', 'Group status', 'Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
-    } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
-      _hierarchy = ['Dept status'];
-    } else if (_isLocationLeader) {
-      _hierarchy = ['Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
-    } else if (_isSubLocationLeader) {
-      _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
-    } else if (_isDeptLeader) {
-      _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
+    if (_isCellLeader) {
+      _hierarchy = ['Cell status'];
     } else if (_isTeamLeader) {
       _hierarchy = ['Team status', 'Cell status'];
+    } else if (_isDeptLeader) {
+      _hierarchy = ['Dept status', 'Team status', 'Cell status'];
+    } else if (_isSubLocationLeader) {
+      _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
+    } else if (_isLocationLeader) {
+      _hierarchy = ['Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
+    } else if (_isGroupLeader) {
+      _hierarchy = ['Group status', 'Location status', 'Sub location status', 'Team status', 'Cell status'];
+    } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+      _hierarchy = ['Dept status'];
     } else {
-      _hierarchy = ['Cell status'];
+      _hierarchy = ['Church status', 'Group status', 'Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     }
 
     if (!_hierarchy.contains(_currentLevel)) {
@@ -283,9 +362,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
       _groupBy = 'Church';
     } else if (_isDeptLeader && level == 'Dept status') {
-      _groupBy = 'Church';
+      _groupBy = 'Dept';
     } else if (_isSubLocationLeader && level == 'Sub location status') {
-      _groupBy = 'Church';
+      _groupBy = 'Sub-loc';
     } else if (level.contains('Cell')) {
       _groupBy = 'Cell';
     } else if (level.contains('Team')) {
@@ -303,53 +382,84 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
   }
 
+  // Distinct values of a members column inside the given filters.
+  // Used when a unit table has no matching row, instead of listing the
+  // whole church (or made-up names like "팀1").
+  Future<List<String>> _distinctMemberValues(String column, Map<String, String?> filters) async {
+    final active = Map<String, String>.fromEntries(filters.entries
+        .where((e) => e.value != null && e.value!.isNotEmpty && e.value != 'N/A' && e.value != 'All Locations')
+        .map((e) => MapEntry(e.key, e.value!)));
+    try {
+      final values = await _cached<String>('distinct|$column|${active.entries.map((e) => '${e.key}=${e.value}').join('&')}', () async {
+        final rows = await _fetchAllPages(() {
+          dynamic q = _supabase.from('members').select(column);
+          active.forEach((k, v) => q = q.eq(k, v));
+          return q;
+        });
+        final Set<String> out = {};
+        for (final r in rows) {
+          final v = ((r as Map)[column] ?? '').toString().trim();
+          if (v.isNotEmpty) out.add(v);
+        }
+        return CompLevel.naturalSort(out);
+      });
+      return values;
+    } catch (e) {
+      debugPrint("Distinct $column fetch error: $e");
+      return [];
+    }
+  }
+
+
   Future<void> _fetchInitialLocations() async {
     try {
+      if (_isLocationLeader || _isSubLocationLeader || _isDeptLeader || _isTeamLeader || _isCellLeader) {
+        if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') {
+          // Load this location's row so its sub-locations can be looked up by id
+          try {
+            final res = await _supabase.from('locations').select('id, location').eq('location', widget.loc);
+            _locationData = List<Map<String, dynamic>>.from(res);
+          } catch (_) {
+            _locationData = [];
+          }
+          if (!mounted) return;
+          setState(() {
+            _locations = [widget.loc];
+            _selectedLocation = widget.loc;
+            if (widget.sub.isNotEmpty) _selectedSubLocation = widget.sub;
+            if (widget.dept.isNotEmpty) _selectedDepartment = widget.dept;
+            if (widget.team.isNotEmpty) _selectedTeam = widget.team;
+          });
+          await _fetchSubLocations(widget.loc, triggerFetch: false);
+          return;
+        }
+      }
+
       List<Map<String, dynamic>> data = [];
       try {
         final res = await _supabase.from('locations').select('id, location').order('location');
         data = List<Map<String, dynamic>>.from(res);
-      } catch (_) {
-        try {
-          final res = await _supabase.from('locations').select('id, name').order('name');
-          data = List<Map<String, dynamic>>.from(res.map((e) => {'id': e['id'], 'location': e['name']}));
-        } catch (_) {}
-      }
+      } catch (_) {}
 
       if (data.isEmpty) {
-        final mLocs = await _supabase.from('members').select('location').not('location', 'is', null);
-        final Set<String> distinct = {};
-        for (var row in mLocs) {
-          final l = row['location']?.toString() ?? '';
-          if (l.isNotEmpty) distinct.add(l);
-        }
-        data = distinct.map((l) => {'id': l, 'location': l}).toList();
+        final names = await _distinctMemberValues('location', {});
+        data = names.map((l) => <String, dynamic>{'id': null, 'location': l}).toList();
       }
 
       if (!mounted) return;
       setState(() {
         _locationData = data;
+        // MOU branches (MOUWakiso, MOULubaga ...) are one location: "MOU"
         _locations = _locationData
-            .map((e) => (e['location'] ?? e['name'] ?? '').toString())
+            .map((e) => (e['location'] ?? '').toString())
             .where((l) => l.isNotEmpty && l.toLowerCase() != 'church' && l.toLowerCase() != 'church workers')
+            .map((l) => CompLevel.isMouName(l) ? CompLevel.mou : l)
             .toSet()
             .toList();
         _locations.sort();
-
-        if (!_isChurchWideCompiler && !_isGroupLeader && widget.loc.isNotEmpty && widget.loc != 'Church') {
-          _selectedLocation = widget.loc;
-        } else if (_locations.isNotEmpty) {
-          _selectedLocation = _locations.first;
-        }
-
-        if (widget.sub.isNotEmpty) _selectedSubLocation = widget.sub;
-        if (widget.dept.isNotEmpty) _selectedDepartment = widget.dept;
-        if (widget.team.isNotEmpty) _selectedTeam = widget.team;
+        if (!_locations.contains(CompLevel.mou)) _locations.add(CompLevel.mou);
+        _selectedLocation = null;
       });
-
-      if (_selectedLocation != null) {
-        await _fetchSubLocations(_selectedLocation!, triggerFetch: false);
-      }
     } catch (e) {
       debugPrint("Compilation Location Fetch Error: $e");
     }
@@ -358,21 +468,43 @@ class _CompilationEngineState extends State<CompilationEngine> {
   Future<void> _fetchSubLocations(String locName, {bool triggerFetch = true}) async {
     try {
       final match = _locationData.firstWhere(
-        (e) => (e['location'] ?? e['name']) == locName, 
-        orElse: () => {}
+        (e) => e['location'] == locName,
+        orElse: () => <String, dynamic>{},
       );
-      if (match.isEmpty || match['id'] == null) return;
-      final locId = match['id'];
 
-      final data = await _supabase.from('sub_locations').select('id, name').eq('location_id', locId).order('name');
+      List<Map<String, dynamic>> data = [];
+      if (locName == CompLevel.mou) {
+        // MOU: every MOU sub-location (MOUNansana, MOUPallisa ...) directly under it
+        final names = await _distinctMemberValues('sub_location', {'department': CompLevel.mou});
+        data = names.map((n) => <String, dynamic>{'id': null, 'name': n}).toList();
+      } else {
+        if (match.isNotEmpty && match['id'] != null) {
+          final res = await _supabase.from('sub_locations').select('id, name, is_mou').eq('location_id', match['id']).order('name');
+          // MOU sub-locations belong to the MOU location, not to Wakiso etc.
+          // (An MOU branch such as MOUWakiso keeps its own MOU sub-locations.)
+          final bool mouBranch = CompLevel.isMouName(locName);
+          data = List<Map<String, dynamic>>.from(res)
+              .where((e) => mouBranch || (e['is_mou'] != true && !CompLevel.isMouName(e['name']?.toString())))
+              .toList();
+        }
+        if (data.isEmpty) {
+          // No sub_locations rows for this location: use the members' own values
+          final names = await _distinctMemberValues('sub_location', {'location': locName});
+          data = names
+              .where((n) => CompLevel.isMouName(locName) || !CompLevel.isMouName(n))
+              .map((n) => <String, dynamic>{'id': null, 'name': n})
+              .toList();
+        }
+      }
+
       if (!mounted) return;
       setState(() {
-        _subLocationData = List<Map<String, dynamic>>.from(data);
-        _subLocations = _subLocationData.map((e) => e['name'].toString()).toList();
-        
+        _subLocationData = data;
+        _subLocations = _subLocationData.map((e) => e['name'].toString()).toSet().toList();
+
         if (widget.sub.isNotEmpty && _subLocations.contains(widget.sub)) {
           _selectedSubLocation = widget.sub;
-        } else {
+        } else if (_selectedSubLocation == null || !_subLocations.contains(_selectedSubLocation)) {
           _selectedSubLocation = _subLocations.isNotEmpty ? _subLocations.first : null;
         }
       });
@@ -388,35 +520,52 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   Future<void> _fetchDepartments(String subName, {bool triggerFetch = true}) async {
     try {
-      if (_isGroupLeader || _isDeptLeader || _isTeamLeader) {
+      if (_isGroupLeader) {
+        setState(() => _selectedDepartment = _groupLeaderCleanDept);
+        if (_selectedDepartment != null) await _fetchTeams(_selectedDepartment!, triggerFetch: false);
+        if (triggerFetch) _fetchData();
+        return;
+      }
+      if (_isDeptLeader || _isTeamLeader) {
         setState(() => _selectedDepartment = widget.dept);
         if (_selectedDepartment != null) await _fetchTeams(_selectedDepartment!, triggerFetch: false);
         if (triggerFetch) _fetchData();
         return;
       }
 
-      final match = _subLocationData.firstWhere((e) => e['name'] == subName, orElse: () => {});
-      if (match.isEmpty || match['id'] == null) return;
-      final subId = match['id'];
+      final match = _subLocationData.firstWhere((e) => e['name'] == subName, orElse: () => <String, dynamic>{});
+      List<Map<String, dynamic>> data = [];
+      if (_selectedLocation == CompLevel.mou || CompLevel.isMouName(subName)) {
+        // MOU has a single department: MOU
+        data = [<String, dynamic>{'id': null, 'name': CompLevel.mou}];
+      } else if (match.isNotEmpty && match['id'] != null) {
+        final res = await _supabase.from('departments').select('id, name').eq('sub_location_id', match['id']).order('name');
+        data = List<Map<String, dynamic>>.from(res);
+      }
+      if (data.isEmpty) {
+        final names = await _distinctMemberValues('department', {'location': _selectedLocation, 'sub_location': subName});
+        data = names.map((n) => <String, dynamic>{'id': null, 'name': n}).toList();
+      }
 
-      final data = await _supabase.from('departments').select('id, name').eq('sub_location_id', subId).order('name');
       if (!mounted) return;
       setState(() {
-        _deptData = List<Map<String, dynamic>>.from(data);
-        _departments = _deptData.map((e) => e['name'].toString()).toList();
-        if (_departments.isEmpty) {
-          _departments = ["장년회", "부녀회", "청년회", "신학부", "새신자"];
-        }
-        
+        _deptData = data;
+        _departments = _deptData.map((e) => e['name'].toString()).toSet().toList();
+
         if (widget.dept.isNotEmpty && _departments.contains(widget.dept)) {
           _selectedDepartment = widget.dept;
-        } else {
-          _selectedDepartment = _departments.first;
+        } else if (_selectedDepartment == null || !_departments.contains(_selectedDepartment)) {
+          _selectedDepartment = _departments.isNotEmpty ? _departments.first : null;
         }
       });
 
       if (_selectedDepartment != null) {
         await _fetchTeams(_selectedDepartment!, triggerFetch: false);
+      } else if (mounted) {
+        setState(() {
+          _teams = [];
+          _selectedTeam = null;
+        });
       }
       if (triggerFetch) _fetchData();
     } catch (e) {
@@ -426,24 +575,39 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   Future<void> _fetchTeams(String deptName, {bool triggerFetch = true}) async {
     try {
-      final match = _deptData.firstWhere((e) => e['name'] == deptName, orElse: () => {});
-      if (match.isEmpty || match['id'] == null) {
-        setState(() => _teams = ["팀1", "팀2", "팀3"]);
+      if (_isTeamLeader && widget.team.isNotEmpty) {
+        setState(() {
+          _teams = [widget.team];
+          _selectedTeam = widget.team;
+        });
         if (triggerFetch) _fetchData();
         return;
       }
-      final deptId = match['id'];
 
-      final data = await _supabase.from('teams').select('id, name').eq('dept_id', deptId).order('name');
+      // Department ids are only known when the department came from this
+      // sub-location's list; otherwise use the teams members actually have.
+      final match = _deptData.firstWhere((e) => e['name'] == deptName, orElse: () => <String, dynamic>{});
+      List<String> names = [];
+      if (match.isNotEmpty && match['id'] != null) {
+        final res = await _supabase.from('teams').select('id, name').eq('dept_id', match['id']).order('name');
+        _teamData = List<Map<String, dynamic>>.from(res);
+        names = _teamData.map((e) => e['name'].toString()).toList();
+      }
+      if (names.isEmpty) {
+        final String? sub = _selectedSubLocation ?? (widget.sub.isNotEmpty ? widget.sub : null);
+        names = await _distinctMemberValues('team', {
+          'location': _selectedLocation == CompLevel.mou ? null : _selectedLocation,
+          'sub_location': sub,
+          'department': deptName,
+        });
+      }
+
       if (!mounted) return;
       setState(() {
-        _teamData = List<Map<String, dynamic>>.from(data);
-        _teams = _teamData.map((e) => e['name'].toString()).toList();
-        if (_teams.isEmpty) _teams = ["팀1", "팀2", "팀3"];
-        
+        _teams = CompLevel.naturalSort(names.toSet());
         if (widget.team.isNotEmpty && _teams.contains(widget.team)) {
           _selectedTeam = widget.team;
-        } else {
+        } else if (_selectedTeam == null || !_teams.contains(_selectedTeam)) {
           _selectedTeam = _teams.isNotEmpty ? _teams.first : null;
         }
       });
@@ -453,6 +617,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
   }
 
+  // OPTION B: Loads directives and modes from compilation_ui_config
   Future<void> _loadUIConfig() async {
     try {
       final res = await _supabase.from('compilation_ui_config').select().eq('is_active', true).order('sort_order');
@@ -461,11 +626,13 @@ class _CompilationEngineState extends State<CompilationEngine> {
         final times = list.where((e) => e['config_type'] == 'time_period').map((e) => e['label'].toString()).toList();
         final modes = list.where((e) => e['config_type'] == 'analytics_mode').map((e) => e['label'].toString()).toList();
         final vis = list.where((e) => e['config_type'] == 'visitation_category').map((e) => e['label'].toString()).toList();
+        final directives = list.where((e) => e['config_type'] == 'analysis_directive').map((e) => e['label'].toString()).toList();
 
         setState(() {
           if (times.isNotEmpty) _timeOptions = times;
           if (modes.isNotEmpty) _modeOptions = modes;
           if (vis.isNotEmpty) _visitationCategories = vis;
+          if (directives.isNotEmpty) _analysisDirectives = directives;
         });
       }
     } catch (e) {
@@ -474,187 +641,358 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   String _getTargetTable() {
-    String d = widget.selectedDuty;
+    String d = widget.selectedDuty.trim();
     if (d == 'Service Attendance Status') return 'logs_service_attendance_status';
     if (d == 'Cell Group Service') return 'logs_cell_service';
     if (d == 'All Saints Education') return 'logs_all_saints_education';
     if (d == 'Offering' || d == 'Offering Status') return 'logs_offering';
     if (d == 'Evangelism' || d == 'Evangelism Part') return 'logs_evangelism';
+    if (d == 'Evangelism Results' || d == 'BB Results') return 'bb_students';
     if (d == 'Morning Light') return 'logs_morning_light';
     if (d == 'Visitations and Counselling') return 'logs_visitations';
     if (d == 'Workers Education') return 'logs_workers_education';
     if (d == 'Workers Daily Participation') return 'logs_workers_participation';
-    if (d == 'Growth Tracking') return 'logs_growth_tracking';
+    if (d.contains('Growth Tracking')) return 'members';
     return 'logs_service_attendance_status';
+  }
+
+  // Columns are taken from the live tables. Asking for a column that does not
+  // exist makes Supabase reject the whole query, which is why most duties
+  // used to load nothing. `*` returns whatever columns each log table has.
+  static const String _memberJoin =
+      'members!inner(id, english_name, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id, is_worker, duty)';
+
+  String _getSelectColumnsForDuty() {
+    final String d = widget.selectedDuty.trim();
+
+    if (d == 'Evangelism Results' || d == 'BB Results') {
+      return '*';
+    }
+
+    if (d.contains('Growth Tracking')) {
+      return 'id, english_name, location, sub_location, department, team, cell_group, '
+          'reg_status, geo_category, book_of_life, bol_dept, official_dept_id, duty, is_worker, created_at';
+    }
+
+    return '*, $_memberJoin';
+  }
+
+  bool get _usesApproval {
+    final t = _getTargetTable();
+    return t != 'bb_students' && t != 'members';
+  }
+
+  // ---------------------------------------------------------------------
+  // Which unit pickers apply at a level. The query, the modules and the
+  // sidebar all read this, so a selection only filters data when its
+  // picker is actually visible (stale picks no longer hide data).
+  // ---------------------------------------------------------------------
+  Set<String> _pickersFor(String lv) {
+    if (_isGroupLeader) {
+      if (lv == CompLevel.location || lv == CompLevel.subLocation) return {'loc'};
+      if (lv == CompLevel.team) return {'loc', 'sub'};
+      if (lv == CompLevel.cell) return {'loc', 'sub', 'team'};
+      return {};
+    }
+    if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) return {};
+    if (_isLocationLeader) {
+      if (lv == CompLevel.dept) return {'sub'};
+      if (lv == CompLevel.team) return {'sub', 'dept'};
+      if (lv == CompLevel.cell) return {'sub', 'dept', 'team'};
+      return {};
+    }
+    if (_isSubLocationLeader) {
+      if (lv == CompLevel.team) return {'dept'};
+      if (lv == CompLevel.cell) return {'dept', 'team'};
+      return {};
+    }
+    if (_isDeptLeader) {
+      if (lv == CompLevel.cell) return {'team'};
+      return {};
+    }
+    if (_isTeamLeader || _isCellLeader) return {};
+    if (_isChurchWideCompiler) {
+      if (lv == CompLevel.subLocation) return {'loc'};
+      if (lv == CompLevel.dept) return {'loc', 'sub'};
+      if (lv == CompLevel.team) return {'loc', 'sub', 'dept'};
+      if (lv == CompLevel.cell) return {'loc', 'sub', 'dept', 'team'};
+    }
+    return {};
+  }
+
+  /// The selection for [picker] if it applies at the current level, else ''.
+  String _sel(String picker) {
+    if (!_pickersFor(CompLevel.of(_currentLevel)).contains(picker)) return '';
+    String? v;
+    switch (picker) {
+      case 'loc':
+        v = _selectedLocation;
+        break;
+      case 'sub':
+        v = _selectedSubLocation;
+        break;
+      case 'dept':
+        v = _selectedDepartment;
+        break;
+      case 'team':
+        v = _selectedTeam;
+        break;
+    }
+    if (v == null || v.isEmpty || v == 'All Locations' || v == 'Church' || v == 'N/A') return '';
+    return v;
+  }
+
+  String _friendlyLoadError(Object e) {
+    if (e is PostgrestException) {
+      if (e.code == '42703') return "The report table is missing a column this screen expects (${e.message}).";
+      if (e.code == '42501') return "You don't have permission to view these reports.";
+      return "Couldn't load reports: ${e.message}";
+    }
+    return "Couldn't load reports. Check your connection and try again.";
   }
 
   Future<void> _fetchData() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    // Every call gets a number; only the newest call may update the screen,
+    // so a slow older request can no longer overwrite newer filters.
+    final int seq = ++_fetchSeq;
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
 
     try {
       final String table = _getTargetTable();
       final DateTime now = DateTime.now();
+      final DateTime today = DateTime(now.year, now.month, now.day);
       final DateFormat df = DateFormat('yyyy-MM-dd');
 
-      DateTime bStart;
-      DateTime bEnd;
+      DateTime curStart;
+      DateTime curEnd = today;
+      DateTime prevStart;
+      DateTime prevEnd;
 
       if (_timePeriod == "Custom period" && _customRange != null) {
-        bStart = _customRange!.start.subtract(_customRange!.duration);
-        bEnd = _customRange!.start.subtract(const Duration(days: 1));
-      } else if (_timePeriod == "Weekly status") {
-        bStart = now.subtract(const Duration(days: 14));
-        bEnd = now.subtract(const Duration(days: 8));
-      } else if (_timePeriod == "Current status") {
-        bStart = now.subtract(const Duration(days: 1));
-        bEnd = now.subtract(const Duration(days: 1));
+        curStart = _customRange!.start;
+        curEnd = _customRange!.end;
+        final int days = curEnd.difference(curStart).inDays + 1;
+        prevEnd = curStart.subtract(const Duration(days: 1));
+        prevStart = prevEnd.subtract(Duration(days: days - 1));
       } else {
-        bStart = DateTime(now.year, now.month - 1, 1);
-        bEnd = DateTime(now.year, now.month, 0);
+        // Weekly = Week 1..Week 5 (calendar weeks, this one included),
+        // Monthly = the last 4 calendar months, Current = latest session in the
+        // last 7 days. Same ranges the module charts use (CompPeriod).
+        (curStart, curEnd) = CompPeriod.currentRange(_timePeriod, now);
+        (prevStart, prevEnd) = CompPeriod.previousRange(_timePeriod, now);
       }
+      _periodStart = curStart;
+      _periodEnd = curEnd;
 
-      final lvl = _currentLevel.toLowerCase();
+      final isBBTable = table == 'bb_students';
+      final isMembersTable = table == 'members';
+      final Set<String> pickers = _pickersFor(CompLevel.of(_currentLevel));
 
-      const String lightColumns = '''
-        id, report_date, unit_name, verification_status, correction_note, situation_notes,
-        attendance_realtime, attendance_makeup, status_detail, service_day,
-        is_hm, is_lta, geo_category, reg_status, location, sub_location, department, team, cell_group,
-        members!inner(id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id)
-      ''';
+      dynamic buildQuery({required bool isPrev}) {
+        dynamic q = _supabase.from(table).select(_getSelectColumnsForDuty());
 
-      dynamic buildQuery(DateTime? start, DateTime? end, {bool isPrev = false}) {
-        dynamic q = _supabase.from(table).select(lightColumns);
-
-        if (_timePeriod == "Custom period" && _customRange != null) {
-          String s = isPrev ? df.format(bStart) : df.format(_customRange!.start);
-          String e = isPrev ? df.format(bEnd) : df.format(_customRange!.end);
-          q = q.gte('report_date', s).lte('report_date', e);
-        } else if (_timePeriod == "Weekly status") {
-          String s = isPrev ? df.format(bStart) : df.format(now.subtract(const Duration(days: 7)));
-          String e = isPrev ? df.format(bEnd) : df.format(now);
-          q = q.gte('report_date', s).lte('report_date', e);
-        } else if (_timePeriod == "Current status") {
-          String s = isPrev ? df.format(bStart) : df.format(now);
-          q = q.eq('report_date', s);
-        } else {
-          String s = isPrev ? df.format(bStart) : df.format(DateTime(now.year, now.month, 1));
-          String e = isPrev ? df.format(bEnd) : df.format(now);
-          q = q.gte('report_date', s).lte('report_date', e);
+        if (!isBBTable && !isMembersTable) {
+          final DateTime sDate = isPrev ? prevStart : curStart;
+          final DateTime eDate = isPrev ? prevEnd : curEnd;
+          q = q.gte('report_date', df.format(sDate)).lte('report_date', df.format(eDate));
         }
 
-        // 1. GROUP WORKERS (Resolves exact member department like '장년회' rather than '장년회장')
+        if (_usesApproval) {
+          q = _includePending
+              ? q.inFilter('verification_status', ['approved', 'pending'])
+              : q.eq('verification_status', 'approved');
+        }
+
+        // Unit columns: reports are filtered by the member's current unit (joined
+        // members table), the members table by its own columns, BB rows by the
+        // guide's unit (the cell is stored in cell_name by the BB entry form).
+        final String locCol = isBBTable ? 'guide_location' : (isMembersTable ? 'location' : 'members.location');
+        final String subCol = isBBTable ? 'guide_sub_location' : (isMembersTable ? 'sub_location' : 'members.sub_location');
+        final String deptCol = isBBTable ? 'guide_dept' : (isMembersTable ? 'department' : 'members.department');
+        final String teamCol = isBBTable ? 'guide_team' : (isMembersTable ? 'team' : 'members.team');
+        final String cellCol = isBBTable ? 'cell_name' : (isMembersTable ? 'cell_group' : 'members.cell_group');
+
         if (_isGroupLeader) {
           final deptTarget = _groupLeaderCleanDept;
-          q = q.eq('members.department', deptTarget);
+          if (isBBTable || isMembersTable) {
+            q = q.eq(deptCol, deptTarget);
+            if (deptTarget != 'MOU') q = q.neq(locCol, 'MOU');
+            if (deptTarget != '새신자') q = q.neq(locCol, 'New Saints');
+            q = q.neq(locCol, 'Church Workers').neq(locCol, 'Church Main').neq(locCol, 'Church');
+          } else {
+            q = q.eq('members.department', deptTarget);
+            if (deptTarget != 'MOU') q = q.neq('members.location', 'MOU');
+            if (deptTarget != '새신자') q = q.neq('members.location', 'New Saints');
+            q = q.neq('members.location', 'Church Workers')
+                 .neq('members.location', 'Church Main')
+                 .neq('members.location', 'Church');
+          }
+        } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+          if (!isBBTable && !isMembersTable) {
+            // Church-level members only. (The old filter mixed report and member
+            // columns in one .or(), which Supabase rejects; an .or() on the joined
+            // table has to name it with referencedTable.)
+            q = q.or('location.in.(Church,"Church Workers","Church Main"),location.is.null', referencedTable: 'members');
 
-          if (deptTarget != 'Mou') {
-            q = q.neq('members.location', 'Mou');
-          }
-          if (deptTarget != '새신자') {
-            q = q.neq('members.location', 'New Saints');
-          }
-
-          q = q.neq('members.location', 'Church Workers')
-               .neq('members.location', 'Church Main')
-               .neq('members.location', 'Church');
-        }
-        // 2. 24 DEPARTMENTS (CHURCH LEVEL < 20 SAINTS)
-        else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
-          q = q.neq('members.location', 'Mou').neq('members.location', 'New Saints');
-          q = q.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,members.location.eq.Church,members.location.eq.Church Workers,members.location.eq.Church Main,members.location.is.null');
-
-          final officialDeptId = _roleMetadata?['official_dept_id'];
-          if (officialDeptId != null) {
-            q = q.eq('members.official_dept_id', officialDeptId);
-          } else if (_isInternalAffairs) {
-            q = q.or('members.department.eq.내무부,members.department.ilike.%internal affairs%');
-          } else if (_isEvangelismDept) {
-            q = q.or('members.department.eq.전도부,members.department.ilike.%evangelism%');
-          } else if (_isEducationDept) {
-            q = q.or('members.department.eq.교육부,members.department.ilike.%education%');
-          } else if (_isAdministrationDept) {
-            q = q.or('members.department.eq.행정서무부,members.department.ilike.%admin%');
-          } else if (widget.dept.isNotEmpty && widget.dept != 'N/A' && widget.dept != 'Church') {
-            q = q.eq('members.department', widget.dept);
-          }
-        }
-        // 3. LOCATION WORKERS
-        else if (!_isChurchWideCompiler) {
-          if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') {
-            q = q.eq('members.location', widget.loc);
-          }
-          if (_isDeptLeader) {
-            if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq('members.department', widget.dept);
-            if (lvl.contains(RegExp(r'team|cell')) && _selectedSubLocation != null && _selectedSubLocation!.isNotEmpty) {
-              q = q.eq('members.sub_location', _selectedSubLocation!);
+            final officialDeptId = _roleMetadata?['official_dept_id'];
+            if (officialDeptId != null) {
+              q = q.eq('members.official_dept_id', officialDeptId);
+            } else if (widget.dept.isNotEmpty && widget.dept != 'N/A' && widget.dept != 'Church') {
+              q = q.eq('members.department', widget.dept);
             }
-          } else if (_isSubLocationLeader) {
-            if (widget.sub.isNotEmpty && widget.sub != 'N/A') q = q.eq('members.sub_location', widget.sub);
-          } else if (_isTeamLeader) {
-            if (widget.sub.isNotEmpty && widget.sub != 'N/A') q = q.eq('members.sub_location', widget.sub);
-            if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq('members.department', widget.dept);
-            if (widget.team.isNotEmpty && widget.team != 'N/A') q = q.eq('members.team', widget.team);
           }
-          if (widget.role.toLowerCase().contains('cell')) {
-            q = q.eq('unit_name', widget.userUnit);
+        } else if (!_isChurchWideCompiler) {
+          if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') {
+            q = q.eq(locCol, widget.loc);
+          }
+          if (_isSubLocationLeader || _isDeptLeader || _isTeamLeader) {
+            if (widget.sub.isNotEmpty && widget.sub != 'N/A') q = q.eq(subCol, widget.sub);
+          }
+          if (_isDeptLeader || _isTeamLeader) {
+            if (widget.dept.isNotEmpty && widget.dept != 'N/A') q = q.eq(deptCol, widget.dept);
+          }
+          if (_isTeamLeader) {
+            if (widget.team.isNotEmpty && widget.team != 'N/A') q = q.eq(teamCol, widget.team);
+          }
+          if (_isCellLeader) {
+            if (widget.userUnit.isNotEmpty) q = q.eq(cellCol, widget.userUnit);
           }
         }
 
-        // 4. DRILL-DOWN FILTERS
-        if (lvl.contains('sub location') || lvl.contains('sub-location') || lvl.contains('team') || lvl.contains('cell')) {
-          if (_selectedLocation != null && _selectedLocation!.isNotEmpty && _selectedLocation != 'Church') {
-            q = q.eq('members.location', _selectedLocation!);
-          }
+        // Picker selections (only the pickers visible at this level)
+        if (pickers.contains('loc') && _sel('loc').isNotEmpty) {
+          // MOU members' location is their branch (MOUWakiso ...); all have department MOU
+          q = _sel('loc') == CompLevel.mou ? q.eq(deptCol, CompLevel.mou) : q.eq(locCol, _sel('loc'));
         }
-        if (lvl.contains(RegExp(r'dept|team|cell')) && !_isDeptLeader) {
-          if (_selectedSubLocation != null && _selectedSubLocation!.isNotEmpty) {
-            q = q.eq('members.sub_location', _selectedSubLocation!);
-          }
-        }
-        if (!_isGroupLeader && !_isDeptLeader && lvl.contains(RegExp(r'team|cell'))) {
-          if (_selectedDepartment != null && _selectedDepartment!.isNotEmpty) {
-            q = q.eq('members.department', _selectedDepartment!);
-          }
-        }
-        if (lvl.contains('cell')) {
-          if (_selectedTeam != null && _selectedTeam!.isNotEmpty) {
-            q = q.eq('members.team', _selectedTeam!);
-          }
-        }
+        if (pickers.contains('sub') && _sel('sub').isNotEmpty) q = q.eq(subCol, _sel('sub'));
+        if (pickers.contains('dept') && _sel('dept').isNotEmpty) q = q.eq(deptCol, _sel('dept'));
+        if (pickers.contains('team') && _sel('team').isNotEmpty) q = q.eq(teamCol, _sel('team'));
+
         return q;
       }
 
-      List<dynamic> allCurrentLogs = [];
-      int offset = 0;
-      const int pageSize = 1000;
-      while (true) {
-        final chunk = await buildQuery(null, null, isPrev: false).range(offset, offset + pageSize - 1);
-        final list = chunk as List<dynamic>;
-        allCurrentLogs.addAll(list);
-        if (list.length < pageSize) break;
-        offset += pageSize;
+      // "Current status" keeps only the latest session. Service attendance has
+      // two services a week, so it keeps the latest date; the day-based duties
+      // keep the latest week (Mon..Sun rows of that week).
+      List<dynamic> latestSessionOnly(List<dynamic> rows) {
+        if (_timePeriod != "Current status" || isBBTable || isMembersTable) return rows;
+        final bool byDate = widget.selectedDuty.trim() == 'Service Attendance Status';
+        String keyOf(dynamic r) {
+          final d = DateTime.tryParse((r['report_date'] ?? '').toString());
+          if (d == null) return '';
+          return byDate ? df.format(d) : CompPeriod.weekKey(d);
+        }
+        String latest = '';
+        for (final r in rows) {
+          final k = keyOf(r);
+          if (k.compareTo(latest) > 0) latest = k;
+        }
+        if (latest.isEmpty) return rows;
+        return rows.where((r) => keyOf(r) == latest).toList();
       }
 
-      List<dynamic> prevLogs = [];
-      try {
-        final prevChunk = await buildQuery(bStart, bEnd, isPrev: true).range(0, 999);
-        prevLogs = prevChunk as List<dynamic>;
-      } catch (_) {
-        prevLogs = [];
-      }
+      final String key = [table, _includePending, _scopeKey].join('|');
+      final Future<List<dynamic>> curF = _cached(
+          'logs|$key|${df.format(curStart)}|${df.format(curEnd)}', () => _fetchAllPages(() => buildQuery(isPrev: false)));
+      final Future<List<dynamic>> prevF = (isBBTable || isMembersTable)
+          ? Future.value(<dynamic>[])
+          : _cached('logs|$key|${df.format(prevStart)}|${df.format(prevEnd)}',
+                  () => _fetchAllPages(() => buildQuery(isPrev: true)))
+              .catchError((Object e) {
+              debugPrint("Compilation previous-period query error: $e");
+              return <dynamic>[];
+            });
+      final Future<List<Map<String, dynamic>>> membersF = _fetchScopedMasterMembers();
+
+      final List<dynamic> allCurrentLogs = latestSessionOnly(await curF);
+      final List<dynamic> prevLogs = latestSessionOnly(await prevF);
+      final List<Map<String, dynamic>> members = await membersF;
+
+      if (!mounted || seq != _fetchSeq) return; // a newer request took over
 
       _calculateDynamicGrowthMetrics(allCurrentLogs, prevLogs);
 
-      if (!mounted) return;
-
-      setState(() { 
-        _logs = allCurrentLogs; 
-        _isLoading = false; 
+      setState(() {
+        _logs = allCurrentLogs;
+        _masterMembers = members;
+        _isLoading = false;
       });
-    } catch (e) { 
+    } catch (e) {
       debugPrint("Compilation Query Error: $e");
-      if (mounted) setState(() => _isLoading = false); 
+      if (!mounted || seq != _fetchSeq) return;
+      // Clear old rows so the screen never shows the previous filter's data
+      // under the new labels.
+      setState(() {
+        _logs = [];
+        _isLoading = false;
+        _loadError = _friendlyLoadError(e);
+      });
+    }
+  }
+
+  /// Members in the viewer's scope (the headcount for every unit).
+  /// Returns the list instead of calling setState, so logs and members are
+  /// always shown together from the same request.
+  Future<List<Map<String, dynamic>>> _fetchScopedMasterMembers() async {
+    final Set<String> pickers = _pickersFor(CompLevel.of(_currentLevel));
+
+    dynamic build() {
+      dynamic mQuery = _supabase.from('members').select(
+        'id, english_name, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id, is_worker, duty'
+      );
+
+      if (_isGroupLeader) {
+        final deptTarget = _groupLeaderCleanDept;
+        mQuery = mQuery.eq('department', deptTarget);
+        if (deptTarget != 'MOU') mQuery = mQuery.neq('location', 'MOU');
+        if (deptTarget != '새신자') mQuery = mQuery.neq('location', 'New Saints');
+        mQuery = mQuery.neq('location', 'Church Workers').neq('location', 'Church Main').neq('location', 'Church');
+      } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+        final officialDeptId = _roleMetadata?['official_dept_id'];
+        if (officialDeptId != null) {
+          mQuery = mQuery.eq('official_dept_id', officialDeptId);
+        } else if (widget.dept.isNotEmpty && widget.dept != 'Church') {
+          mQuery = mQuery.eq('department', widget.dept);
+        }
+      } else if (!_isChurchWideCompiler) {
+        if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') mQuery = mQuery.eq('location', widget.loc);
+        if (_isSubLocationLeader || _isDeptLeader || _isTeamLeader) {
+          if (widget.sub.isNotEmpty && widget.sub != 'N/A') mQuery = mQuery.eq('sub_location', widget.sub);
+        }
+        if (_isDeptLeader || _isTeamLeader) {
+          if (widget.dept.isNotEmpty && widget.dept != 'N/A') mQuery = mQuery.eq('department', widget.dept);
+        }
+        if (_isTeamLeader) {
+          if (widget.team.isNotEmpty && widget.team != 'N/A') mQuery = mQuery.eq('team', widget.team);
+        }
+        if (_isCellLeader) {
+          if (widget.userUnit.isNotEmpty) mQuery = mQuery.eq('cell_group', widget.userUnit);
+        }
+      }
+
+      if (pickers.contains('loc') && _sel('loc').isNotEmpty) {
+        mQuery = _sel('loc') == CompLevel.mou ? mQuery.eq('department', CompLevel.mou) : mQuery.eq('location', _sel('loc'));
+      }
+      if (pickers.contains('sub') && _sel('sub').isNotEmpty) mQuery = mQuery.eq('sub_location', _sel('sub'));
+      if (pickers.contains('dept') && _sel('dept').isNotEmpty) mQuery = mQuery.eq('department', _sel('dept'));
+      if (pickers.contains('team') && _sel('team').isNotEmpty) mQuery = mQuery.eq('team', _sel('team'));
+
+      return mQuery;
+    }
+
+    try {
+      // Members don't depend on the period, so this is shared by every period and duty
+      return await _cached<Map<String, dynamic>>('members|$_scopeKey', () async {
+        final rows = await _fetchAllPages(build);
+        return rows.map((r) => Map<String, dynamic>.from(r as Map)).toList();
+      });
+    } catch (e) {
+      debugPrint("Master Members Fetch Error: $e");
+      return [];
     }
   }
 
@@ -666,47 +1004,81 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return ((c - p) / p) * 100.0;
     }
 
-    if (d.contains('Attendance') || d.contains('Cell Group') || d.contains('Education')) {
+    // Compare per-session averages, so a period with more sessions doesn't look like growth.
+    final int cS = CompPeriod.sessionCount(cur);
+    final int pS = CompPeriod.sessionCount(prev);
+    double cAvg(int n) => n / cS;
+    double pAvg(int n) => n / pS;
+
+    // Service attendance stores the answer in attendance_realtime, the other duties in status_detail.
+    dynamic answer(dynamic x) => x['attendance_realtime'] ?? x['status_detail'];
+    bool inPerson(dynamic x) {
+      final s = CompStatus.norm(answer(x));
+      return !CompStatus.isNegative(s) && (s.contains('in-person') || s.contains('inperson') || s == 'ip');
+    }
+
+    if (d.contains('Growth Tracking')) {
+      _primaryLabel = "Total Saints";
+      _secondaryLabel = "Registered Saints";
+      _tertiaryLabel = "Active Workers";
+
+      int reg = cur.where((x) => x['reg_status'] == '교회등록' || x['reg_status'] == '총회등록').length;
+      // is_worker is generated from duty in the database (not empty and not 구역원)
+      int workers = cur.where((x) => x['is_worker'] == true).length;
+
+      _primaryGrowth = cur.length.toDouble();
+      _secondaryGrowth = reg.toDouble();
+      _tertiaryGrowth = workers.toDouble();
+    } else if (d == 'Evangelism Results' || d == 'BB Results') {
+      _primaryLabel = "Total Fruits";
+      _secondaryLabel = "Confirmed";
+      _tertiaryLabel = "In Progress";
+
+      int conf = cur.where((x) => (x['level_status'] ?? '').toString().toLowerCase() == 'confirmed').length;
+      int proc = cur.where((x) => ['chakki', 'possible', 'new bb', 'proceeding'].contains((x['level_status'] ?? '').toString().toLowerCase())).length;
+
+      _primaryGrowth = cur.length.toDouble();
+      _secondaryGrowth = conf.toDouble();
+      _tertiaryGrowth = proc.toDouble();
+    } else if (d.contains('Attendance') || d.contains('Cell Group') || d.contains('Education')) {
       _primaryLabel = "General Att Growth";
       _secondaryLabel = "In-person Growth";
       _tertiaryLabel = "Absentees Change";
 
-      int cAtt = cur.where((x) => x['attendance_realtime'] != 'Absentee' && (x['status_detail'] ?? '').toString().toLowerCase() != 'absence').length;
-      int pAtt = prev.where((x) => x['attendance_realtime'] != 'Absentee' && (x['status_detail'] ?? '').toString().toLowerCase() != 'absence').length;
+      int cAtt = cur.where((x) => CompStatus.isPositive(answer(x))).length;
+      int pAtt = prev.where((x) => CompStatus.isPositive(answer(x))).length;
+      int cIp = cur.where(inPerson).length;
+      int pIp = prev.where(inPerson).length;
+      int cAbs = cur.where((x) => CompStatus.isNegative(answer(x))).length;
+      int pAbs = prev.where((x) => CompStatus.isNegative(answer(x))).length;
 
-      int cIp = cur.where((x) => x['attendance_realtime'] == 'In-person' || (x['status_detail'] ?? '').toString().contains('In-person')).length;
-      int pIp = prev.where((x) => x['attendance_realtime'] == 'In-person' || (x['status_detail'] ?? '').toString().contains('In-person')).length;
-
-      int cAbs = cur.where((x) => x['attendance_realtime'] == 'Absentee' || (x['status_detail'] ?? '').toString().contains('Absence')).length;
-      int pAbs = prev.where((x) => x['attendance_realtime'] == 'Absentee' || (x['status_detail'] ?? '').toString().contains('Absence')).length;
-
-      _primaryGrowth = pctDiff(cAtt.toDouble(), pAtt.toDouble());
-      _secondaryGrowth = pctDiff(cIp.toDouble(), pIp.toDouble());
-      _tertiaryGrowth = pctDiff(cAbs.toDouble(), pAbs.toDouble());
+      _primaryGrowth = pctDiff(cAvg(cAtt), pAvg(pAtt));
+      _secondaryGrowth = pctDiff(cAvg(cIp), pAvg(pIp));
+      _tertiaryGrowth = pctDiff(cAvg(cAbs), pAvg(pAbs));
     } else if (d.contains('Evangelism')) {
       _primaryLabel = "Participation Growth";
-      _secondaryLabel = "Active Saints";
+      _secondaryLabel = "Evangelised (avg/week)";
       _tertiaryLabel = "Support Needed";
 
-      int cEv = cur.where((x) => (x['status_detail'] ?? '').toString().toLowerCase().contains('evangelised')).length;
-      int pEv = prev.where((x) => (x['status_detail'] ?? '').toString().toLowerCase().contains('evangelised')).length;
+      int cEv = cur.where((x) => CompStatus.isPositive(x['status_detail'])).length;
+      int pEv = prev.where((x) => CompStatus.isPositive(x['status_detail'])).length;
 
-      _primaryGrowth = pctDiff(cEv.toDouble(), pEv.toDouble());
-      _secondaryGrowth = cur.length.toDouble();
-      _tertiaryGrowth = math.max(0, cur.length - cEv).toDouble();
+      _primaryGrowth = pctDiff(cAvg(cEv), pAvg(pEv));
+      _secondaryGrowth = CompPeriod.perSession(cEv, cS).toDouble();
+      _tertiaryGrowth = CompPeriod.perSession(cur.where((x) => CompStatus.isNegative(x['status_detail'])).length, cS).toDouble();
     } else if (d.contains('Morning Light') || d.contains('Workers Daily')) {
-      _primaryLabel = "Participation Rate";
-      _secondaryLabel = "Done Count";
+      _primaryLabel = "Participation Growth";
+      _secondaryLabel = "Done (avg/week)";
       _tertiaryLabel = "Missed Days";
 
-      int cDone = cur.where((x) => (x['status_detail'] ?? '').toString().toLowerCase().contains('did') || (x['status_detail'] ?? '').toString().toLowerCase().contains('yes')).length;
-      int pDone = prev.where((x) => (x['status_detail'] ?? '').toString().toLowerCase().contains('did') || (x['status_detail'] ?? '').toString().toLowerCase().contains('yes')).length;
+      int cDone = cur.where((x) => CompStatus.isPositive(x['status_detail'])).length;
+      int pDone = prev.where((x) => CompStatus.isPositive(x['status_detail'])).length;
 
-      _primaryGrowth = pctDiff(cDone.toDouble(), pDone.toDouble());
-      _secondaryGrowth = cDone.toDouble();
-      _tertiaryGrowth = math.max(0, cur.length - cDone).toDouble();
+      _primaryGrowth = pctDiff(cAvg(cDone), pAvg(pDone));
+      _secondaryGrowth = CompPeriod.perSession(cDone, cS).toDouble();
+      _tertiaryGrowth = CompPeriod.perSession(cur.where((x) => CompStatus.isNegative(x['status_detail'])).length, cS).toDouble();
     } else {
-      _primaryLabel = "Total Submissions";
+      _primaryLabel = "Total Records";
       _secondaryLabel = "Current Period";
       _tertiaryLabel = "Previous Period";
 
@@ -717,25 +1089,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   String _getActiveUnitDisplayLabel() {
-    final lvl = _currentLevel.toLowerCase();
-    if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
-      return widget.dept.isNotEmpty ? widget.dept : "Department";
-    }
-    if (_isGroupLeader) {
-      if (lvl.contains('group')) return _groupLeaderCleanDept;
-      if (lvl.contains('location')) return 'Location';
-      if (lvl.contains('sub location')) return _selectedLocation ?? 'Sub-locations';
-      if (lvl.contains('team')) return _selectedSubLocation ?? 'Team';
-      if (lvl.contains('cell')) return _selectedTeam ?? 'Cell group';
-    }
-    if (lvl.contains('church')) return 'Church';
-    if (lvl.contains('group')) return 'Book of Life';
-    if (lvl.contains('location')) return 'Location';
-    if (lvl.contains('sub location')) return _selectedLocation ?? 'Sub-locations';
-    if (lvl.contains('dept')) return _selectedSubLocation ?? 'Department';
-    if (lvl.contains('team')) return _selectedDepartment ?? 'Team';
-    if (lvl.contains('cell')) return _selectedTeam ?? 'Cell group';
-    return 'Unit';
+    final lv = CompLevel.of(_currentLevel);
+    if (lv == CompLevel.group && _isGroupLeader) return _groupLeaderCleanDept;
+    final String title = CompLevel.unitTitle(_currentLevel);
+    String parent = '';
+    if (lv == CompLevel.cell) parent = _selectedTeam ?? '';
+    if (lv == CompLevel.team) parent = _selectedDepartment ?? '';
+    if (lv == CompLevel.dept) parent = _selectedSubLocation ?? '';
+    if (lv == CompLevel.subLocation) parent = _selectedLocation ?? '';
+    if (parent == 'All Locations' || parent == 'N/A') parent = '';
+    return parent.isNotEmpty ? "$title · $parent" : title;
   }
 
   String _getFindingsTitle() {
@@ -763,9 +1126,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: Colors.black, height: 1.0)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.psychology_alt_rounded, color: Color(0xFF4A148C), size: 24),
-            tooltip: "AI Performance Analysis",
-            onPressed: _showAiExecutiveReportDialog,
+            tooltip: "Refresh data",
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _isLoading ? null : _refreshData,
           ),
           if (isMobile) 
             Builder(builder: (ctx) => IconButton(icon: const Icon(Icons.filter_list_rounded), onPressed: () => Scaffold.of(ctx).openEndDrawer())),
@@ -787,33 +1150,656 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
-  Widget _buildMainContent() => Column(children: [
-    _buildGrowthCard(),
-    const SizedBox(height: 15),
-    _buildSelectedModule(),
-    const SizedBox(height: 15),
-    _buildAnalysisBox(),
-    const SizedBox(height: 40),
-  ]);
+  Widget _buildMainContent() {
+    final bool isTrendAnalysisMode = _analyticsMode.contains('Trend');
+    final bool isRankingMode = _analyticsMode.contains('Ranking');
+
+    return Column(children: [
+      if (_loadError != null) ...[
+        _buildLoadErrorBanner(),
+        const SizedBox(height: 15),
+      ],
+      _buildGrowthCard(),
+      const SizedBox(height: 15),
+      if (_loadError == null && _logs.isEmpty) ...[
+        _buildEmptyNotice(),
+        const SizedBox(height: 15),
+      ],
+      // Trend Analysis shows only the analysis of the period (no summary
+      // table / chart); Ranking ranks every level below the one viewed.
+      if (isTrendAnalysisMode) ...[
+        _buildTrendAnalysis(),
+        const SizedBox(height: 15),
+        _buildOnPageStrategicDashboard(),
+      ] else if (isRankingMode)
+        _buildRankingView()
+      else
+        _buildSelectedModule(),
+      const SizedBox(height: 15),
+      _buildAnalysisBox(),
+      const SizedBox(height: 40),
+    ]);
+  }
+
+  // =====================================================================
+  // SHARED METRIC (Trend Analysis, Ranking and the strategic dashboard)
+  //   rate = reports that count as "done" ÷ (sessions × headcount)
+  // e.g. the average share of members present per service.
+  // =====================================================================
+  bool get _hasDatedReports {
+    final t = _getTargetTable();
+    return t != 'bb_students' && t != 'members';
+  }
+
+  bool get _isWorkerDuty {
+    final d = widget.selectedDuty;
+    return d == 'Workers Education' || d == 'Workers Daily Participation';
+  }
+
+  bool _isDone(dynamic r) {
+    final d = widget.selectedDuty.trim();
+    bool paid(dynamic v) {
+      final s = CompStatus.norm(v);
+      if (s.isEmpty) return false;
+      final num? amount = num.tryParse(s.replaceAll(',', '').replaceAll(' ', ''));
+      return amount != null ? amount > 0 : CompStatus.isPositive(s);
+    }
+
+    if (d == 'Offering' || d == 'Offering Status') {
+      return ['offering_tithe', 'offering_weekly', 'offering_thanks', 'offering_construction', 'offering_donation']
+          .any((k) => paid(r[k]));
+    }
+    if (d == 'Service Attendance Status') return CompStatus.isPositive(r['attendance_realtime']);
+    if (d == 'Visitations and Counselling') {
+      return CompStatus.norm(r['visitation_reason']).isNotEmpty || CompStatus.isPositive(r['status_detail']);
+    }
+    if (!_hasDatedReports) return true; // BB results / growth: every row counts
+    return CompStatus.isPositive(r['status_detail']);
+  }
+
+  /// One session = one report date + day (Sunday / Wednesday service, ML day ...).
+  String _sessionKey(dynamic r) {
+    final day = r['service_day'] ?? r['education_day'] ?? r['ml_day'] ?? r['part_day'] ?? r['evang_day'] ?? r['edu_day'] ?? '';
+    return "${r['report_date'] ?? ''}|$day";
+  }
+
+  List<Map<String, dynamic>> get _headcountMembers {
+    if (!_isWorkerDuty) return _masterMembers;
+    final workers = _masterMembers.where((m) => m['is_worker'] == true).toList();
+    return workers.isNotEmpty ? workers : _masterMembers;
+  }
+
+  /// Rate in % for a set of reports and the members they belong to.
+  /// Without dated reports (BB results, growth) it is simply the row count.
+  ({double rate, int done, int expected}) _rateFor(List<dynamic> logs, int headcount) {
+    final int done = logs.where(_isDone).length;
+    if (!_hasDatedReports) return (rate: done.toDouble(), done: done, expected: headcount);
+    final int sessions = logs.map(_sessionKey).toSet().length;
+    final int heads = headcount > 0 ? headcount : logs.map((l) => l['member_id']).toSet().length;
+    final int expected = sessions * heads;
+    final double rate = expected > 0 ? (done / expected * 100).clamp(0, 100).toDouble() : 0.0;
+    return (rate: rate, done: done, expected: expected);
+  }
+
+  String _bucketLabel(String key, int index) {
+    final d = DateTime.tryParse(key);
+    if (d == null) return key;
+    if (_timePeriod == 'Weekly status') return "Week ${index + 1} (${DateFormat('d MMM').format(d)})";
+    if (_timePeriod == 'Monthly status') return DateFormat('MMMM yyyy').format(d);
+    return DateFormat('EEE d MMM').format(d);
+  }
+
+  String _fmtPts(double v) => "${v >= 0 ? '+' : ''}${v.toStringAsFixed(1)} pts";
+
+  // =====================================================================
+  // TREND ANALYSIS — how the period went, week by week / month by month
+  // =====================================================================
+  Widget _buildTrendAnalysis() {
+    if (!_hasDatedReports) {
+      return _analyticsCard(
+        "Trend analysis",
+        Icons.show_chart_rounded,
+        Text("${widget.selectedDuty} has no dated weekly reports, so there is no trend over time to analyse. Use Summary or Ranking.",
+            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.black87)),
+      );
+    }
+
+    final String unitWord = _hasDatedReports && _isWorkerDuty ? "workers" : "members";
+    final List<String> keys = CompPeriod.expectedBuckets(_timePeriod) ??
+        (_logs.map((l) => CompPeriod.bucketKey(l, _timePeriod)).where((k) => k.isNotEmpty).toSet().toList()..sort());
+    final Map<String, List<dynamic>> byBucket = {};
+    for (final l in _logs) {
+      byBucket.putIfAbsent(CompPeriod.bucketKey(l, _timePeriod), () => []).add(l);
+    }
+    final int heads = _headcountMembers.length;
+    final List<({String key, String label, double rate, int done, int expected, bool hasData})> rows = [];
+    for (int i = 0; i < keys.length; i++) {
+      final logs = byBucket[keys[i]] ?? const [];
+      final r = _rateFor(logs, heads);
+      rows.add((key: keys[i], label: _bucketLabel(keys[i], i), rate: r.rate, done: r.done, expected: r.expected, hasData: logs.isNotEmpty));
+    }
+    final withData = rows.where((r) => r.hasData).toList();
+
+    if (withData.isEmpty) {
+      return _analyticsCard(
+        "Trend analysis",
+        Icons.show_chart_rounded,
+        Text("No reports in this period yet, so there is no trend to analyse.",
+            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.black87)),
+      );
+    }
+
+    // Headline
+    final first = withData.first, last = withData.last;
+    final best = withData.reduce((a, b) => a.rate >= b.rate ? a : b);
+    final worst = withData.reduce((a, b) => a.rate <= b.rate ? a : b);
+    final double avg = withData.map((r) => r.rate).reduce((a, b) => a + b) / withData.length;
+    final double change = last.rate - first.rate;
+    final String direction = withData.length < 2
+        ? "Only one ${_timePeriod == 'Monthly status' ? 'month' : 'week'} has reports so far"
+        : change.abs() < 1
+            ? "Stable"
+            : (change > 0 ? "Improving" : "Declining");
+    final List<String> missing = rows.where((r) => !r.hasData).map((r) => r.label.split(' (').first).toList();
+
+    final String headline = withData.length < 2
+        ? "$direction: ${last.label} at ${last.rate.toStringAsFixed(1)}% of $unitWord."
+        : "$direction — from ${first.rate.toStringAsFixed(1)}% in ${first.label.split(' (').first} "
+            "to ${last.rate.toStringAsFixed(1)}% in ${last.label.split(' (').first} (${_fmtPts(change)}). "
+            "Average ${avg.toStringAsFixed(1)}%; best ${best.label.split(' (').first} (${best.rate.toStringAsFixed(1)}%), "
+            "lowest ${worst.label.split(' (').first} (${worst.rate.toStringAsFixed(1)}%).";
+
+    // Units that moved the most between their first and last period with reports
+    final Map<String, List<dynamic>> byUnit = CompLevel.groupBy(_logs, _moduleLevel);
+    final Map<String, List<dynamic>> membersByUnit = CompLevel.groupBy(_headcountMembers, _moduleLevel);
+    final List<({String unit, double from, double to})> moves = [];
+    byUnit.forEach((unit, logs) {
+      final Map<String, List<dynamic>> ub = {};
+      for (final l in logs) {
+        ub.putIfAbsent(CompPeriod.bucketKey(l, _timePeriod), () => []).add(l);
+      }
+      final present = keys.where((k) => (ub[k] ?? const []).isNotEmpty).toList();
+      if (present.length < 2) return;
+      final h = (membersByUnit[unit] ?? const []).length;
+      moves.add((unit: unit, from: _rateFor(ub[present.first]!, h).rate, to: _rateFor(ub[present.last]!, h).rate));
+    });
+    moves.sort((a, b) => (b.to - b.from).compareTo(a.to - a.from));
+    final improving = moves.where((m) => m.to - m.from >= 1).take(3).toList();
+    final declining = moves.reversed.where((m) => m.to - m.from <= -1).take(3).toList();
+
+    final Color trendColor = change > 0.5 ? Colors.green.shade700 : (change < -0.5 ? Colors.red.shade700 : pPurple);
+
+    return _analyticsCard(
+      "Trend analysis — ${widget.selectedDuty}",
+      Icons.show_chart_rounded,
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: trendColor.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: trendColor.withValues(alpha: 0.3)),
+          ),
+          child: Text(headline, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.black87, height: 1.45)),
+        ),
+        if (missing.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text("No reports yet for: ${missing.join(', ')}.",
+              style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.orange.shade900, fontStyle: FontStyle.italic)),
+        ],
+        const SizedBox(height: 14),
+        // Period by period with change from the previous one
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (int i = 0; i < rows.length; i++) _trendPeriodTile(rows[i], i > 0 && rows[i - 1].hasData ? rows[i - 1].rate : null),
+        ]),
+        const SizedBox(height: 14),
+        SizedBox(height: 170, child: _trendLine(rows.map((r) => r.hasData ? r.rate : null).toList(), rows.map((r) => r.label.split(' (').first).toList(), trendColor)),
+        const SizedBox(height: 12),
+        if (improving.isNotEmpty || declining.isNotEmpty)
+          LayoutBuilder(builder: (context, c) {
+            final wide = c.maxWidth > 620;
+            final a = _moverList("Improving units", improving, Colors.green.shade800);
+            final b = _moverList("Units needing support", declining, Colors.red.shade800);
+            return wide
+                ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: a), const SizedBox(width: 10), Expanded(child: b)])
+                : Column(children: [a, const SizedBox(height: 10), b]);
+          }),
+        const SizedBox(height: 6),
+        Text(
+          "Rate = reports marked done ÷ (sessions × $unitWord in scope). Units compare their first and last ${_timePeriod == 'Monthly status' ? 'month' : 'week'} with reports.",
+          style: GoogleFonts.merriweather(fontSize: 9.5, color: Colors.black54, fontStyle: FontStyle.italic),
+        ),
+      ]),
+    );
+  }
+
+  Widget _trendPeriodTile(({String key, String label, double rate, int done, int expected, bool hasData}) r, double? previous) {
+    final double? delta = (r.hasData && previous != null) ? r.rate - previous : null;
+    final Color c = delta == null ? Colors.black54 : (delta > 0.5 ? Colors.green.shade700 : (delta < -0.5 ? Colors.red.shade700 : Colors.black54));
+    return Container(
+      width: 132,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: r.hasData ? Colors.white : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.black26),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(r.label, style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: pPurple), maxLines: 2),
+        const SizedBox(height: 4),
+        Text(r.hasData ? "${r.rate.toStringAsFixed(1)}%" : "—", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900)),
+        Text(
+          !r.hasData ? "no reports" : (delta == null ? "${r.done} done" : "${delta >= 0 ? '▲' : '▼'} ${_fmtPts(delta)}"),
+          style: GoogleFonts.merriweather(fontSize: 9.5, color: c, fontWeight: FontWeight.bold),
+        ),
+      ]),
+    );
+  }
+
+  Widget _trendLine(List<double?> values, List<String> labels, Color color) {
+    final spots = <FlSpot>[
+      for (int i = 0; i < values.length; i++)
+        if (values[i] != null) FlSpot(i.toDouble(), values[i]!),
+    ];
+    return LineChart(LineChartData(
+      minY: 0,
+      maxY: 100,
+      minX: 0,
+      maxX: (values.length - 1).clamp(1, 1000).toDouble(),
+      gridData: const FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 25),
+      borderData: FlBorderData(show: true, border: const Border(left: BorderSide(color: Colors.black26), bottom: BorderSide(color: Colors.black26))),
+      titlesData: FlTitlesData(
+        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 34,
+            interval: 25,
+            getTitlesWidget: (v, m) => Text("${v.toInt()}%", style: GoogleFonts.merriweather(fontSize: 9)),
+          ),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 1,
+            reservedSize: 22,
+            getTitlesWidget: (v, m) {
+              final i = v.toInt();
+              if (i < 0 || i >= labels.length || v != i.toDouble()) return const SizedBox.shrink();
+              return Padding(padding: const EdgeInsets.only(top: 4), child: Text(labels[i], style: GoogleFonts.merriweather(fontSize: 9)));
+            },
+          ),
+        ),
+      ),
+      lineBarsData: [
+        LineChartBarData(
+          spots: spots,
+          isCurved: true,
+          preventCurveOverShooting: true,
+          color: color,
+          barWidth: 3,
+          dotData: const FlDotData(show: true),
+          belowBarData: BarAreaData(show: true, color: color.withValues(alpha: 0.08)),
+        ),
+      ],
+    ));
+  }
+
+  Widget _moverList(String title, List<({String unit, double from, double to})> items, Color color) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w900, color: color)),
+        const SizedBox(height: 6),
+        if (items.isEmpty)
+          Text("None this period", style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.black54))
+        else
+          ...items.map((m) => Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                  "${m.unit}: ${m.from.toStringAsFixed(1)}% → ${m.to.toStringAsFixed(1)}% (${_fmtPts(m.to - m.from)})",
+                  style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.black87),
+                ),
+              )),
+      ]),
+    );
+  }
+
+  Widget _analyticsCard(String title, IconData icon, Widget child) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.black, width: 1.0),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(icon, color: pPurple, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pPurple))),
+          ]),
+          const SizedBox(height: 12),
+          child,
+        ]),
+      );
+
+  // =====================================================================
+  // RANKING — every level below the one being viewed, each ranked
+  // (a location leader compares sub-locations, departments, teams, cells)
+  // =====================================================================
+
+  /// Unit name including its parents below the viewed level, so "1팀" in
+  /// two different departments are ranked as two different teams.
+  String _rankKey(dynamic record, String levelName, List<String> path) {
+    final parts = <String>[];
+    for (final lv in path) {
+      parts.add(CompLevel.unitKey(record, lv));
+      if (lv == levelName) break;
+    }
+    return parts.join(' › ');
+  }
+
+  Widget _buildRankingView() {
+    final int idx = _hierarchy.indexOf(_currentLevel);
+    final List<String> below = idx >= 0 && idx < _hierarchy.length - 1 ? _hierarchy.sublist(idx + 1) : <String>[];
+    // Path used to name units: the levels under the one viewed (Group/Book of Life is not part of a unit's address)
+    final List<String> path = below.where((l) => CompLevel.of(l) != CompLevel.group).toList();
+
+    if (below.isEmpty) {
+      return _analyticsCard(
+        "Ranking",
+        Icons.leaderboard_rounded,
+        Text("There is no level below ${_currentLevel.toLowerCase()} to rank. Choose a higher level in Unit navigation.",
+            style: GoogleFonts.merriweather(fontSize: 12)),
+      );
+    }
+
+    final members = _headcountMembers;
+    final String metric = _hasDatedReports ? "rate" : "records";
+    return Column(children: [
+      for (int i = 0; i < below.length; i++) ...[
+        _rankingSection(below[i], path, members, metric, initiallyExpanded: i == 0),
+        const SizedBox(height: 10),
+      ],
+    ]);
+  }
+
+  Widget _rankingSection(String levelName, List<String> path, List<Map<String, dynamic>> members, String metric, {bool initiallyExpanded = false}) {
+    final bool isGroup = CompLevel.of(levelName) == CompLevel.group;
+    String keyOf(dynamic r) => isGroup ? CompLevel.unitKey(r, levelName) : _rankKey(r, levelName, path);
+
+    final Map<String, List<dynamic>> logsBy = {};
+    for (final l in _logs) {
+      logsBy.putIfAbsent(keyOf(l), () => []).add(l);
+    }
+    final Map<String, int> headsBy = {};
+    for (final m in members) {
+      final k = keyOf(m);
+      headsBy[k] = (headsBy[k] ?? 0) + 1;
+    }
+    final Set<String> units = {...logsBy.keys, ...headsBy.keys}..removeWhere((k) => k.split(' › ').last == 'Other');
+
+    final ranked = units.map((u) {
+      final r = _rateFor(logsBy[u] ?? const [], headsBy[u] ?? 0);
+      return (unit: u, rate: r.rate, done: r.done, heads: headsBy[u] ?? 0, reported: (logsBy[u] ?? const []).isNotEmpty);
+    }).toList()
+      ..sort((a, b) {
+        if (a.reported != b.reported) return a.reported ? -1 : 1; // units without reports go last
+        return b.rate.compareTo(a.rate);
+      });
+
+    final double maxVal = ranked.fold<double>(1, (m, r) => r.rate > m ? r.rate : m);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black, width: 1.0),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          leading: Icon(Icons.leaderboard_rounded, color: pPurple),
+          title: Text("${CompLevel.unitTitle(levelName)} ranking",
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: pPurple)),
+          subtitle: Text(
+            ranked.isEmpty
+                ? "No units"
+                : "${ranked.length} units · top: ${ranked.first.unit.split(' › ').last} (${metric == 'rate' ? '${ranked.first.rate.toStringAsFixed(1)}%' : ranked.first.done})",
+            style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.black54),
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          children: [
+            if (ranked.isEmpty)
+              Text("No units at this level in your scope.", style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black54))
+            else
+              ...ranked.asMap().entries.map((e) => _rankRow(e.key + 1, e.value, maxVal, metric)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _rankRow(int rank, ({String unit, double rate, int done, int heads, bool reported}) r, double maxVal, String metric) {
+    final parts = r.unit.split(' › ');
+    final String name = parts.last;
+    final String parent = parts.length > 1 ? parts.sublist(0, parts.length - 1).join(' › ') : '';
+    final Color medal = rank == 1
+        ? const Color(0xFFB78103)
+        : rank == 2
+            ? Colors.blueGrey
+            : rank == 3
+                ? Colors.brown.shade400
+                : Colors.black38;
+    final double frac = metric == 'rate' ? r.rate / 100 : (r.rate / maxVal);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        SizedBox(
+          width: 30,
+          child: Text("#$rank", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: medal)),
+        ),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 11.5), overflow: TextOverflow.ellipsis),
+            if (parent.isNotEmpty)
+              Text(parent, style: GoogleFonts.merriweather(fontSize: 9.5, color: Colors.black54), overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 3),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: frac.clamp(0, 1).toDouble(),
+                minHeight: 6,
+                backgroundColor: const Color(0xFFF1F5F9),
+                color: r.reported ? pPurple : Colors.black26,
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 86,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(
+              !r.reported ? "no reports" : (metric == 'rate' ? "${r.rate.toStringAsFixed(1)}%" : "${r.done}"),
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: r.reported ? Colors.black87 : Colors.black38),
+            ),
+            Text("${r.heads} ${_isWorkerDuty ? 'workers' : 'members'}", style: GoogleFonts.merriweather(fontSize: 9, color: Colors.black54)),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  // ON-PAGE STRATEGIC DASHBOARD (Option B from Supabase compilation_ui_config)
+  Widget _buildOnPageStrategicDashboard() {
+    final period = _timePeriod;
+    final duty = widget.selectedDuty;
+
+    // Rank the same units the table and chart show at this level
+    final Map<String, List<dynamic>> unitMap = CompLevel.groupBy(_logs, _moduleLevel);
+
+    final Map<String, List<dynamic>> membersByUnit = CompLevel.groupBy(_headcountMembers, _moduleLevel);
+    final List<Map<String, dynamic>> unitRanks = [];
+    unitMap.forEach((u, lList) {
+      // Same rate as Trend Analysis and Ranking: done ÷ (sessions × headcount)
+      final r = _rateFor(lList, (membersByUnit[u] ?? const []).length);
+      unitRanks.add({'unit': u, 'total': lList.length, 'att': r.done, 'pct': r.rate});
+    });
+
+    unitRanks.sort((a, b) => (b['pct'] as double).compareTo(a['pct'] as double));
+    final topUnits = unitRanks.take(3).map((e) => "${e['unit']} (${(e['pct'] as double).toStringAsFixed(1)}%)").toList();
+    final bottomUnits = unitRanks.reversed.where((e) => !topUnits.any((t) => t.startsWith("${e['unit']} ("))).take(3).map((e) => "${e['unit']} (${(e['pct'] as double).toStringAsFixed(1)}%)").toList();
+
+    final Set<String> rawFindings = {};
+    for (var l in _logs) {
+      final n = (l['correction_note'] ?? l['situation_notes'] ?? '').toString().trim();
+      if (n.isNotEmpty && n != 'null') rawFindings.add(n);
+    }
+    final findingsSummary = rawFindings.isNotEmpty 
+        ? rawFindings.take(4).join("\n• ") 
+        : "Regular unit tracking maintained with ongoing pastoral check-ins.";
+
+    // Action directives loaded dynamically from Supabase compilation_ui_config
+    final List<String> directives = _analysisDirectives.isNotEmpty
+        ? _analysisDirectives
+        : [
+            "Conduct targeted pastoral reviews with leaders of units falling below the benchmark threshold.",
+            "Deploy experienced workers to provide hands-on visitation and evangelism support to trailing units.",
+            "Execute immediate absentee recovery check-ins prior to the next scheduled service or education session.",
+            "Cross-pollinate effective unit strategies from top-performing units to units requiring critical support."
+          ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black, width: 1.0),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: pPurple.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.analytics_rounded, color: pPurple, size: 22),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("Strategic Performance & Trend Evaluation",
+                          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pPurple)),
+                      Text("$duty • $period Analysis",
+                          style: GoogleFonts.merriweather(fontSize: 11, color: Colors.grey.shade600)),
+                    ],
+                  ),
+                ],
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: pPurple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  side: const BorderSide(color: Colors.black, width: 1.0),
+                ),
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                label: Text("Download PDF Report", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                onPressed: () => _exportAiReportPdf(duty, period, topUnits, bottomUnits, findingsSummary, directives),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Colors.black26),
+          const SizedBox(height: 14),
+
+          _reportSection(
+            "1. Executive Summary",
+            "During the $period evaluation for $duty, total recorded submissions reached ${_logs.length} across units. "
+            "The primary metric trajectory is recorded at ${_primaryGrowth >= 0 ? '+' : ''}${_primaryGrowth.toStringAsFixed(1)}% compared to the prior period.",
+            Icons.analytics_outlined,
+          ),
+
+          _reportSection(
+            "2. Benchmark Leading Units",
+            topUnits.isNotEmpty 
+                ? "Top-performing units setting the standard for this period:\n• ${topUnits.join('\n• ')}" 
+                : "All units currently performing at parity.",
+            Icons.stars_rounded,
+            color: Colors.green.shade800,
+          ),
+
+          _reportSection(
+            "3. Critical Focus & Support Required",
+            bottomUnits.isNotEmpty 
+                ? "The following units require targeted administrative and pastoral intervention:\n• ${bottomUnits.join('\n• ')}" 
+                : "No units critically behind the designated benchmark threshold.",
+            Icons.warning_amber_rounded,
+            color: Colors.red.shade800,
+          ),
+
+          _reportSection(
+            "4. Synthesis of Unit Leader Observations",
+            "• $findingsSummary",
+            Icons.comment_bank_outlined,
+          ),
+
+          _reportSection(
+            "5. Strategic Directives for Senior Leadership",
+            directives.map((d) => "• $d").join('\n'),
+            Icons.assignment_turned_in_outlined,
+            color: pPurple,
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildSelectedModule() {
     String d = widget.selectedDuty;
-    if (_analyticsMode == 'Ranking') {
-      return HierarchyLeaderboardScreen(role: widget.role, duty: d, loc: widget.loc, sub: widget.sub, dept: widget.dept, team: widget.team);
-    }
     
     if (d == 'Service Attendance Status') {
       return ServiceAttendanceModule(
         logs: _logs, 
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod, 
-        level: _currentLevel, 
+        level: _moduleLevel, 
         analyticsMode: _analyticsMode, 
         groupBy: _groupBy, 
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -831,15 +1817,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (d == 'Cell Group Service') {
       return CellServiceModule(
         logs: _logs, 
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod, 
-        level: _currentLevel, 
+        level: _moduleLevel, 
         analyticsMode: _analyticsMode, 
         groupBy: _groupBy, 
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -857,15 +1844,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (d == 'All Saints Education') {
       return AllSaintsEducationModule(
         logs: _logs, 
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod, 
-        level: _currentLevel, 
+        level: _moduleLevel, 
         analyticsMode: _analyticsMode, 
         groupBy: _groupBy, 
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -883,15 +1871,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (d == 'Offering' || d == 'Offering Status') {
       return OfferingModule(
         logs: _logs,
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod,
-        level: _currentLevel,
+        level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -909,15 +1898,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (d == 'Evangelism' || d == 'Evangelism Part') {
       return EvangelismModule(
         logs: _logs,
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod,
-        level: _currentLevel,
+        level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -932,19 +1922,19 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userTeam: widget.team,
       );
     }
-
     if (d == 'Morning Light') {
       return MorningLightModule(
         logs: _logs,
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod,
-        level: _currentLevel,
+        level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -962,15 +1952,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (d == 'Workers Education') {
       return WorkersEducationModule(
         logs: _logs,
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod,
-        level: _currentLevel,
+        level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
-        targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        targetValue: 90.0,
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -988,15 +1979,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (d == 'Workers Daily Participation') {
       return DailyParticipationModule(
         logs: _logs,
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod,
-        level: _currentLevel,
+        level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -1011,20 +2003,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userTeam: widget.team,
       );
     }
-
     if (d == 'Visitations and Counselling') {
       return VisitationsModule(
         logs: _logs,
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod,
-        level: _currentLevel,
+        level: _moduleLevel,
         category: _visitationCategories.isNotEmpty ? _visitationCategories.first : 'All',
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -1039,20 +2031,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userTeam: widget.team,
       );
     }
-
     if (d == 'Evangelism Results' || d == 'BB Results') {
       return EvangelismResultsModule(
         bbData: _logs,
         logs: _logs,
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod,
-        level: _currentLevel,
+        level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
         targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -1067,19 +2059,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userTeam: widget.team,
       );
     }
-    if (d == 'Growth Tracking') {
+    if (d.contains('Growth Tracking')) {
       return GrowthTrackingModule(
         category: d,
         logs: _logs,
+        masterMembers: _masterMembers,
         timePeriod: _timePeriod,
-        level: _currentLevel,
+        level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
-        targetValue: 80.0,
-        selectedLocation: _selectedLocation ?? '',
-        selectedSubLocation: _selectedSubLocation ?? '',
-        selectedDepartment: _selectedDepartment ?? '',
-        selectedTeam: _selectedTeam ?? '',
+        targetValue: 10.0,
+        selectedLocation: _sel('loc'),
+        selectedSubLocation: _sel('sub'),
+        selectedDepartment: _sel('dept'),
+        selectedTeam: _sel('team'),
         activeUnitLabel: _getActiveUnitDisplayLabel(),
         isChurchWide: _isChurchWideCompiler,
         isLocationLeader: _isLocationLeader,
@@ -1095,6 +2088,111 @@ class _CompilationEngineState extends State<CompilationEngine> {
       );
     }
     return const Center(child: Text("Module logic pending..."));
+  }
+
+  Widget _buildLoadErrorBanner() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Colors.red.shade50,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.red.shade300),
+    ),
+    child: Row(children: [
+      Icon(Icons.error_outline, color: Colors.red.shade800),
+      const SizedBox(width: 10),
+      Expanded(child: Text(_loadError ?? '', style: GoogleFonts.merriweather(fontSize: 12, color: Colors.red.shade900))),
+      TextButton(onPressed: _fetchData, child: const Text("Retry")),
+    ]),
+  );
+
+  Widget _buildEmptyNotice() {
+    final String range = (_periodStart != null && _periodEnd != null)
+        ? "${DateFormat('d MMM').format(_periodStart!)} – ${DateFormat('d MMM yyyy').format(_periodEnd!)}"
+        : _timePeriod;
+    final String which = (!_usesApproval || _includePending) ? "reports" : "approved reports";
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.shade300),
+      ),
+      child: Text(
+        _usesApproval && !_includePending
+            ? "No $which for $range in this unit. Reports appear here after their final approval — switch on \"Include pending reports\" to see submitted ones."
+            : "No $which for $range in this unit.",
+        style: GoogleFonts.merriweather(fontSize: 12, color: Colors.brown.shade800),
+      ),
+    );
+  }
+
+  Widget _buildApprovalToggle() {
+    if (!_usesApproval) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.black, width: 1.0),
+      ),
+      child: SwitchListTile(
+        dense: true,
+        title: Text("Include pending reports", style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900)),
+        subtitle: Text(
+          _includePending ? "Counting approved + pending" : "Counting approved reports only",
+          style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.black54),
+        ),
+        value: _includePending,
+        onChanged: (v) {
+          setState(() => _includePending = v);
+          _fetchData();
+        },
+      ),
+    );
+  }
+
+  Future<void> _submitFindings() async {
+    final text = _analysisController.text.trim();
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Write your findings first.")));
+      return;
+    }
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+    final DateFormat df = DateFormat('yyyy-MM-dd');
+    final DateTime end = _periodEnd ?? DateTime.now();
+    final DateTime start = _periodStart ?? end;
+
+    setState(() => _savingFindings = true);
+    try {
+      await _supabase.from('manager_insights').insert({
+        'period_start': df.format(start),
+        'period_end': df.format(end),
+        'duty_name': widget.selectedDuty,
+        'unit_id': _getActiveUnitDisplayLabel(),
+        'observation': text,
+        'manager_id': user.id,
+      });
+      if (!mounted) return;
+      _analysisController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Findings submitted successfully")));
+    } catch (e) {
+      debugPrint("Findings save error: $e");
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(backgroundColor: Colors.red.shade800, content: const Text("Couldn't save your findings. Please try again.")),
+      );
+    } finally {
+      if (mounted) setState(() => _savingFindings = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _analysisController.dispose();
+    super.dispose();
   }
 
   Widget _buildGrowthCard() {
@@ -1120,23 +2218,19 @@ class _CompilationEngineState extends State<CompilationEngine> {
                   Text(_timePeriod, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)),
                 ],
               ),
-              InkWell(
-                onTap: _showAiExecutiveReportDialog,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: pPurple.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: pPurple.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.auto_awesome, color: pPurple, size: 14),
-                      const SizedBox(width: 4),
-                      Text("AI Analysis", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple)),
-                    ],
-                  ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: pPurple.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: pPurple.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.tune_rounded, color: pPurple, size: 14),
+                    const SizedBox(width: 4),
+                    Text(_analyticsMode, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple)),
+                  ],
                 ),
               ),
             ],
@@ -1146,7 +2240,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           const SizedBox(height: 10),
           Row(
             children: [
-              _metricPill(_primaryLabel, _primaryGrowth, isPercentage: true),
+              _metricPill(_primaryLabel, _primaryGrowth, isPercentage: !_primaryLabel.contains('Saints') && !_primaryLabel.contains('Fruits')),
               const SizedBox(width: 8),
               _metricPill(_secondaryLabel, _secondaryGrowth, isPercentage: _secondaryLabel.contains('Growth') || _secondaryLabel.contains('Rate')),
               const SizedBox(width: 8),
@@ -1187,132 +2281,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
-  void _showAiExecutiveReportDialog() {
-    final period = _timePeriod;
-    final duty = widget.selectedDuty;
-
-    final Map<String, List<dynamic>> unitMap = {};
-    for (var l in _logs) {
-      final u = (l['unit_name'] ?? l['cell_group'] ?? l['department'] ?? 'Other').toString();
-      unitMap.putIfAbsent(u, () => []).add(l);
-    }
-
-    final List<Map<String, dynamic>> unitRanks = [];
-    unitMap.forEach((u, lList) {
-      int att = lList.where((x) => x['attendance_realtime'] != 'Absentee' && (x['status_detail'] ?? '').toString().toLowerCase() != 'absence').length;
-      double pct = lList.isNotEmpty ? (att / lList.length * 100.0) : 0.0;
-      unitRanks.add({'unit': u, 'total': lList.length, 'att': att, 'pct': pct});
-    });
-
-    unitRanks.sort((a, b) => (b['pct'] as double).compareTo(a['pct'] as double));
-    final topUnits = unitRanks.take(3).map((e) => "${e['unit']} (${(e['pct'] as double).toStringAsFixed(1)}%)").toList();
-    final bottomUnits = unitRanks.reversed.take(3).map((e) => "${e['unit']} (${(e['pct'] as double).toStringAsFixed(1)}%)").toList();
-
-    final Set<String> rawFindings = {};
-    for (var l in _logs) {
-      final n = (l['correction_note'] ?? l['situation_notes'] ?? '').toString().trim();
-      if (n.isNotEmpty && n != 'null') rawFindings.add(n);
-    }
-    final findingsSummary = rawFindings.isNotEmpty 
-        ? rawFindings.take(4).join("\n• ") 
-        : "Regular unit tracking maintained with ongoing pastoral check-ins.";
-
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.white,
-        child: Container(
-          width: 580,
-          padding: const EdgeInsets.all(22),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(color: pPurple.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                          child: Icon(Icons.psychology_alt_rounded, color: pPurple, size: 22),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("AI Executive Performance Report", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pPurple)),
-                            Text("$duty • $period", style: GoogleFonts.merriweather(fontSize: 11, color: Colors.grey.shade600)),
-                          ],
-                        ),
-                      ],
-                    ),
-                    IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                const Divider(height: 1, color: Colors.black26),
-                const SizedBox(height: 12),
-
-                _reportSection("1. Executive Summary", 
-                  "During the $period period for $duty, total submissions reached ${_logs.length} records. "
-                  "Primary metric performance trend is recorded at ${_primaryGrowth >= 0 ? '+' : ''}${_primaryGrowth.toStringAsFixed(1)}% compared to the previous period.",
-                  Icons.analytics_outlined
-                ),
-
-                _reportSection("2. Benchmark Leading Units", 
-                  topUnits.isNotEmpty ? "The top-performing units setting the standard are:\n• ${topUnits.join('\n• ')}" : "All units currently performing at parity.",
-                  Icons.stars_rounded, color: Colors.green.shade800
-                ),
-
-                _reportSection("3. Critical Focus & Support Required", 
-                  bottomUnits.isNotEmpty ? "The following units require immediate pastoral and administrative intervention:\n• ${bottomUnits.join('\n• ')}" : "No units critically behind threshold.",
-                  Icons.warning_amber_rounded, color: Colors.red.shade800
-                ),
-
-                _reportSection("4. Synthesis of Unit Leader Findings", 
-                  "• $findingsSummary",
-                  Icons.comment_bank_outlined
-                ),
-
-                _reportSection("5. Actionable Directive for Senior Leadership", 
-                  "Recommended focus for the upcoming week:\n"
-                  "1. Conduct targeted one-on-one reviews with cell leaders of trailing units.\n"
-                  "2. Deploy experienced workers to assist units requiring support.\n"
-                  "3. Implement absentee recovery check-ins prior to the next service session.",
-                  Icons.assignment_turned_in_outlined, color: pPurple
-                ),
-
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: Text("Close", style: GoogleFonts.merriweather(color: Colors.grey.shade700))),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: pPurple,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        side: const BorderSide(color: Colors.black, width: 1.0),
-                      ),
-                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-                      label: Text("Download PDF Report", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12)),
-                      onPressed: () => _exportAiReportPdf(duty, period, topUnits, bottomUnits, findingsSummary),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _reportSection(String title, String body, IconData icon, {Color? color}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1339,7 +2307,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
-  Future<void> _exportAiReportPdf(String duty, String period, List<String> top, List<String> bottom, String findings) async {
+  Future<void> _exportAiReportPdf(String duty, String period, List<String> top, List<String> bottom, String findings, List<String> directives) async {
     final pdf = pw.Document();
     final fontBold = await PdfGoogleFonts.merriweatherBold();
     final font = await PdfGoogleFonts.merriweatherRegular();
@@ -1357,23 +2325,23 @@ class _CompilationEngineState extends State<CompilationEngine> {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text('Executive AI Strategic Performance Report', style: pw.TextStyle(font: fontBold, fontSize: 16, color: PdfColors.purple900)),
+                    pw.Text('Strategic Trend & Performance Report', style: pw.TextStyle(font: fontBold, fontSize: 16, color: PdfColors.purple900)),
                     pw.Text(DateFormat('yyyy-MM-dd').format(DateTime.now()), style: pw.TextStyle(font: font, fontSize: 10)),
                   ],
                 ),
               ),
               pw.SizedBox(height: 4),
-              pw.Text('Duty: $duty | Period: $period | Submissions: ${_logs.length}', style: pw.TextStyle(font: font, fontSize: 9.5, color: PdfColors.grey700)),
+              pw.Text('Duty: $duty | Period: $period | Records: ${_logs.length}', style: pw.TextStyle(font: font, fontSize: 9.5, color: PdfColors.grey700)),
               pw.Divider(thickness: 1),
               pw.SizedBox(height: 10),
 
               pw.Text('1. Performance Metrics Overview', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.purple900)),
-              pw.Bullet(text: '$_primaryLabel: ${_primaryGrowth >= 0 ? "+" : ""}${_primaryGrowth.toStringAsFixed(1)}%', style: pw.TextStyle(font: font, fontSize: 9.5)),
+              pw.Bullet(text: '$_primaryLabel: ${_primaryGrowth.toStringAsFixed(1)}', style: pw.TextStyle(font: font, fontSize: 9.5)),
               pw.Bullet(text: '$_secondaryLabel: ${_secondaryGrowth.toStringAsFixed(1)}', style: pw.TextStyle(font: font, fontSize: 9.5)),
               pw.Bullet(text: '$_tertiaryLabel: ${_tertiaryGrowth.toStringAsFixed(1)}', style: pw.TextStyle(font: font, fontSize: 9.5)),
               pw.SizedBox(height: 10),
 
-              pw.Text('2. Top Performing Units', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.green900)),
+              pw.Text('2. Benchmark Leading Units', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.green900)),
               ...top.map((e) => pw.Bullet(text: e, style: pw.TextStyle(font: font, fontSize: 9.5))),
               pw.SizedBox(height: 10),
 
@@ -1381,14 +2349,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
               ...bottom.map((e) => pw.Bullet(text: e, style: pw.TextStyle(font: font, fontSize: 9.5))),
               pw.SizedBox(height: 10),
 
-              pw.Text('4. Synthesis of Lower Leader Findings', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.purple900)),
+              pw.Text('4. Synthesis of Unit Leader Observations', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.purple900)),
               pw.Text(findings, style: pw.TextStyle(font: font, fontSize: 9.5)),
               pw.SizedBox(height: 10),
 
               pw.Text('5. Strategic Action Directives for Next Week', style: pw.TextStyle(font: fontBold, fontSize: 11, color: PdfColors.purple900)),
-              pw.Bullet(text: 'Conduct one-on-one pastoral interviews with leaders of bottom-performing units.', style: pw.TextStyle(font: font, fontSize: 9.5)),
-              pw.Bullet(text: 'Cross-deploy successful evangelism strategies to underperforming areas.', style: pw.TextStyle(font: font, fontSize: 9.5)),
-              pw.Bullet(text: 'Submit targeted absentee intervention status prior to mid-week service.', style: pw.TextStyle(font: font, fontSize: 9.5)),
+              ...directives.map((d) => pw.Bullet(text: d, style: pw.TextStyle(font: font, fontSize: 9.5))),
             ],
           );
         },
@@ -1504,12 +2470,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
               _bentoNavCard("Data category", _timeOptions, _timePeriod, (v) async {
                 if (v == 'Custom period') {
-                  final p = await showDateRangePicker(context: context, firstDate: DateTime(2023), lastDate: DateTime.now());
+                  final p = await _pickCustomRange();
                   if (p != null) { setState(() { _customRange = p; _timePeriod = v; }); _fetchData(); }
                 } else { setState(() => _timePeriod = v); _fetchData(); }
                 if (isMobile) Navigator.pop(context);
               }),
               const SizedBox(height: 10),
+
+              _buildApprovalToggle(),
 
               _bentoNavCard("Analytics mode", _modeOptions, _analyticsMode, (v) { 
                 setState(() => _analyticsMode = v);
@@ -1544,7 +2512,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
-  // --- UNIT NAVIGATION CARD WITH CASCADING NESTED PICKERS ---
   Widget _buildUnitNavigationCard() {
     return Container(
       margin: const EdgeInsets.only(bottom: 2),
@@ -1597,8 +2564,6 @@ class _CompilationEngineState extends State<CompilationEngine> {
                     ),
                   ),
                 ),
-
-                // CASCADING PICKER APPEARS RIGHT BENEATH SELECTED UNIT IN SIDEBAR
                 if (isSelected)
                   _buildCascadingPicker(levelName),
               ],
@@ -1609,26 +2574,26 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
-  // --- CASCADING PICKER STYLES PRESERVED EXACTLY ---
   Widget _buildCascadingPicker(String levelName) {
-    final lvl = levelName.toLowerCase();
 
-    Widget pick(String label, List<String> items, String? current, ValueChanged<String> onSelect) {
+    Widget pick(String label, List<String> items, String? current, ValueChanged<String> onSelect, {bool allowAll = false}) {
+      final List<String> pickList = allowAll ? ["All Locations", ...items] : items;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: pPurple)),
           const SizedBox(height: 3),
-          _unitDropdown(items, current, onSelect),
+          _unitDropdown(pickList, current, onSelect),
           const SizedBox(height: 6),
         ],
       );
     }
 
     final locPicker = pick("Select location:", _locations, _selectedLocation, (v) {
-      setState(() => _selectedLocation = v);
-      _fetchSubLocations(v, triggerFetch: true);
-    });
+      setState(() => _selectedLocation = (v == "All Locations") ? null : v);
+      if (_selectedLocation != null) _fetchSubLocations(_selectedLocation!, triggerFetch: true);
+      else _fetchData();
+    }, allowAll: true);
 
     final subPicker = pick("Select sub-location:", _subLocations, _selectedSubLocation, (v) {
       setState(() => _selectedSubLocation = v);
@@ -1645,66 +2610,41 @@ class _CompilationEngineState extends State<CompilationEngine> {
       _fetchData();
     });
 
-    // 1. Group Leaders: Shows Location Picker directly underneath Sub location status
+    // Which pickers show is decided by _pickersFor(), the same rule the
+    // query and the modules use, so what you pick is what gets filtered.
+    final lv = CompLevel.of(levelName);
+    final active = _pickersFor(lv);
+    if (active.isNotEmpty) {
+      return _pickerContainer([
+        if (active.contains('loc')) locPicker,
+        if (active.contains('sub')) subPicker,
+        if (active.contains('dept')) deptPicker,
+        if (active.contains('team')) teamPicker,
+      ]);
+    }
+
     if (_isGroupLeader) {
-      if (lvl.contains('group')) {
-        return _infoText("Displaying summary for $_groupLeaderCleanDept across all locations");
-      }
-      if (lvl.contains('location status')) {
-        return _infoText("Displaying $_groupLeaderCleanDept performance by location");
-      }
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-        return _pickerContainer([locPicker]);
-      }
-      if (lvl.contains('team')) {
-        return _pickerContainer([locPicker, subPicker]);
-      }
-      if (lvl.contains('cell')) {
-        return _pickerContainer([locPicker, subPicker, teamPicker]);
-      }
-    }
-
-    if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
-      if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept.isNotEmpty ? widget.dept : 'your department'} at Church");
-    }
-
-    if (_isLocationLeader) {
-      if (lvl.contains('location status')) return _infoText("Displaying summary for your location (${widget.loc})");
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) return _infoText("Displaying all sub-locations under ${widget.loc}");
-      if (lvl.contains('dept')) return _pickerContainer([subPicker]);
-      if (lvl.contains('team')) return _pickerContainer([subPicker, deptPicker]);
-      if (lvl.contains('cell')) return _pickerContainer([subPicker, deptPicker, teamPicker]);
-    }
-
-    if (_isSubLocationLeader) {
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) return _infoText("Displaying summary for ${widget.sub}");
-      if (lvl.contains('dept')) return _infoText("Displaying departments under ${widget.sub}");
-      if (lvl.contains('team')) return _pickerContainer([deptPicker]);
-      if (lvl.contains('cell')) return _pickerContainer([deptPicker, teamPicker]);
-    }
-
-    if (_isDeptLeader) {
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-        return _pickerContainer([subPicker]);
-      }
-      if (lvl.contains('dept')) return _infoText("Displaying summary for ${widget.dept}");
-      if (lvl.contains('team')) return _pickerContainer([subPicker, teamPicker]);
-      if (lvl.contains('cell')) return _pickerContainer([subPicker, teamPicker]);
-    }
-
-    if (_isTeamLeader) {
-      if (lvl.contains('team')) return _infoText("Displaying summary for your team (${widget.team})");
-      if (lvl.contains('cell')) return _infoText("Displaying cell groups under ${widget.team}");
-    }
-
-    if (_isChurchWideCompiler) {
-      if (lvl.contains('church')) return _infoText("Displaying general church summary (All Locations, MOU, Church Workers)");
-      if (lvl.contains('group')) return _infoText("Displaying groups based on Book of Life (교역자, 자문회, 장년회, 부녀회, 청년회)");
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) return _pickerContainer([locPicker]);
-      if (lvl.contains('location status')) return _infoText("Displaying all church locations including MOU and 24 Dept");
-      if (lvl.contains('dept')) return _pickerContainer([locPicker, subPicker]);
-      if (lvl.contains('team')) return _pickerContainer([locPicker, subPicker, deptPicker]);
-      if (lvl.contains('cell')) return _pickerContainer([locPicker, subPicker, deptPicker, teamPicker]);
+      if (lv == CompLevel.group) return _infoText("Displaying summary for $_groupLeaderCleanDept across all locations");
+    } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+      return _infoText("Displaying summary for ${widget.dept.isNotEmpty ? widget.dept : 'your department'} at Church");
+    } else if (_isLocationLeader) {
+      if (lv == CompLevel.location) return _infoText("Displaying summary for your location (${widget.loc})");
+      if (lv == CompLevel.subLocation) return _infoText("Displaying all sub-locations under ${widget.loc}");
+    } else if (_isSubLocationLeader) {
+      if (lv == CompLevel.subLocation) return _infoText("Displaying summary for ${widget.sub}");
+      if (lv == CompLevel.dept) return _infoText("Displaying departments under ${widget.sub}");
+    } else if (_isDeptLeader) {
+      if (lv == CompLevel.dept) return _infoText("Displaying summary for ${widget.dept}");
+      if (lv == CompLevel.team) return _infoText("Displaying teams under ${widget.dept}");
+    } else if (_isTeamLeader) {
+      if (lv == CompLevel.team) return _infoText("Displaying summary for your team (${widget.team})");
+      if (lv == CompLevel.cell) return _infoText("Displaying cell groups under ${widget.team}");
+    } else if (_isCellLeader) {
+      if (lv == CompLevel.cell) return _infoText("Displaying summary for your cell group (${widget.userUnit})");
+    } else if (_isChurchWideCompiler) {
+      if (lv == CompLevel.church) return _infoText("Displaying general church summary (All Locations, MOU, Church Workers)");
+      if (lv == CompLevel.group) return _infoText("Displaying groups based on Book of Life (교역자, 자문회, 장년회, 부녀회, 청년회)");
+      if (lv == CompLevel.location) return _infoText("Displaying all church locations including MOU and 24 Dept");
     }
 
     return const SizedBox.shrink();
@@ -1722,7 +2662,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
   );
 
-  Widget _unitDropdown(List<String> items, String? selected, ValueChanged<String> onChanged) {
+  Widget _unitDropdown(List<String> rawItems, String? selected, ValueChanged<String> onChanged) {
+    // Duplicate names (e.g. the same team name in two departments) crash a DropdownButton
+    final List<String> items = rawItems.toSet().toList();
     if (items.isEmpty) {
       return Text("No units available in this scope", style: GoogleFonts.merriweather(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic));
     }
@@ -1744,6 +2686,83 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
+  /// "Custom period" shows the chosen dates once a range is picked.
+  String _navLabel(String item) {
+    if (item == 'Custom period' && _customRange != null) {
+      return "Custom: ${DateFormat('d MMM').format(_customRange!.start)} – ${DateFormat('d MMM yyyy').format(_customRange!.end)}";
+    }
+    return item;
+  }
+
+  /// Date range picker in the app's style: a centred card on wide screens
+  /// (instead of a full-screen page), purple header and selection.
+  Future<DateTimeRange?> _pickCustomRange() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2023),
+      lastDate: today,
+      initialDateRange: _customRange ?? DateTimeRange(start: today.subtract(const Duration(days: 27)), end: today),
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      helpText: 'Select report period',
+      saveText: 'Apply',
+      cancelText: 'Cancel',
+      fieldStartLabelText: 'From',
+      fieldEndLabelText: 'To',
+      builder: (ctx, child) {
+        final base = Theme.of(ctx);
+        return Theme(
+          data: base.copyWith(
+            colorScheme: base.colorScheme.copyWith(
+              primary: pPurple,
+              onPrimary: Colors.white,
+              secondary: pPurple,
+              surface: Colors.white,
+              onSurface: Colors.black87,
+            ),
+            datePickerTheme: DatePickerThemeData(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.transparent,
+              headerBackgroundColor: pPurple,
+              headerForegroundColor: Colors.white,
+              rangePickerBackgroundColor: Colors.white,
+              rangePickerSurfaceTintColor: Colors.transparent,
+              rangePickerHeaderBackgroundColor: pPurple,
+              rangePickerHeaderForegroundColor: Colors.white,
+              rangeSelectionBackgroundColor: pPurple.withValues(alpha: 0.12),
+              todayBorder: BorderSide(color: pPurple, width: 1.2),
+              dayShape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              rangePickerShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            ),
+            textTheme: GoogleFonts.merriweatherTextTheme(base.textTheme),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: pPurple,
+                textStyle: GoogleFonts.merriweather(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420, maxHeight: 620),
+                child: Material(
+                  elevation: 12,
+                  borderRadius: BorderRadius.circular(18),
+                  clipBehavior: Clip.antiAlias,
+                  child: child!,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _bentoNavCard(String t, List<String> items, String cur, Function(String) onS) => Container(
     margin: const EdgeInsets.only(bottom: 2),
     padding: const EdgeInsets.all(12),
@@ -1762,7 +2781,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         child: Row(children: [
           Icon(cur == i ? Icons.check_circle : Icons.circle_outlined, color: cur == i ? Colors.white : Colors.grey, size: 14),
           const SizedBox(width: 8),
-          Expanded(child: Text(i, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: cur == i ? Colors.white : Colors.black87))),
+          Expanded(child: Text(_navLabel(i), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: cur == i ? Colors.white : Colors.black87))),
         ]),
       ))))
     ]),
@@ -1827,12 +2846,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ), 
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Findings submitted successfully")),
-              );
-            }, 
-            icon: const Icon(Icons.send_rounded, size: 14),
+            onPressed: _savingFindings ? null : _submitFindings,
+            icon: _savingFindings
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.send_rounded, size: 14),
             label: Text("Submit findings", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12)),
           ),
         ),

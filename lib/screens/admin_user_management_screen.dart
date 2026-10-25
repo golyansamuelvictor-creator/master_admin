@@ -132,8 +132,13 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     String selectedWorkerType = "location"; // "location" or "church"
     String selectedDeptLabel = "All / General";
     String selectedUnitLevel = "All Levels";
-    String? selectedRoleName = user['role'];
-    String? selectedRoleId = user['app_role_id'];
+    // profiles.role stores the role_key (e.g. cell_leader); the dropdown shows display names.
+    String? selectedRoleKey = user['role']?.toString();
+    final currentRole = _appRoles.firstWhere((r) => r['role_key'] == selectedRoleKey, orElse: () => <String, dynamic>{});
+    String? selectedRoleName = (currentRole['display_name'] ?? selectedRoleKey)?.toString();
+    // Optional second role (its duties are added to the primary role's)
+    String? selectedSecondaryKey = (user['secondary_role'] ?? '').toString().isEmpty ? null : user['secondary_role'].toString();
+    if (selectedSecondaryKey != null && !_appRoles.any((r) => r['role_key'] == selectedSecondaryKey)) selectedSecondaryKey = null;
 
     showDialog(
       context: context,
@@ -261,9 +266,29 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                       final match = filteredRoles.firstWhere((r) => r['display_name'] == v, orElse: () => {});
                       setDState(() {
                         selectedRoleName = v;
-                        selectedRoleId = match['id']?.toString();
+                        selectedRoleKey = match['role_key']?.toString();
                       });
                     },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 5. OPTIONAL SECONDARY ROLE
+                  const Text("5. Secondary Role (optional):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedSecondaryKey ?? '',
+                    isExpanded: true,
+                    decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.all(10)),
+                    items: [
+                      const DropdownMenuItem<String>(value: '', child: Text("None")),
+                      ...(_appRoles.where((r) => r['role_key'] != null).toList()
+                            ..sort((a, b) => (a['display_name'] ?? '').toString().compareTo((b['display_name'] ?? '').toString())))
+                          .map((r) => DropdownMenuItem<String>(
+                                value: r['role_key'].toString(),
+                                child: Text((r['display_name'] ?? r['role_key']).toString(), overflow: TextOverflow.ellipsis),
+                              )),
+                    ],
+                    onChanged: (v) => setDState(() => selectedSecondaryKey = (v == null || v.isEmpty) ? null : v),
                   ),
                 ],
               ),
@@ -272,11 +297,14 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: pPurple),
-                onPressed: selectedRoleName == null ? null : () async {
+                onPressed: (selectedRoleName == null || selectedRoleKey == null) ? null : () async {
+                  // Saves the role_key, which the rest of the app looks roles up by
+                  // (it used to save the display name, e.g. "Cell Leader", so the new
+                  // role matched nothing). app_role_id isn't a profiles column, and
+                  // forcing department to 내무부 moved users out of their own reports.
                   await _supabase.from('profiles').update({
-                    'role': selectedRoleName,
-                    if (selectedRoleId != null) 'app_role_id': selectedRoleId,
-                    'department': '내무부', // Preserved constraint
+                    'role': selectedRoleKey,
+                    'secondary_role': selectedSecondaryKey == selectedRoleKey ? null : selectedSecondaryKey,
                   }).eq('id', user['id']);
 
                   Navigator.pop(ctx);

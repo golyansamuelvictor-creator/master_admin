@@ -17,6 +17,7 @@ import '../entry_modules/visitations_entry.dart';
 import '../entry_modules/workers_education_entry.dart';
 import '../entry_modules/daily_participation_entry.dart';
 import '../entry_modules/bb_file_entry.dart';
+import '../core/compilation_rules.dart';
 
 class EntryFormScreen extends StatefulWidget {
   final String sheetName, cellName, location, subLocation, dept, team;
@@ -184,6 +185,37 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     if (members.isEmpty) return 0;
     int filled = reportData.values.where((v) => v.isNotEmpty && v.values.any((val) => val != null && val != "")).length;
     return members.length - filled;
+  }
+
+  bool get _isServiceSheet => widget.sheetName == 'Service Attendance Status';
+
+  /// Pending count that follows the stage being filled. For Service
+  /// Attendance: pre-attendance -> real-time -> make-up, and make-up only
+  /// counts members who were ABSENT in real time (those who attended don't
+  /// need a make-up). Other duties: members with nothing entered yet.
+  ({String label, int count, String detail}) get _pendingInfo {
+    if (members.isEmpty || !_isServiceSheet) {
+      return (label: "Pending entries", count: _pendingCount, detail: "");
+    }
+    String v(String id, String key) => (reportData[id]?[key] ?? '').toString().trim();
+    final ids = members.map((m) => m['id'].toString()).toList();
+    final int prePending = ids.where((id) => v(id, 'attendance_pre').isEmpty).length;
+    final int rtPending = ids.where((id) => v(id, 'attendance_realtime').isEmpty).length;
+    final absent = ids.where((id) {
+      final s = v(id, 'attendance_realtime');
+      return s.isNotEmpty && CompStatus.isNegative(s);
+    }).toList();
+    final int muPending = absent.where((id) => v(id, 'attendance_makeup').isEmpty).length;
+    final bool rtStarted = rtPending < ids.length;
+    final bool muStarted = ids.any((id) => v(id, 'attendance_makeup').isNotEmpty);
+    final String detail =
+        "Pre-attendance: $prePending pending  ·  Real-time: $rtPending pending  ·  Make-up: $muPending of ${absent.length} absentees pending";
+
+    if (muStarted || (rtStarted && rtPending == 0)) {
+      return (label: "Pending make-up", count: muPending, detail: detail);
+    }
+    if (rtStarted) return (label: "Pending real-time", count: rtPending, detail: detail);
+    return (label: "Pending pre-attendance", count: prePending, detail: detail);
   }
 
   void _recordHistory() {
@@ -563,7 +595,11 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           'leader_id': currentUser.id,
           'report_date': dateStr,
           'unit_name': unitName,
+          // Saving again sends the report back through approval from the start
+          // (keeping the old level made an edited report look "final" and
+          // drop out of compilations).
           'verification_status': 'pending',
+          'approval_level': 0,
 
           'location': member?['location'] ?? (widget.location != 'N/A' ? widget.location : null),
           'sub_location': member?['sub_location'] ?? (widget.subLocation != 'N/A' ? widget.subLocation : null),
@@ -658,6 +694,12 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           onConflict: 'member_id,report_date,evang_day',
         );
       } else if (isVisitations) {
+        await supabase.from(_getTargetTable()).upsert(
+          logRows,
+          onConflict: 'member_id,report_date',
+        );
+      } else if (widget.sheetName == 'Offering Status') {
+        // Needs the unique key from 02_schema_fixes.sql; without it every save added new rows
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date',
@@ -1216,10 +1258,19 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                         const SizedBox(width: 8),
                         _uploadCard(isDesktop),
                         const SizedBox(width: 8),
-                        _statCardSmall("Pending entries", "$_pendingCount", Colors.orange[800]!, isDesktop),
+                        _statCardSmall(_pendingInfo.label, "${_pendingInfo.count}", Colors.orange[800]!, isDesktop),
                       ],
                     ),
                   ),
+
+                  if (_isServiceSheet && members.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(sideMargin, 6, sideMargin, 0),
+                      child: Text(
+                        _pendingInfo.detail,
+                        style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.orange[900], fontWeight: FontWeight.w600),
+                      ),
+                    ),
 
                   const SizedBox(height: 10),
 

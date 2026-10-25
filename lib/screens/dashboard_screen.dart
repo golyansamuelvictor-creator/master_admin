@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../main.dart'; 
+import '../main.dart';
 
 // PRESERVED: UserAccount Model
 class UserAccount {
@@ -544,17 +544,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
               final user = _supabase.auth.currentUser;
               final uid = user?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
               final fileExt = pickedFile.name.split('.').last.toLowerCase();
-              final fileName = 'avatar_${uid}_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+              // profile-photos only accepts files inside the user's own folder (<uid>/...)
+              final fileName = '$uid/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+              final contentType = (fileExt == 'jpg' || fileExt == 'jpeg') ? 'image/jpeg' : 'image/$fileExt';
 
               final imageBytes = await pickedFile.readAsBytes();
 
-              await _supabase.storage.from('avatars').uploadBinary(
+              await _supabase.storage.from('profile-photos').uploadBinary(
                 fileName,
                 imageBytes,
-                fileOptions: FileOptions(contentType: 'image/$fileExt', upsert: true),
+                fileOptions: FileOptions(contentType: contentType, upsert: true),
               );
 
-              final publicUrl = _supabase.storage.from('avatars').getPublicUrl(fileName);
+              final publicUrl = _supabase.storage.from('profile-photos').getPublicUrl(fileName);
 
               setModalState(() {
                 avatarCtrl.text = publicUrl;

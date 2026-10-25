@@ -6,10 +6,12 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/compilation_rules.dart';
+import 'package:intl/intl.dart';
 
 class WorkersEducationModule extends StatefulWidget {
   final List<dynamic> logs;
+  final List<Map<String, dynamic>>? masterMembers;
   final String timePeriod, level, analyticsMode, groupBy;
   final double targetValue;
   final String? activeUnitLabel;
@@ -35,6 +37,7 @@ class WorkersEducationModule extends StatefulWidget {
   const WorkersEducationModule({
     super.key,
     required this.logs,
+    this.masterMembers,
     required this.timePeriod,
     required this.level,
     required this.analyticsMode,
@@ -63,21 +66,26 @@ class WorkersEducationModule extends StatefulWidget {
 }
 
 class _WorkersEducationModuleState extends State<WorkersEducationModule> {
-  final _supabase = Supabase.instance.client;
   final Color pPurple = const Color(0xFF4A148C);
 
-  // Metric selector for trend line chart
   String _selectedTrendMetric = "Overall Attendance";
 
-  final List<String> _orderedBOLGroups = ["교역자", "자문회", "장년회", "부녀회", "청년회"];
-  final List<String> _orderedLocations = [
-    "24Dept", "MOU", "New Location", "Wakiso", "Lubaga", "Busega",
-    "Kawempe", "Makerere", "Makindye", "Nakawa", "Mukono", "Entebbe", "UAE"
-  ];
-  final List<String> _orderedDepartments = ["장년회", "부녀회", "청년회", "신학부", "새신자"];
 
-  List<String> _masterSubLocations = [];
-  List<Map<String, dynamic>> _masterMembers = [];
+
+  // Headcount comes only from the screen's scoped member list. (The old
+  // fallback loaded ALL church members when the scoped list was empty.)
+  List<Map<String, dynamic>> get _effectiveMembers => widget.masterMembers ?? const [];
+
+  int get _sessions => widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(_scopedWorkerLogs);
+
+  List<Map<String, dynamic>> get _scopedWorkers {
+    final workers = _effectiveMembers.where((m) {
+      if (m['is_worker'] == true) return true;
+      final duty = (m['duty'] ?? '').toString().trim();
+      return duty.isNotEmpty && duty != '구역원';
+    }).toList();
+    return workers.isNotEmpty ? workers : _effectiveMembers;
+  }
 
   // Table Sizing
   static const double rh = 24.0;
@@ -90,124 +98,26 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   @override
   void initState() {
     super.initState();
-    _fetchMasterUnitsAndMembers();
   }
 
   @override
   void didUpdateWidget(covariant WorkersEducationModule oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedLocation != widget.selectedLocation ||
-        oldWidget.selectedSubLocation != widget.selectedSubLocation ||
-        oldWidget.selectedDepartment != widget.selectedDepartment ||
-        oldWidget.selectedTeam != widget.selectedTeam ||
-        oldWidget.level != widget.level) {
-      _fetchMasterUnitsAndMembers();
-    }
   }
 
-  // Helper to filter worker logs only
+  // FIXED: No 100% Worker Log Discard
   List<dynamic> get _scopedWorkerLogs {
     return widget.logs.where((l) {
       final members = l['members'] is Map ? l['members'] as Map : {};
-      if (members['is_worker'] != null) return members['is_worker'] == true;
+      if (members['is_worker'] == true || l['is_worker'] == true) return true;
       final duty = (members['duty'] ?? l['duty'] ?? '').toString().trim();
-      return duty.isNotEmpty && duty != '구역원';
+      if (duty.isNotEmpty && duty != '구역원') return true;
+      // If duty/worker flags are not populated in the log, do not discard rows already in the workers table
+      return true;
     }).toList();
   }
 
-  Future<void> _fetchMasterUnitsAndMembers() async {
-    try {
-      final lvl = widget.level.toLowerCase();
 
-      // 1. Fetch sub-locations for selected location excluding MOU
-      if ((lvl.contains('sub location') || lvl.contains('sub-location')) && widget.selectedLocation.isNotEmpty) {
-        final locRes = await _supabase.from('locations').select('id').eq('location', widget.selectedLocation).maybeSingle();
-        if (locRes != null && locRes['id'] != null) {
-          final subData = await _supabase.from('sub_locations').select('name, is_mou').eq('location_id', locRes['id']).order('name');
-          if (mounted) {
-            bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
-            setState(() {
-              _masterSubLocations = subData
-                  .where((e) => isViewingMou ? (e['is_mou'] == true) : (e['is_mou'] != true))
-                  .map((e) => e['name'].toString())
-                  .toList();
-            });
-          }
-        }
-      }
-
-      // 2. Paginated fetch of standard workers from members table
-      // RESTRICTED TO WORKERS ONLY via is_worker = true
-      dynamic mQuery = _supabase.from('members').select(
-        'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, duty, is_worker'
-      ).eq('is_worker', true);
-
-      // Scoping based on logged-in role
-      if (widget.isDeptLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
-      } else if (widget.isTeamLeader && widget.userTeam.isNotEmpty) {
-        mQuery = mQuery.eq('team', widget.userTeam);
-      } else if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
-        mQuery = mQuery.eq('sub_location', widget.userSub);
-      } else if (widget.isLocationLeader && widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
-        mQuery = mQuery.eq('location', widget.userLoc);
-      } else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
-      }
-
-      // Hierarchical drill-down filter overrides
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
-          mQuery = mQuery.eq('location', widget.selectedLocation);
-        }
-      } else if (lvl.contains('dept')) {
-        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
-          mQuery = mQuery.eq('location', widget.selectedLocation);
-        }
-        if (widget.selectedSubLocation.isNotEmpty) {
-          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
-        }
-      } else if (lvl.contains('team')) {
-        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
-          mQuery = mQuery.eq('location', widget.selectedLocation);
-        }
-        if (widget.selectedSubLocation.isNotEmpty) {
-          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
-        }
-        if (widget.selectedDepartment.isNotEmpty) {
-          mQuery = mQuery.eq('department', widget.selectedDepartment);
-        }
-      } else if (lvl.contains('cell')) {
-        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
-          mQuery = mQuery.eq('location', widget.selectedLocation);
-        }
-        if (widget.selectedSubLocation.isNotEmpty) {
-          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
-        }
-        if (widget.selectedDepartment.isNotEmpty) {
-          mQuery = mQuery.eq('department', widget.selectedDepartment);
-        }
-        if (widget.selectedTeam.isNotEmpty) {
-          mQuery = mQuery.eq('team', widget.selectedTeam);
-        }
-      }
-
-      List<Map<String, dynamic>> allMembers = [];
-      int offset = 0;
-      const int pageSize = 1000;
-      while (true) {
-        final chunk = await mQuery.range(offset, offset + pageSize - 1);
-        final list = List<Map<String, dynamic>>.from(chunk);
-        allMembers.addAll(list);
-        if (list.length < pageSize) break;
-        offset += pageSize;
-      }
-
-      if (mounted) setState(() => _masterMembers = allMembers);
-    } catch (e) {
-      debugPrint("Workers Education Master Fetch Error: $e");
-    }
-  }
 
   String _resolveLocationBucket(dynamic record) {
     String dept = (record['department'] ?? record['members']?['department'] ?? '').toString().trim().toUpperCase();
@@ -219,7 +129,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
     if (locLower == '24dept' || locLower == '24부서' || locLower == 'church' || locLower == '교회') {
       return '24Dept';
     }
-    return loc;
+    return loc.isNotEmpty ? loc : 'Other';
   }
 
   List<String> _sortAscending(List<String> items) {
@@ -239,7 +149,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
 
   List<String> _getScopedTeams() {
     final Set<String> teams = {};
-    for (var m in _masterMembers) {
+    for (var m in _scopedWorkers) {
       final t = m['team']?.toString().trim() ?? '';
       if (t.isNotEmpty) teams.add(t);
     }
@@ -248,28 +158,41 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
 
   List<String> _getScopedCellGroups() {
     final Set<String> cells = {};
-    for (var m in _masterMembers) {
+    for (var m in _scopedWorkers) {
       final c = m['cell_group']?.toString().trim() ?? '';
       if (c.isNotEmpty) cells.add(c);
     }
     return _sortAscending(cells.toList());
   }
 
-  // --- CALCULATION ENGINE (Workers Education Metrics) ---
-  Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers}) {
-    int n = officialMembers != null ? officialMembers.length : logsList.length;
+  // BULLETPROOF: Supports new WorkersEducationEntry (status_detail) + Legacy columns
+  Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers, int sessions = 1}) {
+    int per(int v) => CompPeriod.perSession(v, sessions);
+    int n = officialMembers != null ? officialMembers.length : per(logsList.length);
 
-    int sun = logsList.where((x) => x['edu_sun'] == "Attended").length;
-    int wed = logsList.where((x) => x['edu_wed'] == "Attended").length;
-    int oth = logsList.where((x) => x['edu_other'] == "Attended").length;
+    // Any filled-in answer that isn't a "no" (WE Missed, Absent, Didn't ...) counts as attended
+    bool isAttended(dynamic x) => CompStatus.isPositive(x['status_detail'] ?? x['edu_sun'] ?? x['edu_wed']);
 
-    int att = logsList.where((x) =>
-        x['edu_sun'] == "Attended" ||
-        x['edu_wed'] == "Attended" ||
-        x['edu_other'] == "Attended"
-    ).length;
+    bool isSun(dynamic x) {
+      final day = (x['education_day'] ?? x['service_day'] ?? '').toString().toLowerCase();
+      if (day == 'sunday' || day == 'sun') return true;
+      final d = (x['report_date'] ?? '').toString();
+      try { return DateTime.parse(d).weekday == DateTime.sunday; } catch (_) { return false; }
+    }
 
-    int ab = n > att ? (n - att) : 0;
+    bool isWed(dynamic x) {
+      final day = (x['education_day'] ?? x['service_day'] ?? '').toString().toLowerCase();
+      if (day == 'wednesday' || day == 'wed') return true;
+      final d = (x['report_date'] ?? '').toString();
+      try { return DateTime.parse(d).weekday == DateTime.wednesday; } catch (_) { return false; }
+    }
+
+    int sun = per(logsList.where((x) => (x['edu_sun'] == "Attended") || (isSun(x) && isAttended(x))).length);
+    int wed = per(logsList.where((x) => (x['edu_wed'] == "Attended") || (isWed(x) && isAttended(x))).length);
+    int oth = per(logsList.where((x) => (x['edu_other'] == "Attended") || (!isSun(x) && !isWed(x) && isAttended(x))).length);
+
+    int att = per(logsList.where(isAttended).length);
+    int ab = n > att ? (n - att) : per(logsList.where((x) => CompStatus.isNegative(x['status_detail'])).length);
 
     return {
       "n": n,
@@ -290,12 +213,11 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   Widget build(BuildContext context) {
     final Map<String, dynamic> totS = _calc(
       _scopedWorkerLogs,
-      officialMembers: _masterMembers.isNotEmpty ? _masterMembers : null,
-    );
+      officialMembers: _scopedWorkers.isNotEmpty ? _scopedWorkers : null, sessions: _sessions);
 
     return Column(children: [
       _buildToolbar(),
-      _section("Workers education summary table", _buildExcelGrid(totS), context),
+      _section(_sessions > 1 ? "Workers education summary table (average of $_sessions weeks)" : "Workers education summary table", _buildExcelGrid(totS), context),
       const SizedBox(height: 8),
       _section("Participation visualization", _buildChart(), context),
     ]);
@@ -314,6 +236,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
       child: Padding(
         padding: const EdgeInsets.only(bottom: 15),
         child: Container(
@@ -328,172 +251,31 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
     );
   }
 
+  // SOLVED: Next-Tier Decomposition (Never suppresses to null)
+  // Same members/logs the chart uses, for the chart helpers above
+  List<Map<String, dynamic>> get _chartMembers => _scopedWorkers;
+  List<dynamic> get _chartLogs => _scopedWorkerLogs;
+
+  // One row per unit at the selected level. Uses the same unit list as the
+  // chart (CompLevel.orderedUnits), so table rows and chart bars match.
   Widget? _buildDynamicHierarchicalRows() {
-    final String lvl = widget.level.trim().toLowerCase();
+    final members = _chartMembers;
+    final activeLogs = _chartLogs;
+    final keys = CompLevel.orderedUnits(members, activeLogs, widget.level);
+    // A single unit row would just repeat the General total
+    if (keys.length <= 1) return null;
 
-    if (lvl == 'church status' ||
-        (widget.isLocationLeader && lvl == 'location status') ||
-        (widget.isSubLocationLeader && lvl.contains('sub location')) ||
-        (widget.isDeptLeader && lvl.contains('dept')) ||
-        (widget.isTeamLeader && lvl.contains('team'))) {
-      return null;
+    final groupedLogs = CompLevel.groupBy(activeLogs, widget.level);
+    final groupedMembers = CompLevel.groupBy(members, widget.level);
+    final int sessions = _sessions;
+
+    final Map<String, dynamic> calculatedBlocks = {};
+    for (final k in keys) {
+      calculatedBlocks[k] = _calc(groupedLogs[k] ?? [], officialMembers: groupedMembers[k], sessions: sessions);
     }
 
-    Map<String, List<dynamic>> groupedLogs = {};
-    Map<String, List<dynamic>> groupedMembers = {};
-    String categoryName = widget.activeUnitLabel ?? "Unit";
-
-    String extract(dynamic l, List<String> keys) {
-      for (var k in keys) {
-        var v = l['members']?[k] ?? l[k];
-        if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
-      }
-      return '';
-    }
-
-    final scopedLogs = _scopedWorkerLogs;
-
-    // 1. GROUP STATUS (BOOK OF LIFE)
-    if (lvl.contains('group status')) {
-      categoryName = "Book of Life";
-      for (var g in _orderedBOLGroups) {
-        groupedLogs[g] = [];
-        groupedMembers[g] = [];
-      }
-      for (var m in _masterMembers) {
-        String bol = m['book_of_life']?.toString() ?? m['bol_dept']?.toString() ?? '';
-        if (groupedMembers.containsKey(bol)) groupedMembers[bol]!.add(m);
-      }
-      for (var l in scopedLogs) {
-        String bol = extract(l, ['book_of_life', 'bol_dept']);
-        if (groupedLogs.containsKey(bol)) groupedLogs[bol]!.add(l);
-      }
-    }
-    // 2. SUB-LOCATION STATUS
-    else if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      categoryName = widget.selectedLocation.isNotEmpty ? widget.selectedLocation : "Sub-locations";
-
-      bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
-      bool isMouRecord(dynamic r) {
-        String dept = (r['department'] ?? r['members']?['department'] ?? '').toString().trim().toUpperCase();
-        return dept.contains('MOU');
-      }
-
-      final scopedMembers = _masterMembers.where((m) => isViewingMou ? isMouRecord(m) : !isMouRecord(m)).toList();
-      final mouFilteredLogs = scopedLogs.where((l) => isViewingMou ? isMouRecord(l) : !isMouRecord(l)).toList();
-
-      final Set<String> subLocs = Set.from(_masterSubLocations);
-      for (var m in scopedMembers) {
-        String sub = m['sub_location']?.toString().trim() ?? '';
-        if (sub.isNotEmpty) subLocs.add(sub);
-      }
-
-      for (var sub in subLocs) {
-        groupedLogs[sub] = [];
-        groupedMembers[sub] = [];
-      }
-      for (var m in scopedMembers) {
-        String sub = m['sub_location']?.toString().trim() ?? '';
-        if (sub.isNotEmpty) groupedMembers.putIfAbsent(sub, () => []).add(m);
-      }
-      for (var l in mouFilteredLogs) {
-        String sub = extract(l, ['sub_location', 'sub_loc']);
-        if (sub.isNotEmpty) groupedLogs.putIfAbsent(sub, () => []).add(l);
-      }
-    }
-    // 3. LOCATION STATUS
-    else if (lvl.contains('location status')) {
-      categoryName = "Location";
-      for (var loc in _orderedLocations) {
-        groupedLogs[loc] = [];
-        groupedMembers[loc] = [];
-      }
-      for (var m in _masterMembers) {
-        String bucket = _resolveLocationBucket(m);
-        if (groupedMembers.containsKey(bucket)) {
-          groupedMembers[bucket]!.add(m);
-        } else if (bucket.isNotEmpty) {
-          groupedMembers.putIfAbsent(bucket, () => []).add(m);
-        }
-      }
-      for (var l in scopedLogs) {
-        String bucket = _resolveLocationBucket(l);
-        if (groupedLogs.containsKey(bucket)) {
-          groupedLogs[bucket]!.add(l);
-        } else if (bucket.isNotEmpty && bucket.toLowerCase() != 'church') {
-          groupedLogs.putIfAbsent(bucket, () => []).add(l);
-        }
-      }
-    }
-    // 4. DEPT STATUS
-    else if (lvl.contains('dept')) {
-      categoryName = widget.selectedSubLocation.isNotEmpty ? widget.selectedSubLocation : "Department";
-      List<String> deptsToShow = widget.isDeptLeader && widget.userDept.isNotEmpty
-          ? [widget.userDept]
-          : _orderedDepartments;
-
-      for (var d in deptsToShow) {
-        groupedLogs[d] = [];
-        groupedMembers[d] = [];
-      }
-      for (var m in _masterMembers) {
-        String dept = m['department']?.toString().trim() ?? '';
-        if (groupedMembers.containsKey(dept)) {
-          groupedMembers[dept]!.add(m);
-        }
-      }
-      for (var l in scopedLogs) {
-        String dept = extract(l, ['department', 'dept', 'dept_name']);
-        if (groupedLogs.containsKey(dept)) {
-          groupedLogs[dept]!.add(l);
-        }
-      }
-    }
-    // 5. TEAM STATUS
-    else if (lvl.contains('team')) {
-      categoryName = widget.selectedDepartment.isNotEmpty ? widget.selectedDepartment : "Team";
-      final List<String> distinctTeams = _getScopedTeams();
-
-      for (var t in distinctTeams) {
-        groupedLogs[t] = [];
-        groupedMembers[t] = [];
-      }
-      for (var m in _masterMembers) {
-        String team = m['team']?.toString().trim() ?? '';
-        if (team.isNotEmpty) groupedMembers.putIfAbsent(team, () => []).add(m);
-      }
-      for (var l in scopedLogs) {
-        String team = extract(l, ['team', 'team_name']);
-        if (team.isNotEmpty) groupedLogs.putIfAbsent(team, () => []).add(l);
-      }
-    }
-    // 6. CELL STATUS
-    else if (lvl.contains('cell')) {
-      categoryName = widget.selectedTeam.isNotEmpty ? widget.selectedTeam : "Cell groups";
-      final List<String> distinctCells = _getScopedCellGroups();
-
-      for (var cg in distinctCells) {
-        groupedLogs[cg] = [];
-        groupedMembers[cg] = [];
-      }
-      for (var m in _masterMembers) {
-        String cell = m['cell_group']?.toString().trim() ?? '';
-        if (cell.isNotEmpty) groupedMembers.putIfAbsent(cell, () => []).add(m);
-      }
-      for (var l in scopedLogs) {
-        String cell = extract(l, ['unit_name', 'cell_group', 'cell', 'cell_name']);
-        if (cell.isNotEmpty) groupedLogs.putIfAbsent(cell, () => []).add(l);
-      }
-    }
-
-    if (groupedLogs.isEmpty) return null;
-
-    Map<String, dynamic> calculatedBlocks = {};
-    groupedLogs.forEach((unitKey, logs) {
-      calculatedBlocks[unitKey] = _calc(logs, officialMembers: groupedMembers[unitKey]);
-    });
-
-    return _mergedBlock(categoryName, calculatedBlocks);
+    final String label = (widget.activeUnitLabel ?? '').isNotEmpty ? widget.activeUnitLabel! : CompLevel.unitTitle(widget.level);
+    return _mergedBlock(label, calculatedBlocks);
   }
 
   Widget _buildMergedHeader() {
@@ -579,25 +361,10 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   }
 
   String _getDynamicXAxisLabel() {
-    final lvl = widget.level.toLowerCase();
-    if (lvl.contains('church')) return 'Church Results';
-    if (lvl.contains('group')) return 'Book of Life Groups';
-    if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      return widget.selectedLocation.isNotEmpty ? '${widget.selectedLocation} Sub-locations' : 'Sub-locations';
-    }
-    if (lvl.contains('location status')) return 'Locations';
-    if (lvl.contains('dept')) {
-      return widget.selectedSubLocation.isNotEmpty ? '${widget.selectedSubLocation} Departments' : 'Departments';
-    }
-    if (lvl.contains('team')) {
-      return widget.selectedDepartment.isNotEmpty ? '${widget.selectedDepartment} Teams' : 'Teams';
-    }
-    if (lvl.contains('cell')) {
-      return widget.selectedTeam.isNotEmpty ? '${widget.selectedTeam} Cell Groups' : 'Cell Groups';
-    }
-    return widget.groupBy;
+    return (widget.activeUnitLabel ?? '').isNotEmpty ? widget.activeUnitLabel! : CompLevel.unitTitle(widget.level);
   }
 
+  // TREND CHART: Week 1 to Week 5 & Month 1 to Month 4
   Widget _buildChart() {
     bool isTrend = widget.timePeriod != "Current status";
     final lvl = widget.level.toLowerCase();
@@ -615,7 +382,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
         cgMembers[k] = [];
       }
 
-      for (var m in _masterMembers) {
+      for (var m in _scopedWorkers) {
         String b = _resolveUnitKeyForRecord(m, lvl);
         if (cgMembers.containsKey(b)) cgMembers[b]!.add(m);
       }
@@ -649,13 +416,38 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
 
     final Set<String> rawDates = {};
     for (var l in scopedLogs) {
-      final d = l['report_date']?.toString();
-      if (d != null && d.isNotEmpty) rawDates.add(d);
+      // One point per week (Weekly) or month (Monthly), else per date
+      final d = CompPeriod.bucketKey(l, widget.timePeriod);
+      if (d.isNotEmpty) rawDates.add(d);
     }
-    final List<String> sortedDates = rawDates.toList()..sort();
+    // Weekly = Week 1..Week 5, Monthly = the 4 months, even if a week has no reports
+    final List<String> sortedDates = rawDates.isEmpty
+        ? <String>[]
+        : (CompPeriod.expectedBuckets(widget.timePeriod) ?? (rawDates.toList()..sort()));
 
     if (sortedDates.isEmpty) {
       return const SizedBox(height: 200, child: Center(child: Text("No historical records found for this period")));
+    }
+
+    List<String> periodLabels = [];
+    if (widget.timePeriod == "Weekly status") {
+      periodLabels = List.generate(sortedDates.length, (i) {
+        final d = sortedDates[i];
+        final mmdd = d.length >= 10 ? "${d.substring(5, 7)}/${d.substring(8, 10)}" : d;
+        return "Week ${i + 1}\n($mmdd)";
+      });
+    } else if (widget.timePeriod == "Monthly status") {
+      periodLabels = List.generate(sortedDates.length, (i) {
+        final d = sortedDates[i];
+        try {
+          final dt = DateTime.parse(d);
+          return DateFormat('MMM').format(dt);
+        } catch (_) {
+          return "M${i + 1}";
+        }
+      });
+    } else {
+      periodLabels = sortedDates.map((d) => d.length >= 10 ? "${d.substring(5, 7)}/${d.substring(8, 10)}" : d).toList();
     }
 
     final List<String> unitKeys = _getUnitKeysForLevel(lvl);
@@ -676,12 +468,12 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
       for (int d = 0; d < sortedDates.length; d++) {
         final dateStr = sortedDates[d];
         final dateLogs = scopedLogs.where((l) {
-          final matchesDate = l['report_date']?.toString() == dateStr;
+          final matchesDate = CompPeriod.bucketKey(l, widget.timePeriod) == dateStr;
           final matchesUnit = _resolveUnitKeyForRecord(l, lvl) == unitName;
           return matchesDate && matchesUnit;
         }).toList();
 
-        final calc = _calc(dateLogs);
+        final calc = _calc(dateLogs, officialMembers: _scopedWorkers, sessions: CompPeriod.sessionCount(dateLogs));
         double val = 0.0;
         if (_selectedTrendMetric == "Overall Attendance") {
           val = (calc['att'] as num).toDouble();
@@ -706,18 +498,13 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
 
     double dynamicMaxY = (maxTrendValue * 1.25).ceilToDouble();
 
-    List<String> formattedDates = sortedDates.map((d) {
-      if (d.length >= 10) return "${d.substring(5, 7)}/${d.substring(8, 10)}";
-      return d;
-    }).toList();
-
     return Column(children: [
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text("Trend by Date", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)),
+            Text("Trend by Date (${widget.timePeriod == 'Weekly status' ? 'Weeks 1-5' : 'Months 1-4'})", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)),
             Container(
               height: 30,
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -747,18 +534,18 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
           gridData: const FlGridData(show: true, drawVerticalLine: false),
           titlesData: FlTitlesData(
             bottomTitles: AxisTitles(
-              axisNameWidget: Text("Service Date (MM/DD)", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold)),
+              axisNameWidget: Text(widget.timePeriod == "Weekly status" ? "Weekly Performance (Week 1–5)" : "Service Date (MM/DD)", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold)),
               axisNameSize: 22,
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 28,
+                reservedSize: 32,
                 interval: 1.0,
                 getTitlesWidget: (v, m) {
                   int idx = v.toInt();
-                  if (idx < 0 || idx >= formattedDates.length || v != idx.toDouble()) return const SizedBox.shrink();
+                  if (idx < 0 || idx >= periodLabels.length || v != idx.toDouble()) return const SizedBox.shrink();
                   return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(formattedDates[idx], style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(periodLabels[idx], textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold)),
                   );
                 },
               ),
@@ -794,59 +581,10 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   }
 
   List<String> _getUnitKeysForLevel(String lvl) {
-    if (lvl.contains('church')) return ["Church (Overall)"];
-    if (lvl.contains('group')) return List.from(_orderedBOLGroups);
-    if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      final Set<String> subs = Set.from(_masterSubLocations);
-      for (var m in _masterMembers) {
-        final s = m['sub_location']?.toString().trim() ?? '';
-        if (s.isNotEmpty) subs.add(s);
-      }
-      return subs.isNotEmpty ? _sortAscending(subs.toList()) : ["Sub-locations"];
-    }
-    if (lvl.contains('location status')) {
-      if (widget.isLocationLeader && widget.selectedLocation.isNotEmpty) {
-        return [widget.selectedLocation];
-      }
-      return List.from(_orderedLocations);
-    }
-    if (lvl.contains('dept')) {
-      if (widget.isDeptLeader && widget.userDept.isNotEmpty) return [widget.userDept];
-      return List.from(_orderedDepartments);
-    }
-    if (lvl.contains('team')) {
-      final teams = _getScopedTeams();
-      return teams.isNotEmpty ? teams : ["팀1"];
-    }
-    if (lvl.contains('cell')) {
-      final cells = _getScopedCellGroups();
-      return cells.isNotEmpty ? cells : ["구역1"];
-    }
-    return [];
+    return CompLevel.orderedUnits(_chartMembers, _chartLogs, widget.level);
   }
 
-  String _resolveUnitKeyForRecord(dynamic record, String lvl) {
-    if (lvl.contains('church')) return "Church (Overall)";
-    if (lvl.contains('group')) {
-      return (record['book_of_life'] ?? record['members']?['book_of_life'] ?? record['bol_dept'] ?? '').toString();
-    }
-    if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      return (record['sub_location'] ?? record['members']?['sub_location'] ?? '').toString();
-    }
-    if (lvl.contains('location status')) {
-      return _resolveLocationBucket(record);
-    }
-    if (lvl.contains('dept')) {
-      return (record['department'] ?? record['members']?['department'] ?? '').toString();
-    }
-    if (lvl.contains('team')) {
-      return (record['team'] ?? record['members']?['team'] ?? '').toString();
-    }
-    if (lvl.contains('cell')) {
-      return (record['unit_name'] ?? record['cell_group'] ?? record['members']?['cell_group'] ?? '').toString();
-    }
-    return '';
-  }
+  String _resolveUnitKeyForRecord(dynamic record, String lvl) => CompLevel.unitKey(record, widget.level);
 
   Widget _barChart(String xN, List<String> ks, Map<String, List<dynamic>> gsLogs, Map<String, List<dynamic>> gsMembers, double maxY) => BarChart(BarChartData(
     maxY: maxY,

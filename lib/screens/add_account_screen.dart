@@ -76,6 +76,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   String? selectedAccountType = "Worker";
   String selectedUnitCategory = "Location Worker";
   String? selectedChurchRole;
+  String? selectedSecondaryRole; // optional second role in the unit (gives that role's duties too)
   String? selectedLocation;
   String? selectedSubLocation;
   String? selectedDept;
@@ -469,6 +470,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     }
 
     if (!dynamicRoles.contains(selectedChurchRole)) selectedChurchRole = null;
+    if (!dynamicRoles.contains(selectedSecondaryRole) || selectedSecondaryRole == selectedChurchRole) selectedSecondaryRole = null;
     _isDualTeamSecretary = false;
     debugPrint("Roles: total ${_roleDataMap.length}, shown ${dynamicRoles.length} "
         "(type=$selectedAccountType, dept=${selectedOfficialDeptCode ?? '-'})");
@@ -849,7 +851,9 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
       if (!mounted) return;
 
       final primaryRoleKey = _convertRole(selectedChurchRole);
-      final secondaryRoleKey = (_isTeamLeaderRole && _isDualTeamSecretary) ? 'team_sec' : null;
+      final String? secondaryRoleKey = selectedSecondaryRole != null
+          ? _convertRole(selectedSecondaryRole)
+          : ((_isTeamLeaderRole && _isDualTeamSecretary) ? 'team_sec' : null);
 
       String locStr;
       String? subLocStr;
@@ -1137,10 +1141,24 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                 setState(() {
                   selectedChurchRole = v;
                   if (!_isTeamLeaderRole) _isDualTeamSecretary = false;
+                  if (selectedSecondaryRole == v) selectedSecondaryRole = null;
                 });
               }, hint: _roleHint),
 
-              if (!_isChurchWorker && _isTeamLeaderRole)
+              // Optional second role in the same unit; its duties are added to the
+              // primary role's (Reports screen shows both sets of duties).
+              if (selectedAccountType != "Saint" && selectedChurchRole != null && dynamicRoles.length > 1)
+                _sideBySideDropdown(
+                  "Secondary Role (optional)",
+                  ["None", ...dynamicRoles.where((r) => r != selectedChurchRole)],
+                  selectedSecondaryRole ?? "None",
+                  (v) => setState(() {
+                    selectedSecondaryRole = (v == null || v == "None") ? null : v;
+                    if (selectedSecondaryRole != null) _isDualTeamSecretary = false;
+                  }),
+                ),
+
+              if (!_isChurchWorker && _isTeamLeaderRole && selectedSecondaryRole == null)
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.15)))),

@@ -23,7 +23,7 @@ class ComplianceLogic {
         table = 'departments';
       } else {
         table = 'locations';
-        column = 'locations';
+        column = 'location';
       }
 
       final res = await _supabase.from(table).select(column);

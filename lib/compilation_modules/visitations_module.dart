@@ -5,10 +5,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/compilation_rules.dart';
 
 class VisitationsModule extends StatefulWidget {
   final List<dynamic> logs;
+  final List<Map<String, dynamic>>? masterMembers;
   final String level;
   final String category;
   final String timePeriod;
@@ -38,6 +39,7 @@ class VisitationsModule extends StatefulWidget {
   const VisitationsModule({
     super.key,
     required this.logs,
+    this.masterMembers,
     required this.level,
     this.category = 'All',
     this.timePeriod = 'Weekly status',
@@ -67,21 +69,18 @@ class VisitationsModule extends StatefulWidget {
 }
 
 class _VisitationsModuleState extends State<VisitationsModule> {
-  final _supabase = Supabase.instance.client;
   final Color pPurple = const Color(0xFF4A148C);
   late String _activeCategory;
   String _selectedChartUnit = "General total";
 
   final List<String> _categories = ["All", "Lta", "H.m", "Offline", "Offering", "Evangelism", "Education"];
-  final List<String> _orderedBOLGroups = ["교역자", "자문회", "장년회", "부녀회", "청년회"];
-  final List<String> _orderedLocations = [
-    "24Dept", "MOU", "New Location", "Wakiso", "Lubaga", "Busega",
-    "Kawempe", "Makerere", "Makindye", "Nakawa", "Mukono", "Entebbe", "UAE"
-  ];
-  final List<String> _orderedDepartments = ["장년회", "부녀회", "청년회", "신학부", "새신자"];
 
-  List<String> _masterSubLocations = [];
-  List<Map<String, dynamic>> _masterMembers = [];
+
+  // Headcount comes only from the screen's scoped member list. (The old
+  // fallback loaded ALL church members when the scoped list was empty.)
+  List<Map<String, dynamic>> get _effectiveMembers => widget.masterMembers ?? const [];
+
+  int get _sessions => widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(widget.logs);
 
   static const double rh = 24.0;
   static const double hh = 28.0;
@@ -94,24 +93,21 @@ class _VisitationsModuleState extends State<VisitationsModule> {
   void initState() {
     super.initState();
     _activeCategory = (widget.category.isNotEmpty && widget.category.toLowerCase() != 'lta') ? widget.category : "All";
-    _fetchMasterUnitsAndMembers();
   }
 
   @override
   void didUpdateWidget(covariant VisitationsModule oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.category != oldWidget.category && widget.category.isNotEmpty) {
-      _activeCategory = widget.category;
-    }
-    if (oldWidget.selectedLocation != widget.selectedLocation ||
+    if (oldWidget.level != widget.level ||
+        oldWidget.selectedLocation != widget.selectedLocation ||
         oldWidget.selectedSubLocation != widget.selectedSubLocation ||
         oldWidget.selectedDepartment != widget.selectedDepartment ||
-        oldWidget.selectedTeam != widget.selectedTeam ||
-        oldWidget.level != widget.level) {
+        oldWidget.selectedTeam != widget.selectedTeam) {
       _selectedChartUnit = "General total";
-      _fetchMasterUnitsAndMembers();
     }
   }
+
+
 
   bool _matchCategory(String? dbValue, String target) {
     if (dbValue == null || dbValue.trim().isEmpty) return false;
@@ -132,122 +128,6 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     return s == 'negative' || s == 'neg' || s.startsWith('neg');
   }
 
-  // --- STRICT CASCADING FILTER ---
-  List<T> _applyCascade<T>(List<T> items) {
-    final lvl = widget.level.toLowerCase();
-    final loc = widget.selectedLocation.trim();
-    final sub = widget.selectedSubLocation.trim();
-    final dept = widget.selectedDepartment.trim();
-    final team = widget.selectedTeam.trim();
-
-    return items.where((item) {
-      final map = item is Map<String, dynamic>
-          ? item
-          : (item is Map && item.containsKey('members') && item['members'] is Map
-              ? item['members'] as Map
-              : (item is Map ? item : {}));
-
-      final iLoc = (map['location'] ?? '').toString().trim();
-      final iSub = (map['sub_location'] ?? '').toString().trim();
-      final iDept = (map['department'] ?? '').toString().trim();
-      final iTeam = (map['team'] ?? '').toString().trim();
-
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church' && iLoc.toLowerCase() != loc.toLowerCase()) return false;
-      } else if (lvl.contains('dept')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church' && iLoc.toLowerCase() != loc.toLowerCase()) return false;
-        if (sub.isNotEmpty && iSub.toLowerCase() != sub.toLowerCase()) return false;
-      } else if (lvl.contains('team')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church' && iLoc.toLowerCase() != loc.toLowerCase()) return false;
-        if (sub.isNotEmpty && iSub.toLowerCase() != sub.toLowerCase()) return false;
-        if (dept.isNotEmpty && iDept.toLowerCase() != dept.toLowerCase()) return false;
-      } else if (lvl.contains('cell')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church' && iLoc.toLowerCase() != loc.toLowerCase()) return false;
-        if (sub.isNotEmpty && iSub.toLowerCase() != sub.toLowerCase()) return false;
-        if (dept.isNotEmpty && iDept.toLowerCase() != dept.toLowerCase()) return false;
-        if (team.isNotEmpty && iTeam.toLowerCase() != team.toLowerCase()) return false;
-      }
-      return true;
-    }).toList();
-  }
-
-  Future<void> _fetchMasterUnitsAndMembers() async {
-    try {
-      final lvl = widget.level.toLowerCase();
-
-      // 1. Fetch sub-locations strictly for the selected location
-      if ((lvl.contains('sub location') || lvl.contains('sub-location')) && widget.selectedLocation.isNotEmpty) {
-        final locRes = await _supabase.from('locations').select('id').eq('location', widget.selectedLocation).maybeSingle();
-        if (locRes != null && locRes['id'] != null) {
-          final subData = await _supabase.from('sub_locations').select('name, is_mou').eq('location_id', locRes['id']).order('name');
-          if (mounted) {
-            bool isViewingMou = widget.selectedLocation.toUpperCase() == 'MOU';
-            setState(() {
-              _masterSubLocations = subData
-                  .where((e) => isViewingMou ? (e['is_mou'] == true) : (e['is_mou'] != true))
-                  .map((e) => e['name'].toString())
-                  .toList();
-            });
-          }
-        }
-      }
-
-      // 2. Query members with strict cascading scope
-      dynamic mQuery = _supabase.from('members').select(
-        'id, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, duty'
-      );
-
-      final loc = widget.selectedLocation.trim();
-      final sub = widget.selectedSubLocation.trim();
-      final dept = widget.selectedDepartment.trim();
-      final team = widget.selectedTeam.trim();
-
-      if (widget.isDeptLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
-      } else if (widget.isTeamLeader && widget.userTeam.isNotEmpty) {
-        mQuery = mQuery.eq('team', widget.userTeam);
-      } else if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
-        mQuery = mQuery.eq('sub_location', widget.userSub);
-      } else if (widget.isLocationLeader && widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
-        mQuery = mQuery.eq('location', widget.userLoc);
-      } else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept);
-      }
-
-      // Hierarchy overrides
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church') mQuery = mQuery.eq('location', loc);
-      } else if (lvl.contains('dept')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church') mQuery = mQuery.eq('location', loc);
-        if (sub.isNotEmpty) mQuery = mQuery.eq('sub_location', sub);
-      } else if (lvl.contains('team')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church') mQuery = mQuery.eq('location', loc);
-        if (sub.isNotEmpty) mQuery = mQuery.eq('sub_location', sub);
-        if (dept.isNotEmpty) mQuery = mQuery.eq('department', dept);
-      } else if (lvl.contains('cell')) {
-        if (loc.isNotEmpty && loc.toLowerCase() != 'church') mQuery = mQuery.eq('location', loc);
-        if (sub.isNotEmpty) mQuery = mQuery.eq('sub_location', sub);
-        if (dept.isNotEmpty) mQuery = mQuery.eq('department', dept);
-        if (team.isNotEmpty) mQuery = mQuery.eq('team', team);
-      }
-
-      List<Map<String, dynamic>> allMembers = [];
-      int offset = 0;
-      const int pageSize = 1000;
-      while (true) {
-        final chunk = await mQuery.range(offset, offset + pageSize - 1);
-        final list = List<Map<String, dynamic>>.from(chunk);
-        allMembers.addAll(list);
-        if (list.length < pageSize) break;
-        offset += pageSize;
-      }
-
-      if (mounted) setState(() => _masterMembers = allMembers);
-    } catch (e) {
-      debugPrint("Visitations Master Fetch Error: $e");
-    }
-  }
-
   String _resolveLocationBucket(dynamic record) {
     String dept = (record['department'] ?? record['members']?['department'] ?? '').toString().trim().toUpperCase();
     if (dept.contains('MOU')) return 'MOU';
@@ -258,7 +138,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     if (locLower == '24dept' || locLower == '24부서' || locLower == 'church' || locLower == '교회') {
       return '24Dept';
     }
-    return loc;
+    return loc.isNotEmpty ? loc : 'Other';
   }
 
   List<String> _sortAscending(List<String> items) {
@@ -278,7 +158,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
 
   List<String> _getScopedTeams() {
     final Set<String> teams = {};
-    for (var m in _applyCascade(_masterMembers)) {
+    for (var m in _effectiveMembers) {
       final t = m['team']?.toString().trim() ?? '';
       if (t.isNotEmpty) teams.add(t);
     }
@@ -287,7 +167,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
 
   List<String> _getScopedCellGroups() {
     final Set<String> cells = {};
-    for (var m in _applyCascade(_masterMembers)) {
+    for (var m in _effectiveMembers) {
       final c = m['cell_group']?.toString().trim() ?? '';
       if (c.isNotEmpty) cells.add(c);
     }
@@ -299,7 +179,8 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     return list.where((l) => _matchCategory(l['visitation_reason']?.toString(), _activeCategory)).toList();
   }
 
-  Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers}) {
+  // Visits are counted over the whole period (not averaged); [sessions] is accepted for a shared signature.
+  Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers, int sessions = 1}) {
     int n = officialMembers != null ? officialMembers.length : logsList.length;
 
     final catLogs = _filterLogsByCategory(logsList);
@@ -331,17 +212,13 @@ class _VisitationsModuleState extends State<VisitationsModule> {
 
   @override
   Widget build(BuildContext context) {
-    final cascadedMembers = _applyCascade(_masterMembers);
-    final cascadedLogs = _applyCascade(widget.logs);
-
     final Map<String, dynamic> totS = _calc(
-      cascadedLogs,
-      officialMembers: cascadedMembers.isNotEmpty ? cascadedMembers : null,
+      widget.logs,
+      officialMembers: _effectiveMembers.isNotEmpty ? _effectiveMembers : null,
     );
 
     final Map<String, Map<String, dynamic>> blockData = _getCalculatedBlocksMap();
 
-    // Determine current chart data based on selected unit
     Map<String, dynamic> activeChartData = totS;
     if (_selectedChartUnit != "General total" && blockData.containsKey(_selectedChartUnit)) {
       activeChartData = blockData[_selectedChartUnit]!;
@@ -420,115 +297,31 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     );
   }
 
+  // SOLVED: Next-Tier Decomposition (Never suppresses to null)
+  List<Map<String, dynamic>> get _chartMembers => _effectiveMembers;
+  List<dynamic> get _chartLogs => widget.logs;
+
+  // One entry per unit at the selected level; the table, the unit chips and
+  // the charts all read this map, so they always show the same units.
   Map<String, Map<String, dynamic>> _getCalculatedBlocksMap() {
-    final String lvl = widget.level.trim().toLowerCase();
-    Map<String, List<dynamic>> groupedLogs = {};
-    Map<String, List<dynamic>> groupedMembers = {};
+    final members = _chartMembers;
+    final activeLogs = _chartLogs;
+    final keys = CompLevel.orderedUnits(members, activeLogs, widget.level);
+    final groupedLogs = CompLevel.groupBy(activeLogs, widget.level);
+    final groupedMembers = CompLevel.groupBy(members, widget.level);
+    final int sessions = 1;
 
-    String extract(dynamic l, List<String> keys) {
-      for (var k in keys) {
-        var v = l['members']?[k] ?? l[k];
-        if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
-      }
-      return '';
+    final Map<String, Map<String, dynamic>> calculatedBlocks = {};
+    for (final k in keys) {
+      calculatedBlocks[k] = _calc(groupedLogs[k] ?? [], officialMembers: groupedMembers[k], sessions: sessions);
     }
-
-    final scopedMembers = _applyCascade(_masterMembers);
-    final scopedLogs = _applyCascade(widget.logs);
-
-    if (lvl.contains('group status')) {
-      for (var g in _orderedBOLGroups) { groupedLogs[g] = []; groupedMembers[g] = []; }
-      for (var m in scopedMembers) {
-        String bol = m['book_of_life']?.toString() ?? m['bol_dept']?.toString() ?? '';
-        if (groupedMembers.containsKey(bol)) groupedMembers[bol]!.add(m);
-      }
-      for (var l in scopedLogs) {
-        String bol = extract(l, ['book_of_life', 'bol_dept']);
-        if (groupedLogs.containsKey(bol)) groupedLogs[bol]!.add(l);
-      }
-    } else if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-      final Set<String> subLocs = Set.from(_masterSubLocations);
-      for (var m in scopedMembers) {
-        String sub = m['sub_location']?.toString().trim() ?? '';
-        if (sub.isNotEmpty) subLocs.add(sub);
-      }
-      for (var sub in subLocs) { groupedLogs[sub] = []; groupedMembers[sub] = []; }
-      for (var m in scopedMembers) {
-        String sub = m['sub_location']?.toString().trim() ?? '';
-        if (sub.isNotEmpty) groupedMembers.putIfAbsent(sub, () => []).add(m);
-      }
-      for (var l in scopedLogs) {
-        String sub = extract(l, ['sub_location', 'sub_loc']);
-        if (sub.isNotEmpty) groupedLogs.putIfAbsent(sub, () => []).add(l);
-      }
-    } else if (lvl.contains('location status')) {
-      for (var loc in _orderedLocations) { groupedLogs[loc] = []; groupedMembers[loc] = []; }
-      for (var m in scopedMembers) {
-        String bucket = _resolveLocationBucket(m);
-        if (groupedMembers.containsKey(bucket)) groupedMembers[bucket]!.add(m);
-        else if (bucket.isNotEmpty) groupedMembers.putIfAbsent(bucket, () => []).add(m);
-      }
-      for (var l in scopedLogs) {
-        String bucket = _resolveLocationBucket(l);
-        if (groupedLogs.containsKey(bucket)) groupedLogs[bucket]!.add(l);
-        else if (bucket.isNotEmpty && bucket.toLowerCase() != 'church') groupedLogs.putIfAbsent(bucket, () => []).add(l);
-      }
-    } else if (lvl.contains('dept')) {
-      List<String> deptsToShow = widget.isDeptLeader && widget.userDept.isNotEmpty ? [widget.userDept] : _orderedDepartments;
-      for (var d in deptsToShow) { groupedLogs[d] = []; groupedMembers[d] = []; }
-      for (var m in scopedMembers) {
-        String dept = m['department']?.toString().trim() ?? '';
-        if (groupedMembers.containsKey(dept)) groupedMembers[dept]!.add(m);
-      }
-      for (var l in scopedLogs) {
-        String dept = extract(l, ['department', 'dept', 'dept_name']);
-        if (groupedLogs.containsKey(dept)) groupedLogs[dept]!.add(l);
-      }
-    } else if (lvl.contains('team')) {
-      final List<String> distinctTeams = _getScopedTeams();
-      for (var t in distinctTeams) { groupedLogs[t] = []; groupedMembers[t] = []; }
-      for (var m in scopedMembers) {
-        String team = m['team']?.toString().trim() ?? '';
-        if (team.isNotEmpty) groupedMembers.putIfAbsent(team, () => []).add(m);
-      }
-      for (var l in scopedLogs) {
-        String team = extract(l, ['team', 'team_name']);
-        if (team.isNotEmpty) groupedLogs.putIfAbsent(team, () => []).add(l);
-      }
-    } else if (lvl.contains('cell')) {
-      final List<String> distinctCells = _getScopedCellGroups();
-      for (var cg in distinctCells) { groupedLogs[cg] = []; groupedMembers[cg] = []; }
-      for (var m in scopedMembers) {
-        String cell = m['cell_group']?.toString().trim() ?? '';
-        if (cell.isNotEmpty) groupedMembers.putIfAbsent(cell, () => []).add(m);
-      }
-      for (var l in scopedLogs) {
-        String cell = extract(l, ['unit_name', 'cell_group', 'cell', 'cell_name']);
-        if (cell.isNotEmpty) groupedLogs.putIfAbsent(cell, () => []).add(l);
-      }
-    }
-
-    Map<String, Map<String, dynamic>> calculatedBlocks = {};
-    groupedLogs.forEach((unitKey, logs) {
-      calculatedBlocks[unitKey] = _calc(logs, officialMembers: groupedMembers[unitKey]);
-    });
-
     return calculatedBlocks;
   }
 
   Widget? _buildDynamicHierarchicalRows() {
-    final String lvl = widget.level.trim().toLowerCase();
-
-    if (lvl == 'church status' ||
-        (widget.isLocationLeader && lvl == 'location status') ||
-        (widget.isSubLocationLeader && lvl.contains('sub location')) ||
-        (widget.isDeptLeader && lvl.contains('dept')) ||
-        (widget.isTeamLeader && lvl.contains('team'))) {
-      return null;
-    }
-
     final blockData = _getCalculatedBlocksMap();
-    if (blockData.isEmpty) return null;
+    // A single unit row would just repeat the General total
+    if (blockData.length <= 1) return null;
 
     String categoryName = widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : "Unit";
     return _mergedBlock(categoryName, blockData);
@@ -621,7 +414,6 @@ class _VisitationsModuleState extends State<VisitationsModule> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Column(
         children: [
-          // Dynamic Row Selector linked directly to the Summary Table
           if (unitsList.length > 1)
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -656,8 +448,6 @@ class _VisitationsModuleState extends State<VisitationsModule> {
               ),
             ),
           const SizedBox(height: 10),
-
-          // 3D Solid Pizza Chart Display
           _build3DPizzaVisual(chartData),
         ],
       ),
@@ -693,30 +483,29 @@ class _VisitationsModuleState extends State<VisitationsModule> {
           label: "Positive",
           count: pos,
           percentage: posPct,
-          topColor: const Color(0xFF10B981), // Emerald Green
-          sideColor: const Color(0xFF047857), // 3D Edge Shading
+          topColor: const Color(0xFF10B981),
+          sideColor: const Color(0xFF047857),
         ),
       if (neg > 0)
         _PizzaSlice(
           label: "Negative",
           count: neg,
           percentage: negPct,
-          topColor: const Color(0xFFEF4444), // Crimson Red
-          sideColor: const Color(0xFFB91C1C), // 3D Edge Shading
+          topColor: const Color(0xFFEF4444),
+          sideColor: const Color(0xFFB91C1C),
         ),
       if (pending > 0)
         _PizzaSlice(
           label: "Pending",
           count: pending,
           percentage: pendingPct,
-          topColor: const Color(0xFF94A3B8), // Cool Slate
-          sideColor: const Color(0xFF475569), // 3D Edge Shading
+          topColor: const Color(0xFF94A3B8),
+          sideColor: const Color(0xFF475569),
         ),
     ];
 
     return Column(
       children: [
-        // Summary KPI Strip
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -730,8 +519,6 @@ class _VisitationsModuleState extends State<VisitationsModule> {
           ],
         ),
         const SizedBox(height: 20),
-
-        // Custom 3D Solid Pizza Painter (Perspective Disc, No Hole)
         SizedBox(
           height: 280,
           width: double.infinity,
@@ -740,8 +527,6 @@ class _VisitationsModuleState extends State<VisitationsModule> {
           ),
         ),
         const SizedBox(height: 14),
-
-        // Legend
         Wrap(
           spacing: 16,
           runSpacing: 6,
@@ -811,7 +596,6 @@ class _VisitationsModuleState extends State<VisitationsModule> {
   );
 }
 
-// Slice Data Model
 class _PizzaSlice {
   final String label;
   final int count;
@@ -828,7 +612,6 @@ class _PizzaSlice {
   });
 }
 
-// Custom 3D Solid Pizza Painter (Perspective disc, extruded depth, solid slices)
 class _3DPizzaPainter extends CustomPainter {
   final List<_PizzaSlice> slices;
 
@@ -840,13 +623,12 @@ class _3DPizzaPainter extends CustomPainter {
 
     final Offset center = Offset(size.width / 2, (size.height / 2) - 10);
     final double radiusX = math.min(130.0, (size.width / 2) - 30);
-    final double radiusY = radiusX * 0.65; // Isometric 3D tilt perspective (ellipse)
-    const double depth = 26.0; // Extruded physical 3D thickness
+    final double radiusY = radiusX * 0.65;
+    const double depth = 26.0;
 
     double totalVal = slices.fold(0.0, (sum, s) => sum + s.count);
     if (totalVal == 0) totalVal = 1.0;
 
-    // Draw Floor Drop Shadow for the entire 3D Pizza
     final shadowRect = Rect.fromCenter(
       center: Offset(center.dx, center.dy + depth + 10),
       width: (radiusX * 2) + 20,
@@ -857,7 +639,6 @@ class _3DPizzaPainter extends CustomPainter {
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
     canvas.drawOval(shadowRect, shadowPaint);
 
-    // 1. Draw 3D Extruded Cylinder Edges (for all slices facing the front: 0 to π)
     double startAngle = -math.pi / 2;
     for (var slice in slices) {
       final sweepAngle = (slice.count / totalVal) * (2 * math.pi);
@@ -865,7 +646,6 @@ class _3DPizzaPainter extends CustomPainter {
       startAngle += sweepAngle;
     }
 
-    // 2. Draw Top Pizza Slices (Flat solid pizza disc with perspective, NO center hole)
     startAngle = -math.pi / 2;
     for (var slice in slices) {
       final sweepAngle = (slice.count / totalVal) * (2 * math.pi);
@@ -882,7 +662,6 @@ class _3DPizzaPainter extends CustomPainter {
       }
       slicePath.close();
 
-      // Top Slice Paint with subtle light gradient
       final slicePaint = Paint()
         ..shader = RadialGradient(
           center: Alignment.topLeft,
@@ -894,14 +673,12 @@ class _3DPizzaPainter extends CustomPainter {
         ).createShader(Rect.fromCenter(center: center, width: radiusX * 2, height: radiusY * 2));
       canvas.drawPath(slicePath, slicePaint);
 
-      // White Pizza Cut Border
       final cutBorderPaint = Paint()
         ..color = Colors.white
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5;
       canvas.drawPath(slicePath, cutBorderPaint);
 
-      // Label floating directly over slice
       final midAngle = startAngle + (sweepAngle / 2);
       final labelX = center.dx + (radiusX * 0.65) * math.cos(midAngle);
       final labelY = center.dy + (radiusY * 0.65) * math.sin(midAngle);
@@ -929,7 +706,6 @@ class _3DPizzaPainter extends CustomPainter {
       final double a1 = startAngle + sweepAngle * (i / steps);
       final double a2 = startAngle + sweepAngle * ((i + 1) / steps);
 
-      // Only draw edge for the front-facing half (sin > 0)
       if (math.sin(a1) >= -0.05 || math.sin(a2) >= -0.05) {
         final double x1 = center.dx + rx * math.cos(a1);
         final double y1 = center.dy + ry * math.sin(a1);

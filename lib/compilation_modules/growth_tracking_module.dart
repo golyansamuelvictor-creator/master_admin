@@ -6,7 +6,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/compilation_rules.dart';
 
 class _GrowthUnitStat {
   final String unitName;
@@ -31,20 +31,19 @@ class _GrowthUnitStat {
 
 class GrowthTrackingModule extends StatefulWidget {
   final List<dynamic> logs;
+  final List<Map<String, dynamic>>? masterMembers;
   final String timePeriod;
   final String level;
   final String analyticsMode;
   final String groupBy;
   final double targetValue;
 
-  // Hierarchical scope & drill-down filters
   final String selectedLocation;
   final String selectedSubLocation;
   final String selectedDepartment;
   final String selectedTeam;
   final String activeUnitLabel;
 
-  // Role booleans
   final bool isChurchWide;
   final bool isLocationLeader;
   final bool isSubLocationLeader;
@@ -52,7 +51,6 @@ class GrowthTrackingModule extends StatefulWidget {
   final bool isTeamLeader;
   final bool isGroupLeader;
 
-  // User metadata
   final String userRole;
   final String userDept;
   final String userSub;
@@ -62,6 +60,7 @@ class GrowthTrackingModule extends StatefulWidget {
   const GrowthTrackingModule({
     super.key,
     required this.logs,
+    this.masterMembers,
     this.timePeriod = 'Quarterly status',
     required this.level,
     required this.analyticsMode,
@@ -82,7 +81,8 @@ class GrowthTrackingModule extends StatefulWidget {
     this.userDept = '',
     this.userSub = '',
     this.userLoc = '',
-    this.userTeam = '', required String category,
+    this.userTeam = '', 
+    required String category,
   });
 
   @override
@@ -92,20 +92,22 @@ class GrowthTrackingModule extends StatefulWidget {
 class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
   static const Color pPurple = Color(0xFF4A148C);
 
-  List<Map<String, dynamic>> _masterMembers = [];
-  bool _isLoadingMembers = false;
   String _selectedChartUnit = 'General total';
+
+  // Headcount comes only from the screen's scoped member list. (The old
+  // fallback loaded ALL church members when the scoped list was empty.)
+  List<Map<String, dynamic>> get _effectiveMembers => widget.masterMembers ?? const [];
 
   @override
   void initState() {
     super.initState();
-    _fetchMasterMembers();
   }
 
   @override
   void didUpdateWidget(covariant GrowthTrackingModule oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedLocation != widget.selectedLocation ||
+    if (oldWidget.level != widget.level ||
+        oldWidget.selectedLocation != widget.selectedLocation ||
         oldWidget.selectedSubLocation != widget.selectedSubLocation ||
         oldWidget.selectedDepartment != widget.selectedDepartment ||
         oldWidget.selectedTeam != widget.selectedTeam ||
@@ -114,29 +116,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
     }
   }
 
-  // --- SUPABASE CAPACITY FETCHING (ALL SAINTS) ---
-  Future<void> _fetchMasterMembers() async {
-    try {
-      setState(() => _isLoadingMembers = true);
-      final res = await Supabase.instance.client
-          .from('members')
-          .select('id, name, location, sub_location, current_dept, dept, team_number, team, cell_number, cell');
 
-      if (mounted) {
-        setState(() {
-          _masterMembers = List<Map<String, dynamic>>.from(res as List);
-          _isLoadingMembers = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingMembers = false);
-      }
-      debugPrint('GrowthTrackingModule: members query notice: $e');
-    }
-  }
-
-  // --- STRICT CASCADING FILTER ---
   bool _matchesCascade(Map<String, dynamic> item) {
     Map<String, dynamic> m = {};
     if (item['members'] is Map) {
@@ -144,9 +124,10 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
     }
 
     String loc = item['location']?.toString() ?? m['location']?.toString() ?? '';
+    if (CompLevel.isMou(item)) loc = CompLevel.mou; // MOUWakiso etc. belong to the MOU location
     String sub = item['sub_location']?.toString() ?? m['sub_location']?.toString() ?? '';
-    String dept = item['current_dept']?.toString() ?? item['dept']?.toString() ?? m['current_dept']?.toString() ?? m['dept']?.toString() ?? '';
-    String team = item['team_number']?.toString() ?? item['team']?.toString() ?? m['team_number']?.toString() ?? m['team']?.toString() ?? '';
+    String dept = item['department']?.toString() ?? item['dept']?.toString() ?? m['department']?.toString() ?? '';
+    String team = item['team']?.toString() ?? item['team_number']?.toString() ?? m['team']?.toString() ?? '';
 
     if (widget.selectedLocation.isNotEmpty &&
         widget.selectedLocation != 'All' &&
@@ -183,91 +164,54 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
     return true;
   }
 
-  // --- UNIT GROUPING KEY ---
-  String _getUnitKey(Map<String, dynamic> item) {
-    Map<String, dynamic> m = {};
-    if (item['members'] is Map) {
-      m = Map<String, dynamic>.from(item['members']);
-    }
+  String _resolveLocationBucket(dynamic record) {
+    String dept = (record['department'] ?? record['members']?['department'] ?? '').toString().trim().toUpperCase();
+    if (dept.contains('MOU')) return 'MOU';
 
-    String k = 'cell_number';
-    String gb = widget.groupBy.toLowerCase().trim();
-    if (gb.contains('team')) k = 'team_number';
-    else if (gb.contains('dept')) k = 'current_dept';
-    else if (gb.contains('sub')) k = 'sub_location';
-    else if (gb.contains('loc')) k = 'location';
+    String loc = (record['location'] ?? record['members']?['location'] ?? '').toString().trim();
+    String locLower = loc.toLowerCase();
 
-    String val = item[k]?.toString() ?? m[k]?.toString() ?? '';
-    if (val.isEmpty) {
-      if (k == 'cell_number') val = item['cell']?.toString() ?? m['cell']?.toString() ?? '';
-      if (k == 'team_number') val = item['team']?.toString() ?? m['team']?.toString() ?? '';
-      if (k == 'current_dept') val = item['dept']?.toString() ?? m['dept']?.toString() ?? '';
-      if (k == 'sub_location') val = item['sub']?.toString() ?? m['sub']?.toString() ?? '';
-      if (k == 'location') val = item['loc']?.toString() ?? m['loc']?.toString() ?? '';
+    if (locLower == '24dept' || locLower == '24부서' || locLower == 'church' || locLower == '교회') {
+      return '24Dept';
     }
-    return val.trim().isNotEmpty ? val.trim() : 'Unassigned';
+    return loc.isNotEmpty ? loc : 'Other';
   }
 
-  bool _isBoolTrue(dynamic val) {
-    if (val == null) return false;
-    if (val is bool) return val;
-    final s = val.toString().trim().toLowerCase();
-    return s == 'true' || s == 'yes' || s == '1';
-  }
+  // SOLVED: Next-tier resolution for growth
+  // Same level rules as every other module (shared CompLevel); the old
+  // contains('location status') check also caught "Sub location status".
+  String _getUnitKey(Map<String, dynamic> item) => CompLevel.unitKey(item, widget.level);
 
-  // --- AGGREGATION PIPELINE ---
+  // SOLVED: Calculates Real Saints Growth From Live Members Registry
   List<_GrowthUnitStat> _calculateStats() {
-    // 1. Cascaded logs
-    final cascadedLogs = widget.logs.where((l) {
-      if (l is! Map) return false;
-      return _matchesCascade(Map<String, dynamic>.from(l));
-    }).toList();
+    final cascadedMembers = _effectiveMembers.where((m) => _matchesCascade(m)).toList();
 
-    // 2. Cascaded master members (Saints capacity)
-    final cascadedMembers = _masterMembers.where((m) => _matchesCascade(m)).toList();
-
-    // Group members by unit for official capacity
-    final Map<String, int> unitSaintsCount = {};
+    final Map<String, List<Map<String, dynamic>>> unitMembers = {};
     for (var m in cascadedMembers) {
       final u = _getUnitKey(m);
       if (u != 'Unassigned') {
-        unitSaintsCount[u] = (unitSaintsCount[u] ?? 0) + 1;
+        unitMembers.putIfAbsent(u, () => []).add(m);
       }
     }
 
-    // Group logs by unit
-    final Map<String, List<dynamic>> unitLogs = {};
-    for (var l in cascadedLogs) {
-      final u = _getUnitKey(Map<String, dynamic>.from(l));
-      if (u != 'Unassigned') {
-        unitLogs.putIfAbsent(u, () => []).add(l);
-      }
-    }
-
-    final Set<String> allUnits = {...unitSaintsCount.keys, ...unitLogs.keys};
-    final sortedUnits = allUnits.toList()..sort((a, b) => a.compareTo(b));
-
+    final sortedUnits = unitMembers.keys.toList()..sort();
     List<_GrowthUnitStat> stats = [];
 
     for (var u in sortedUnits) {
-      final uLogs = unitLogs[u] ?? [];
-      int saints = unitSaintsCount[u] ?? 0;
+      final uList = unitMembers[u]!;
+      int saints = uList.length;
 
-      // Fallback if master member list is not loaded
-      if (saints == 0) {
-        final distinctIds = <dynamic>{};
-        for (var l in uLogs) {
-          final mid = l['member_id'] ?? l['members']?['id'] ?? l['id'];
-          if (mid != null) distinctIds.add(mid);
-        }
-        saints = distinctIds.isNotEmpty ? distinctIds.length : uLogs.length;
-      }
+      int newEnc = uList.where((m) {
+        final reg = (m['reg_status'] ?? '').toString();
+        return reg == '입교' || (m['is_new_enrollment'] == true);
+      }).length;
 
-      int newEnc = uLogs.where((l) => _isBoolTrue(l['is_new_enrollment'])).length;
-      int grad = uLogs.where((l) => _isBoolTrue(l['is_graduation'])).length;
-      int trans = uLogs.where((l) => _isBoolTrue(l['is_transfer'])).length;
+      int grad = uList.where((m) {
+        final reg = (m['reg_status'] ?? '').toString();
+        return reg == '총회등록' || (m['is_graduation'] == true);
+      }).length;
 
-      saints = math.max(saints, uLogs.length);
+      int trans = uList.where((m) => m['is_transfer'] == true).length;
 
       stats.add(_GrowthUnitStat(
         unitName: u,
@@ -309,13 +253,13 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
     const double hh = 28.0;
 
     final Map<int, TableColumnWidth> colWidths = {
-      0: const FixedColumnWidth(140), // Unit
-      1: const FixedColumnWidth(80),  // Total
-      2: const FixedColumnWidth(75),  // New
-      3: const FixedColumnWidth(75),  // Grads
-      4: const FixedColumnWidth(75),  // Trans
-      5: const FixedColumnWidth(85),  // Net Growth
-      6: const FixedColumnWidth(85),  // Growth %
+      0: const FixedColumnWidth(140),
+      1: const FixedColumnWidth(80),
+      2: const FixedColumnWidth(75),
+      3: const FixedColumnWidth(75),
+      4: const FixedColumnWidth(75),
+      5: const FixedColumnWidth(85),
+      6: const FixedColumnWidth(85),
     };
 
     List<String> headers = [
@@ -323,7 +267,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
       "Total", "New", "Grads", "Trans", "Net Growth", "Growth %"
     ];
 
-    if (stats.isEmpty) {
+    if (stats.isEmpty && totalStat.totalSaints == 0) {
       return Container(
         padding: const EdgeInsets.all(20),
         alignment: Alignment.center,
@@ -333,6 +277,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
       child: Table(
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         columnWidths: colWidths,
@@ -363,8 +308,25 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
             }).toList(),
           ),
 
+          // General Total Summary Row
+          TableRow(
+            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
+            children: [
+              _cellText("General total", 26.0, isBold: true, color: pPurple, align: TextAlign.left, padLeft: 6),
+              _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
+              _cellText("${totalStat.newEnrollment}", 26.0, isBold: true, color: Colors.blue[800]!),
+              _cellText("${totalStat.graduation}", 26.0, isBold: true, color: Colors.green[800]!),
+              _cellText("${totalStat.transfer}", 26.0, isBold: true),
+              _cellText(totalStat.netGrowth >= 0 ? "+${totalStat.netGrowth}" : "${totalStat.netGrowth}", 26.0,
+                  isBold: true, color: totalStat.netGrowth >= 0 ? Colors.green[900]! : Colors.red[900]!),
+              _cellPercent(totalStat.growthPct, 26.0, totalStat.netGrowth >= 0 ? Colors.green[900]! : Colors.red[900]!,
+                  isBold: true, showSign: true),
+            ],
+          ),
+
           // Data Rows
-          ...stats.asMap().entries.map((entry) {
+          // A single unit row would just repeat the General total
+          if (stats.length > 1) ...stats.asMap().entries.map((entry) {
             int idx = entry.key;
             _GrowthUnitStat u = entry.value;
             final isEven = idx.isEven;
@@ -385,22 +347,6 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
               ],
             );
           }),
-
-          // General Total Summary Row
-          TableRow(
-            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
-            children: [
-              _cellText("General total", 26.0, isBold: true, color: pPurple, align: TextAlign.left, padLeft: 6),
-              _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
-              _cellText("${totalStat.newEnrollment}", 26.0, isBold: true, color: Colors.blue[800]!),
-              _cellText("${totalStat.graduation}", 26.0, isBold: true, color: Colors.green[800]!),
-              _cellText("${totalStat.transfer}", 26.0, isBold: true),
-              _cellText(totalStat.netGrowth >= 0 ? "+${totalStat.netGrowth}" : "${totalStat.netGrowth}", 26.0,
-                  isBold: true, color: totalStat.netGrowth >= 0 ? Colors.green[900]! : Colors.red[900]!),
-              _cellPercent(totalStat.growthPct, 26.0, totalStat.netGrowth >= 0 ? Colors.green[900]! : Colors.red[900]!,
-                  isBold: true, showSign: true),
-            ],
-          ),
         ],
       ),
     );
@@ -414,6 +360,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
         child: Row(
           children: units.map((u) {
             final isSelected = _selectedChartUnit == u;
@@ -447,7 +394,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
 
   // --- UI: DYNAMIC GROWTH CHART ---
   Widget _buildGrowthChart(List<_GrowthUnitStat> stats, _GrowthUnitStat totalStat) {
-    if (stats.isEmpty) {
+    if (stats.isEmpty && totalStat.totalSaints == 0) {
       return const SizedBox(height: 100, child: Center(child: Text("No data available to chart")));
     }
 
@@ -467,7 +414,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildUnitPillBar(stats),
+        if (stats.isNotEmpty) _buildUnitPillBar(stats),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Row(
@@ -769,7 +716,6 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
     );
   }
 
-  // --- SECTION CONTAINER WITH DARK BORDER ---
   Widget _section(String title, Widget content, BuildContext context, {VoidCallback? onPdf}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -852,15 +798,6 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
   Widget build(BuildContext context) {
     final List<_GrowthUnitStat> unitStats = _calculateStats();
     final _GrowthUnitStat totalStat = _calculateTotalStat(unitStats);
-
-    if (_isLoadingMembers && _masterMembers.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32.0),
-          child: CircularProgressIndicator(color: pPurple),
-        ),
-      );
-    }
 
     return Column(
       children: [

@@ -39,6 +39,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   String _latestCorrectionNote = "";
 
   List<String> _dynamicDuties = [];
+  List<String> _primaryRoleDuties = [];
   List<String> _dynamicAdminActions = [];
   Map<String, String> _interventionLabels = {}; 
   bool _canEnterDataFromDB = false;
@@ -98,6 +99,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
               _showEvangelismSubMenu();
             } else if (_simulatedRole == 'loc_edu_mgr' || _simulatedRole == 'edu_dept_leader') {
               _showDutyActionDialog("All Saints Education");
+            } else if (selectedRole != 'admin') {
+              // Only one duty: skip the one-button grid and open that duty
+              final buttons = _getMainGridButtons();
+              const nonDuty = ["Member Bio", "Strategic Analysis", "Notification Center"];
+              if (buttons.length == 1 && !nonDuty.contains(buttons.first)) {
+                final only = buttons.first;
+                if (only == "Evangelism") {
+                  _showEvangelismSubMenu();
+                } else {
+                  _showDutyActionDialog(only, exitOnClose: true);
+                }
+              }
             }
           });
         }
@@ -168,6 +181,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       
       if (res != null) {
         primaryDuties = List<String>.from(res['allowed_duties'] ?? []);
+        _primaryRoleDuties = List<String>.from(primaryDuties);
         primaryActions = List<String>.from(res['allowed_admin_actions'] ?? []);
         canEnter = res['can_enter_data'] ?? false;
         scope = res['approval_scope'];
@@ -552,7 +566,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return chosenDate;
   }
 
-  void _showDutyActionDialog(String duty) async {
+  /// The role that grants [duty]: the primary role, or the secondary role
+  /// when only that one lists it (e.g. a cell leader who is also team secretary).
+  String _roleForDuty(String duty) {
+    final primary = _simulatedRole ?? '';
+    final sec = _secondaryRole ?? '';
+    if (sec.isEmpty || selectedRole == 'admin') return primary;
+    final names = {duty, if (duty == 'Evangelism') 'Evangelism Part', if (duty == 'Evangelism Part') 'Evangelism'};
+    if (_primaryRoleDuties.any(names.contains)) return primary;
+    return sec;
+  }
+
+  void _showDutyActionDialog(String duty, {bool exitOnClose = false}) async {
     if (_interventionLabels.isEmpty) {
       await _fetchDutyConfig();
     }
@@ -568,7 +593,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
         appBar: AppBar(
           backgroundColor: Colors.white, 
           elevation: 0.5, 
-          leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)), 
+          leading: IconButton(icon: const Icon(Icons.close), onPressed: () {
+            Navigator.pop(context);
+            // Opened automatically for a single-duty user: close goes back home
+            if (exitOnClose && mounted) Navigator.of(this.context).maybePop();
+          }), 
           centerTitle: true, 
           title: Text(duty, style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold))
         ),
@@ -580,7 +609,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               _compactActionBtn(Icons.edit_note_rounded, "Enter new report", Colors.purple, () async { 
                 Navigator.pop(context); 
                 await _nav(duty, "entry", selectedDate: DateTime.now()); 
-                if (mounted) _showDutyActionDialog(duty); 
+                if (mounted) _showDutyActionDialog(duty, exitOnClose: exitOnClose); 
               }),
               _compactActionBtn(Icons.history_rounded, "Edit previous report", Colors.orange[800]!, () async { 
                 Navigator.pop(context); 
@@ -588,7 +617,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 if (picked != null) {
                   await _nav(duty, "edit", selectedDate: picked);
                 }
-                if (mounted) _showDutyActionDialog(duty); 
+                if (mounted) _showDutyActionDialog(duty, exitOnClose: exitOnClose); 
               }),
             ],
             _compactActionBtn(Icons.dashboard_customize_rounded, "Open dashboard", Colors.teal[700]!, () { 
@@ -600,18 +629,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
               Navigator.push(context, MaterialPageRoute(
                 builder: (c) => UniversalInterventionScreen(
                   duty: duty, 
-                  unitName: _getUnitNameByRole(), 
+                  unitName: _getUnitNameByRole(_roleForDuty(duty)), 
                   buttonTitle: interventionLabel
                 )
               )); 
             }),
-            if (!_simulatedRole!.contains('cell')) 
+            if (!_roleForDuty(duty).contains('cell')) 
               _compactActionBtn(Icons.verified_user_rounded, "Approval cockpit", Colors.green[800]!, () { 
                 Navigator.pop(context); 
                 Navigator.push(context, MaterialPageRoute(
                   builder: (c) => ApprovalCockpit(
-                    role: _simulatedRole!, 
-                    unitName: _getUnitNameByRole(), 
+                    role: _roleForDuty(duty), 
+                    unitName: _getUnitNameByRole(_roleForDuty(duty)), 
                     selectedDuty: duty
                   )
                 )); 
@@ -632,7 +661,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   void _handleExcelUpload(String duty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Offering excel upload module initialized..."))); }
   
   void _goToCorrectDashboard(String duty) { 
-    if (_simulatedRole!.toLowerCase().contains('cell')) {
+    final String role = _roleForDuty(duty);
+    if (role.toLowerCase().contains('cell')) {
       Navigator.push(context, MaterialPageRoute(
         builder: (c) => CellStatusScreen(
           sheetName: duty, 
@@ -647,8 +677,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } else {
       Navigator.push(context, MaterialPageRoute(
         builder: (c) => CompilationEngine(
-          role: _simulatedRole!, 
-          userUnit: _getUnitNameByRole(), 
+          role: role, 
+          userUnit: _getUnitNameByRole(role), 
           selectedDuty: duty, 
           loc: userLoc, 
           sub: userSub, 
@@ -670,15 +700,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
         subLocation: userSub, 
         dept: userDept, 
         team: userTeam,
-        userRole: _simulatedRole,
+        userRole: _roleForDuty(duty),
         initialMode: mode,
         selectedDate: dateToUse,
       )
     )); 
   }
 
-  String _getUnitNameByRole() { 
-    String r = _simulatedRole?.toLowerCase() ?? ""; 
+  String _getUnitNameByRole([String? role]) { 
+    String r = (role ?? _simulatedRole)?.toLowerCase() ?? ""; 
     if (r.startsWith('church_') || r.startsWith('korean_worker_')) return "Church Executive";
     if (r.contains('cell')) return userCell.isNotEmpty ? userCell : "Cell Group"; 
     if (r.contains('team')) return userTeam.isNotEmpty ? userTeam : "Team"; 

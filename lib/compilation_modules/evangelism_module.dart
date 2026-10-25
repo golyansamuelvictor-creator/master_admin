@@ -6,7 +6,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/compilation_rules.dart';
 
 class _EvangelismUnitStat {
   final String unitName;
@@ -44,6 +44,7 @@ class _EvangelismUnitStat {
 
 class EvangelismModule extends StatefulWidget {
   final List<dynamic> logs;
+  final List<Map<String, dynamic>>? masterMembers;
   final String timePeriod;
   final String level;
   final String analyticsMode;
@@ -72,6 +73,7 @@ class EvangelismModule extends StatefulWidget {
   const EvangelismModule({
     super.key,
     required this.logs,
+    this.masterMembers,
     required this.timePeriod,
     required this.level,
     required this.analyticsMode,
@@ -100,12 +102,15 @@ class EvangelismModule extends StatefulWidget {
 }
 
 class _EvangelismModuleState extends State<EvangelismModule> {
-  final _supabase = Supabase.instance.client;
   static const Color pPurple = Color(0xFF4A148C);
 
-  List<Map<String, dynamic>> _masterMembers = [];
-  bool _isLoadingMembers = false;
   String _selectedChartUnit = 'General total';
+
+  // Headcount comes only from the screen's scoped member list. (The old
+  // fallback loaded ALL church members when the scoped list was empty.)
+  List<Map<String, dynamic>> get _effectiveMembers => widget.masterMembers ?? const [];
+
+  int get _sessions => widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(widget.logs);
 
   bool get _is24ChurchDept {
     final r = widget.userRole.toLowerCase();
@@ -121,114 +126,22 @@ class _EvangelismModuleState extends State<EvangelismModule> {
   @override
   void initState() {
     super.initState();
-    _fetchMasterMembers();
   }
 
   @override
   void didUpdateWidget(covariant EvangelismModule oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedLocation != widget.selectedLocation ||
+    if (oldWidget.level != widget.level ||
+        oldWidget.selectedLocation != widget.selectedLocation ||
         oldWidget.selectedSubLocation != widget.selectedSubLocation ||
         oldWidget.selectedDepartment != widget.selectedDepartment ||
         oldWidget.selectedTeam != widget.selectedTeam ||
-        oldWidget.level != widget.level ||
-        oldWidget.groupBy != widget.groupBy ||
-        oldWidget.logs != widget.logs) {
+        oldWidget.groupBy != widget.groupBy) {
       _selectedChartUnit = 'General total';
-      _fetchMasterMembers();
     }
   }
 
-  // --- STANDARDIZED COLUMNS MATCHING YOUR MEMBERS TABLE ---
-  Future<void> _fetchMasterMembers() async {
-    try {
-      setState(() => _isLoadingMembers = true);
-      final lvl = widget.level.toLowerCase();
 
-      dynamic mQuery = _supabase.from('members').select(
-        'id, english_name, location, sub_location, department, team, cell_group'
-      );
-
-      // Scoping
-      if (_is24ChurchDept && widget.groupBy == 'Church') {
-        mQuery = mQuery.or('location.eq.Church,location.eq.Church Workers,location.eq.Church Main,location.is.null');
-        if (widget.userDept.isNotEmpty && widget.userDept != 'Church') {
-          mQuery = mQuery.eq('department', widget.userDept);
-        }
-      } else if (widget.isGroupLeader && widget.userDept.isNotEmpty) {
-        mQuery = mQuery.eq('department', widget.userDept).neq('location', 'Mou').neq('location', 'New Saints');
-      } else if (!widget.isChurchWide) {
-        if (widget.userLoc.isNotEmpty && widget.userLoc != 'Church') {
-          mQuery = mQuery.eq('location', widget.userLoc);
-        }
-        if (widget.isSubLocationLeader && widget.userSub.isNotEmpty) {
-          mQuery = mQuery.eq('sub_location', widget.userSub);
-        }
-        if (widget.isDeptLeader && widget.userDept.isNotEmpty) {
-          mQuery = mQuery.eq('department', widget.userDept);
-        }
-      }
-
-      if (lvl.contains('sub location') || lvl.contains('sub-location')) {
-        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
-          mQuery = mQuery.eq('location', widget.selectedLocation);
-        }
-      } else if (lvl.contains('dept') && !_is24ChurchDept) {
-        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
-          mQuery = mQuery.eq('location', widget.selectedLocation);
-        }
-        if (widget.selectedSubLocation.isNotEmpty) {
-          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
-        }
-      } else if (lvl.contains('team')) {
-        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
-          mQuery = mQuery.eq('location', widget.selectedLocation);
-        }
-        if (widget.selectedSubLocation.isNotEmpty) {
-          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
-        }
-        if (widget.selectedDepartment.isNotEmpty) {
-          mQuery = mQuery.eq('department', widget.selectedDepartment);
-        }
-      } else if (lvl.contains('cell')) {
-        if (widget.selectedLocation.isNotEmpty && widget.selectedLocation.toLowerCase() != 'church') {
-          mQuery = mQuery.eq('location', widget.selectedLocation);
-        }
-        if (widget.selectedSubLocation.isNotEmpty) {
-          mQuery = mQuery.eq('sub_location', widget.selectedSubLocation);
-        }
-        if (widget.selectedDepartment.isNotEmpty) {
-          mQuery = mQuery.eq('department', widget.selectedDepartment);
-        }
-        if (widget.selectedTeam.isNotEmpty) {
-          mQuery = mQuery.eq('team', widget.selectedTeam);
-        }
-      }
-
-      List<Map<String, dynamic>> allMembers = [];
-      int offset = 0;
-      const int pageSize = 1000;
-      while (true) {
-        final chunk = await mQuery.range(offset, offset + pageSize - 1);
-        final list = List<Map<String, dynamic>>.from(chunk);
-        allMembers.addAll(list);
-        if (list.length < pageSize) break;
-        offset += pageSize;
-      }
-
-      if (mounted) {
-        setState(() {
-          _masterMembers = allMembers;
-          _isLoadingMembers = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoadingMembers = false);
-      debugPrint('EvangelismModule: members query notice: $e');
-    }
-  }
-
-  // --- CASCADING DRILL-DOWN FILTER ---
   bool _matchesCascade(Map<String, dynamic> item) {
     Map<String, dynamic> m = {};
     if (item['members'] is Map) {
@@ -236,6 +149,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
     }
 
     String loc = item['location']?.toString() ?? m['location']?.toString() ?? '';
+    if (CompLevel.isMou(item)) loc = CompLevel.mou; // MOUWakiso etc. belong to the MOU location
     String sub = item['sub_location']?.toString() ?? m['sub_location']?.toString() ?? '';
     String dept = item['department']?.toString() ?? m['department']?.toString() ?? '';
     String team = item['team']?.toString() ?? m['team']?.toString() ?? '';
@@ -276,63 +190,46 @@ class _EvangelismModuleState extends State<EvangelismModule> {
     return true;
   }
 
-  // --- UNIT GROUPING KEY (STANDARDIZED) ---
-  String _getUnitKey(Map<String, dynamic> item) {
-    Map<String, dynamic> m = {};
-    if (item['members'] is Map) {
-      m = Map<String, dynamic>.from(item['members']);
+  String _resolveLocationBucket(dynamic record) {
+    String dept = (record['department'] ?? record['members']?['department'] ?? '').toString().trim().toUpperCase();
+    if (dept.contains('MOU')) return 'MOU';
+
+    String loc = (record['location'] ?? record['members']?['location'] ?? '').toString().trim();
+    String locLower = loc.toLowerCase();
+
+    if (locLower == '24dept' || locLower == '24부서' || locLower == 'church' || locLower == '교회') {
+      return '24Dept';
     }
-
-    String gb = widget.groupBy.toLowerCase().trim();
-    String val = '';
-
-    if (gb.contains('cell')) {
-      val = item['unit_name']?.toString() ?? item['cell_group']?.toString() ?? m['cell_group']?.toString() ?? '';
-    } else if (gb.contains('team')) {
-      val = item['team']?.toString() ?? m['team']?.toString() ?? '';
-    } else if (gb.contains('dept')) {
-      val = item['department']?.toString() ?? m['department']?.toString() ?? '';
-    } else if (gb.contains('sub')) {
-      val = item['sub_location']?.toString() ?? m['sub_location']?.toString() ?? '';
-    } else if (gb.contains('loc')) {
-      val = item['location']?.toString() ?? m['location']?.toString() ?? '';
-    }
-
-    return val.trim().isNotEmpty ? val.trim() : 'Unassigned';
+    return loc.isNotEmpty ? loc : 'Other';
   }
 
-  bool _isEvangelised(dynamic val) {
-    if (val == null) return false;
-    final s = val.toString().trim().toLowerCase();
-    return s == 'evangelised' ||
-        s == 'evangelized' ||
-        s == 'yes' ||
-        s == 'done' ||
-        s == 'true' ||
-        s == '1' ||
-        s.contains('participated');
-  }
+  // SOLVED: Next-Tier Unit Resolution
+  // Same level rules as every other module (shared CompLevel); the old
+  // contains('location status') check also caught "Sub location status".
+  String _getUnitKey(Map<String, dynamic> item) => CompLevel.unitKey(item, widget.level);
 
-  // Dual-format day checker: checks both new 'evang_day' and legacy 'mon_part'
+  // contains('evang') used to count "Did Not Evangelize" as evangelised
+  bool _isEvangelised(dynamic val) => CompStatus.isPositive(val);
+
   bool _isDayEvangelised(dynamic log, String dayCode, String legacyField) {
     final evangDay = (log['evang_day'] ?? '').toString().trim().toLowerCase();
     if (evangDay.isNotEmpty) {
-      if (evangDay == dayCode.toLowerCase()) {
+      if (evangDay == dayCode.toLowerCase() || evangDay.startsWith(dayCode.toLowerCase())) {
         return _isEvangelised(log['status_detail']);
       }
       return false;
     }
-    return _isEvangelised(log[legacyField]);
+    return _isEvangelised(log[legacyField]) || _isEvangelised(log['status_detail']);
   }
 
-  // --- AGGREGATION PIPELINE ---
+  // SOLVED: Next-tier decomposition (Never returns empty list on Church view)
   List<_EvangelismUnitStat> _calculateStats() {
     final cascadedLogs = widget.logs.where((l) {
       if (l is! Map) return false;
       return _matchesCascade(Map<String, dynamic>.from(l));
     }).toList();
 
-    final cascadedMembers = _masterMembers.where((m) => _matchesCascade(m)).toList();
+    final cascadedMembers = _effectiveMembers.where((m) => _matchesCascade(m)).toList();
 
     final Map<String, int> unitSaintsCount = {};
     for (var m in cascadedMembers) {
@@ -349,16 +246,6 @@ class _EvangelismModuleState extends State<EvangelismModule> {
         unitLogs.putIfAbsent(u, () => []).add(l);
       }
     }
-
-    if (_is24ChurchDept || widget.groupBy == 'Church') {
-      return [];
-    }
-
-    final lvl = widget.level.toLowerCase();
-    if (widget.isDeptLeader && lvl == 'dept status') return [];
-    if (widget.isSubLocationLeader && (lvl.contains('sub location') || lvl.contains('sub-location'))) return [];
-    if (widget.isTeamLeader && lvl == 'team status') return [];
-    if (widget.isLocationLeader && lvl == 'location status') return [];
 
     final Set<String> allUnits = {...unitSaintsCount.keys, ...unitLogs.keys};
     final sortedUnits = allUnits.toList()..sort((a, b) => a.compareTo(b));
@@ -378,13 +265,16 @@ class _EvangelismModuleState extends State<EvangelismModule> {
         saints = distinctIds.isNotEmpty ? distinctIds.length : uLogs.length;
       }
 
-      int mon = uLogs.where((l) => _isDayEvangelised(l, 'Mon', 'mon_part')).length;
-      int tue = uLogs.where((l) => _isDayEvangelised(l, 'Tue', 'tue_part')).length;
-      int wed = uLogs.where((l) => _isDayEvangelised(l, 'Wed', 'wed_part')).length;
-      int thu = uLogs.where((l) => _isDayEvangelised(l, 'Thu', 'thu_part')).length;
-      int fri = uLogs.where((l) => _isDayEvangelised(l, 'Fri', 'fri_part')).length;
-      int sat = uLogs.where((l) => _isDayEvangelised(l, 'Sat', 'sat_part')).length;
-      int sun = uLogs.where((l) => _isDayEvangelised(l, 'Sun', 'sun_part')).length;
+      // Per-week averages over the period (one week for "Current status")
+      final int sessions = _sessions;
+      int per(int v) => CompPeriod.perSession(v, sessions);
+      int mon = per(uLogs.where((l) => _isDayEvangelised(l, 'Mon', 'mon_part')).length);
+      int tue = per(uLogs.where((l) => _isDayEvangelised(l, 'Tue', 'tue_part')).length);
+      int wed = per(uLogs.where((l) => _isDayEvangelised(l, 'Wed', 'wed_part')).length);
+      int thu = per(uLogs.where((l) => _isDayEvangelised(l, 'Thu', 'thu_part')).length);
+      int fri = per(uLogs.where((l) => _isDayEvangelised(l, 'Fri', 'fri_part')).length);
+      int sat = per(uLogs.where((l) => _isDayEvangelised(l, 'Sat', 'sat_part')).length);
+      int sun = per(uLogs.where((l) => _isDayEvangelised(l, 'Sun', 'sun_part')).length);
 
       int maxDay = math.max(mon, math.max(tue, math.max(wed, math.max(thu, math.max(fri, math.max(sat, sun))))));
       saints = math.max(saints, maxDay);
@@ -408,13 +298,15 @@ class _EvangelismModuleState extends State<EvangelismModule> {
   _EvangelismUnitStat _calculateTotalStat(List<dynamic> allLogs, List<Map<String, dynamic>> allMembers) {
     int totalSaints = allMembers.isNotEmpty ? allMembers.length : 0;
 
-    int mon = allLogs.where((l) => _isDayEvangelised(l, 'Mon', 'mon_part')).length;
-    int tue = allLogs.where((l) => _isDayEvangelised(l, 'Tue', 'tue_part')).length;
-    int wed = allLogs.where((l) => _isDayEvangelised(l, 'Wed', 'wed_part')).length;
-    int thu = allLogs.where((l) => _isDayEvangelised(l, 'Thu', 'thu_part')).length;
-    int fri = allLogs.where((l) => _isDayEvangelised(l, 'Fri', 'fri_part')).length;
-    int sat = allLogs.where((l) => _isDayEvangelised(l, 'Sat', 'sat_part')).length;
-    int sun = allLogs.where((l) => _isDayEvangelised(l, 'Sun', 'sun_part')).length;
+    final int sessions = _sessions;
+    int per(int v) => CompPeriod.perSession(v, sessions);
+    int mon = per(allLogs.where((l) => _isDayEvangelised(l, 'Mon', 'mon_part')).length);
+    int tue = per(allLogs.where((l) => _isDayEvangelised(l, 'Tue', 'tue_part')).length);
+    int wed = per(allLogs.where((l) => _isDayEvangelised(l, 'Wed', 'wed_part')).length);
+    int thu = per(allLogs.where((l) => _isDayEvangelised(l, 'Thu', 'thu_part')).length);
+    int fri = per(allLogs.where((l) => _isDayEvangelised(l, 'Fri', 'fri_part')).length);
+    int sat = per(allLogs.where((l) => _isDayEvangelised(l, 'Sat', 'sat_part')).length);
+    int sun = per(allLogs.where((l) => _isDayEvangelised(l, 'Sun', 'sun_part')).length);
 
     int maxDay = math.max(mon, math.max(tue, math.max(wed, math.max(thu, math.max(fri, math.max(sat, sun))))));
     totalSaints = math.max(totalSaints, maxDay);
@@ -433,6 +325,18 @@ class _EvangelismModuleState extends State<EvangelismModule> {
   }
 
   // --- UI: TABLE SUMMARY (17 Columns) ---
+  // Centres the table when it is narrower than the screen; scrolls sideways when wider.
+  Widget _centeredScroll({required Widget child}) => LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth.isFinite ? constraints.maxWidth : 0),
+            child: Center(child: child),
+          ),
+        ),
+      );
+
   Widget _buildEvangelismTable(List<_EvangelismUnitStat> stats, _EvangelismUnitStat totalStat) {
     const double rh = 24.0;
     const double hh = 28.0;
@@ -464,8 +368,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
       "Thu", "Thu %", "Fri", "Fri %", "Sat", "Sat %", "Sun", "Sun %"
     ];
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return _centeredScroll(
       child: Table(
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         columnWidths: colWidths,
@@ -473,7 +376,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
         children: [
           // Header Row
           TableRow(
-            decoration: const BoxDecoration(color: Color(0xFF1E293B)),
+            decoration: const BoxDecoration(color: Color(0xFFF3E5F5)),
             children: headers.map((title) {
               return SizedBox(
                 height: hh,
@@ -483,7 +386,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                     child: Text(
                       title,
                       style: GoogleFonts.merriweather(
-                        color: Colors.white,
+                        color: pPurple,
                         fontSize: 9.0,
                         fontWeight: FontWeight.bold,
                       ),
@@ -496,11 +399,11 @@ class _EvangelismModuleState extends State<EvangelismModule> {
             }).toList(),
           ),
 
-          // General Total Summary Row (Prominent Top Row)
+          // General Total Summary Row
           TableRow(
             decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
             children: [
-              _cellText("General total", 26.0, isBold: true, color: pPurple, align: TextAlign.left, padLeft: 6),
+              _cellText("General total", 26.0, isBold: true, color: pPurple),
               _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
               _cellText(totalStat.weeklyAvg.toStringAsFixed(1), 26.0, isBold: true, color: pPurple),
               _cellText("${totalStat.mon}", 26.0, isBold: true),
@@ -520,8 +423,9 @@ class _EvangelismModuleState extends State<EvangelismModule> {
             ],
           ),
 
-          // Child Data Rows (Only when drilled down)
-          ...stats.asMap().entries.map((entry) {
+          // Child Data Rows
+          // A single unit row would just repeat the General total
+          if (stats.length > 1) ...stats.asMap().entries.map((entry) {
             int idx = entry.key;
             _EvangelismUnitStat u = entry.value;
             final isEven = idx.isEven;
@@ -530,7 +434,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
             return TableRow(
               decoration: BoxDecoration(color: rowColor),
               children: [
-                _cellText(u.unitName, rh, isBold: true, align: TextAlign.left, padLeft: 6),
+                _cellText(u.unitName, rh, isBold: true),
                 _cellText("${u.totalSaints}", rh),
                 _cellText(u.weeklyAvg.toStringAsFixed(1), rh, color: pPurple, isBold: true),
                 _cellText("${u.mon}", rh),
@@ -616,6 +520,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
         child: Row(
           children: units.map((u) {
             final isSelected = _selectedChartUnit == u;
@@ -1044,23 +949,14 @@ class _EvangelismModuleState extends State<EvangelismModule> {
 
   @override
   Widget build(BuildContext context) {
-    final cascadedMembers = _masterMembers.where((m) => _matchesCascade(m)).toList();
+    final List<_EvangelismUnitStat> unitStats = _calculateStats();
+    final cascadedMembers = _effectiveMembers.where((m) => _matchesCascade(m)).toList();
     final cascadedLogs = widget.logs.where((l) {
       if (l is! Map) return false;
       return _matchesCascade(Map<String, dynamic>.from(l));
     }).toList();
 
-    final List<_EvangelismUnitStat> unitStats = _calculateStats();
     final _EvangelismUnitStat totalStat = _calculateTotalStat(cascadedLogs, cascadedMembers);
-
-    if (_isLoadingMembers && _masterMembers.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32.0),
-          child: CircularProgressIndicator(color: pPurple),
-        ),
-      );
-    }
 
     return Column(
       children: [

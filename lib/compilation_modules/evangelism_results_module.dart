@@ -6,6 +6,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import '../core/compilation_rules.dart';
 
 class _EvangelismResultUnitStat {
   final String unitName;
@@ -34,20 +35,19 @@ class _EvangelismResultUnitStat {
 class EvangelismResultsModule extends StatefulWidget {
   final List<dynamic> bbData;
   final List<dynamic> logs;
+  final List<Map<String, dynamic>>? masterMembers;
   final String timePeriod;
   final String level;
   final String analyticsMode;
   final String groupBy;
   final double targetValue;
 
-  // Hierarchical scope & drill-down filters
   final String selectedLocation;
   final String selectedSubLocation;
   final String selectedDepartment;
   final String selectedTeam;
   final String activeUnitLabel;
 
-  // Role booleans
   final bool isChurchWide;
   final bool isLocationLeader;
   final bool isSubLocationLeader;
@@ -55,7 +55,6 @@ class EvangelismResultsModule extends StatefulWidget {
   final bool isTeamLeader;
   final bool isGroupLeader;
 
-  // User metadata
   final String userRole;
   final String userDept;
   final String userSub;
@@ -66,6 +65,7 @@ class EvangelismResultsModule extends StatefulWidget {
     super.key,
     required this.bbData,
     this.logs = const [],
+    this.masterMembers,
     this.timePeriod = 'Weekly status',
     this.level = 'Cell',
     this.analyticsMode = 'Summary',
@@ -100,7 +100,8 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
   @override
   void didUpdateWidget(covariant EvangelismResultsModule oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedLocation != widget.selectedLocation ||
+    if (oldWidget.level != widget.level ||
+        oldWidget.selectedLocation != widget.selectedLocation ||
         oldWidget.selectedSubLocation != widget.selectedSubLocation ||
         oldWidget.selectedDepartment != widget.selectedDepartment ||
         oldWidget.selectedTeam != widget.selectedTeam ||
@@ -109,7 +110,6 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
     }
   }
 
-  // --- STRICT CASCADING FILTER ---
   bool _matchesCascade(Map<String, dynamic> item) {
     Map<String, dynamic> m = {};
     if (item['members'] is Map) {
@@ -117,9 +117,10 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
     }
 
     String loc = item['location']?.toString() ?? m['location']?.toString() ?? '';
+    if (CompLevel.isMou(item)) loc = CompLevel.mou; // MOUWakiso etc. belong to the MOU location
     String sub = item['sub_location']?.toString() ?? m['sub_location']?.toString() ?? '';
-    String dept = item['current_dept']?.toString() ?? item['dept']?.toString() ?? m['current_dept']?.toString() ?? m['dept']?.toString() ?? '';
-    String team = item['team_number']?.toString() ?? item['team']?.toString() ?? m['team_number']?.toString() ?? m['team']?.toString() ?? '';
+    String dept = item['department']?.toString() ?? item['current_dept']?.toString() ?? item['dept']?.toString() ?? m['department']?.toString() ?? m['current_dept']?.toString() ?? m['dept']?.toString() ?? '';
+    String team = item['team']?.toString() ?? item['team_number']?.toString() ?? m['team']?.toString() ?? m['team_number']?.toString() ?? '';
 
     if (widget.selectedLocation.isNotEmpty &&
         widget.selectedLocation != 'All' &&
@@ -156,48 +157,43 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
     return true;
   }
 
-  // --- UNIT GROUPING KEY ---
-  String _getUnitKey(Map<String, dynamic> item) {
-    Map<String, dynamic> m = {};
-    if (item['members'] is Map) {
-      m = Map<String, dynamic>.from(item['members']);
-    }
+  String _resolveLocationBucket(dynamic record) {
+    String dept = (record['department'] ?? record['current_dept'] ?? record['dept'] ?? '').toString().trim().toUpperCase();
+    if (dept.contains('MOU')) return 'MOU';
 
-    String k = 'cell_number';
-    String gb = widget.groupBy.toLowerCase().trim();
-    if (gb.contains('team')) k = 'team_number';
-    else if (gb.contains('dept')) k = 'current_dept';
-    else if (gb.contains('sub')) k = 'sub_location';
-    else if (gb.contains('loc')) k = 'location';
+    String loc = (record['location'] ?? record['loc'] ?? '').toString().trim();
+    String locLower = loc.toLowerCase();
 
-    String val = item[k]?.toString() ?? m[k]?.toString() ?? '';
-    if (val.isEmpty) {
-      if (k == 'cell_number') val = item['cell']?.toString() ?? m['cell']?.toString() ?? '';
-      if (k == 'team_number') val = item['team']?.toString() ?? m['team']?.toString() ?? '';
-      if (k == 'current_dept') val = item['dept']?.toString() ?? m['dept']?.toString() ?? '';
-      if (k == 'sub_location') val = item['sub']?.toString() ?? m['sub']?.toString() ?? '';
-      if (k == 'location') val = item['loc']?.toString() ?? m['loc']?.toString() ?? '';
+    if (locLower == '24dept' || locLower == '24부서' || locLower == 'church' || locLower == '교회') {
+      return '24Dept';
     }
-    return val.trim().isNotEmpty ? val.trim() : 'Unassigned';
+    return loc.isNotEmpty ? loc : 'Other';
   }
+
+  // SOLVED: Next-tier resolution for bb_students
+  // Same level rules as every other module (shared CompLevel); the old
+  // contains('location status') check also caught "Sub location status".
+  String _getUnitKey(Map<String, dynamic> item) => CompLevel.unitKey(item, widget.level);
 
   bool _isOffline(dynamic method) {
     if (method == null) return false;
     final s = method.toString().trim().toLowerCase();
-    return s == 'inperson' || s == 'offline' || s == 'in person' || s == 'in-person';
+    return s == 'inperson' || s == 'offline' || s == 'in person' || s == 'in-person' || s == 'off-line';
   }
 
   bool _isOnline(dynamic method) {
     if (method == null) return false;
     final s = method.toString().trim().toLowerCase();
-    return s == 'online';
+    return s == 'online' || s == 'on-line';
   }
 
   bool _statusMatch(dynamic levelStatus, String targetKey) {
     if (levelStatus == null) return false;
     final s = levelStatus.toString().trim().toLowerCase();
     final t = targetKey.trim().toLowerCase();
-    return s == t;
+    if (s == t) return true;
+    if (t == 'new bb' && (s == 'new bb' || s == 'newbb' || s == 'new')) return true;
+    return s.contains(t);
   }
 
   List<dynamic> _getFilteredBbData() {
@@ -275,7 +271,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
     );
   }
 
-  // --- UI: STATUS CARDS (Preserved & Enhanced with Dark Borders) ---
+  // --- UI: STATUS CARDS ---
   Widget _buildResultCards(List<dynamic> filteredData) {
     return Column(
       children: [
@@ -314,7 +310,6 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Side Accent Bar
             Container(
               width: 6,
               decoration: BoxDecoration(
@@ -401,15 +396,15 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
     const double hh = 28.0;
 
     final Map<int, TableColumnWidth> colWidths = {
-      0: const FixedColumnWidth(130), // Unit name
-      1: const FixedColumnWidth(65),  // Total
-      2: const FixedColumnWidth(65),  // Chakki
-      3: const FixedColumnWidth(65),  // Possible
-      4: const FixedColumnWidth(65),  // New Bb
-      5: const FixedColumnWidth(75),  // Proceeding
-      6: const FixedColumnWidth(75),  // Confirmed
-      7: const FixedColumnWidth(65),  // Offline
-      8: const FixedColumnWidth(65),  // Online
+      0: const FixedColumnWidth(130),
+      1: const FixedColumnWidth(65),
+      2: const FixedColumnWidth(65),
+      3: const FixedColumnWidth(65),
+      4: const FixedColumnWidth(65),
+      5: const FixedColumnWidth(75),
+      6: const FixedColumnWidth(75),
+      7: const FixedColumnWidth(65),
+      8: const FixedColumnWidth(65),
     };
 
     List<String> headers = [
@@ -419,6 +414,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
       child: Table(
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         columnWidths: colWidths,
@@ -449,8 +445,25 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
             }).toList(),
           ),
 
+          // General Total Summary Row
+          TableRow(
+            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
+            children: [
+              _cellText("General total", 26.0, isBold: true, color: pPurple, align: TextAlign.left, padLeft: 6),
+              _cellText("${totalStat.total}", 26.0, isBold: true, color: pPurple),
+              _cellText("${totalStat.chakki}", 26.0, isBold: true),
+              _cellText("${totalStat.possible}", 26.0, isBold: true),
+              _cellText("${totalStat.newBb}", 26.0, isBold: true),
+              _cellText("${totalStat.proceeding}", 26.0, isBold: true),
+              _cellText("${totalStat.confirmed}", 26.0, isBold: true, color: Colors.green[900]!),
+              _cellText("${totalStat.offline}", 26.0, isBold: true),
+              _cellText("${totalStat.online}", 26.0, isBold: true),
+            ],
+          ),
+
           // Data Rows
-          ...stats.asMap().entries.map((entry) {
+          // A single unit row would just repeat the General total
+          if (stats.length > 1) ...stats.asMap().entries.map((entry) {
             int idx = entry.key;
             _EvangelismResultUnitStat u = entry.value;
             final isEven = idx.isEven;
@@ -471,22 +484,6 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
               ],
             );
           }),
-
-          // General Total Summary Row
-          TableRow(
-            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
-            children: [
-              _cellText("General total", 26.0, isBold: true, color: pPurple, align: TextAlign.left, padLeft: 6),
-              _cellText("${totalStat.total}", 26.0, isBold: true, color: pPurple),
-              _cellText("${totalStat.chakki}", 26.0, isBold: true),
-              _cellText("${totalStat.possible}", 26.0, isBold: true),
-              _cellText("${totalStat.newBb}", 26.0, isBold: true),
-              _cellText("${totalStat.proceeding}", 26.0, isBold: true),
-              _cellText("${totalStat.confirmed}", 26.0, isBold: true, color: Colors.green[900]!),
-              _cellText("${totalStat.offline}", 26.0, isBold: true),
-              _cellText("${totalStat.online}", 26.0, isBold: true),
-            ],
-          ),
         ],
       ),
     );
@@ -500,6 +497,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
         child: Row(
           children: units.map((u) {
             final isSelected = _selectedChartUnit == u;
@@ -759,17 +757,6 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
                 'Online',
               ],
               data: [
-                ...stats.map((u) => [
-                      u.unitName,
-                      '${u.total}',
-                      '${u.chakki}',
-                      '${u.possible}',
-                      '${u.newBb}',
-                      '${u.proceeding}',
-                      '${u.confirmed}',
-                      '${u.offline}',
-                      '${u.online}',
-                    ]),
                 [
                   'General Total',
                   '${totalStat.total}',
@@ -781,6 +768,17 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
                   '${totalStat.offline}',
                   '${totalStat.online}',
                 ],
+                ...stats.map((u) => [
+                      u.unitName,
+                      '${u.total}',
+                      '${u.chakki}',
+                      '${u.possible}',
+                      '${u.newBb}',
+                      '${u.proceeding}',
+                      '${u.confirmed}',
+                      '${u.offline}',
+                      '${u.online}',
+                    ]),
               ],
               headerStyle: pw.TextStyle(font: fontBold, fontSize: 8.0, color: PdfColors.white),
               headerDecoration: const pw.BoxDecoration(color: PdfColors.purple900),

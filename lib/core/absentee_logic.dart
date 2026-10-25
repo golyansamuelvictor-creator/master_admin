@@ -99,26 +99,26 @@ class AbsenteeLogic {
       if (members.isEmpty) return [];
 
       // 3. Fetch logs within selected date range
+      // Only this unit's members' logs. (Before, the latest N rows of the whole
+      // church were read, so members whose report wasn't among them showed up
+      // as false absentees.)
       List<dynamic> allLogs = [];
       try {
-        var query = _supabase.from(table).select();
-
-        if (startDate != null) {
-          query = query.gte('report_date', DateFormat('yyyy-MM-dd').format(startDate));
+        final ids = members.map((m) => m['id']).where((id) => id != null).toList();
+        for (int i = 0; i < ids.length; i += 150) {
+          final chunk = ids.sublist(i, (i + 150 > ids.length) ? ids.length : i + 150);
+          var query = _supabase.from(table).select().inFilter('member_id', chunk);
+          if (startDate != null) {
+            query = query.gte('report_date', DateFormat('yyyy-MM-dd').format(startDate));
+          }
+          if (endDate != null) {
+            query = query.lte('report_date', DateFormat('yyyy-MM-dd').format(endDate));
+          }
+          final logsRes = await query.order('report_date', ascending: false).limit(5000);
+          allLogs.addAll(logsRes as List);
         }
-        if (endDate != null) {
-          query = query.lte('report_date', DateFormat('yyyy-MM-dd').format(endDate));
-        }
-
-        final logsRes = await query.order('report_date', ascending: false).limit(members.length * 20);
-        allLogs = logsRes as List;
-      } catch (_) {
-        try {
-          final logsRes = await _supabase.from(table).select().limit(members.length * 15);
-          allLogs = logsRes as List;
-        } catch (_) {
-          allLogs = [];
-        }
+      } catch (e) {
+        allLogs = [];
       }
 
       // 4. Fetch Recovery/Care History

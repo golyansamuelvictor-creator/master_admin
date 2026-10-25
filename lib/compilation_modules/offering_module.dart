@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/compilation_rules.dart';
 
 class _OfferingUnitStat {
   final String unitName;
@@ -40,20 +40,19 @@ class _OfferingUnitStat {
 
 class OfferingModule extends StatefulWidget {
   final List<dynamic> logs;
+  final List<Map<String, dynamic>>? masterMembers;
   final String timePeriod;
   final String level;
   final String analyticsMode;
   final String groupBy;
   final double targetValue;
 
-  // Hierarchical scope & drill-down filters
   final String selectedLocation;
   final String selectedSubLocation;
   final String selectedDepartment;
   final String selectedTeam;
   final String activeUnitLabel;
 
-  // Role booleans
   final bool isChurchWide;
   final bool isLocationLeader;
   final bool isSubLocationLeader;
@@ -61,7 +60,6 @@ class OfferingModule extends StatefulWidget {
   final bool isTeamLeader;
   final bool isGroupLeader;
 
-  // User metadata
   final String userRole;
   final String userDept;
   final String userSub;
@@ -71,6 +69,7 @@ class OfferingModule extends StatefulWidget {
   const OfferingModule({
     super.key,
     required this.logs,
+    this.masterMembers,
     required this.timePeriod,
     required this.level,
     this.analyticsMode = 'Summary',
@@ -101,20 +100,24 @@ class OfferingModule extends StatefulWidget {
 class _OfferingModuleState extends State<OfferingModule> {
   static const Color pPurple = Color(0xFF4A148C);
 
-  List<Map<String, dynamic>> _masterMembers = [];
-  bool _isLoadingMembers = false;
   String _selectedChartUnit = 'General total';
+
+  // Headcount comes only from the screen's scoped member list. (The old
+  // fallback loaded ALL church members when the scoped list was empty.)
+  List<Map<String, dynamic>> get _effectiveMembers => widget.masterMembers ?? const [];
+
+  int get _sessions => widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(widget.logs);
 
   @override
   void initState() {
     super.initState();
-    _fetchMasterMembers();
   }
 
   @override
   void didUpdateWidget(covariant OfferingModule oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedLocation != widget.selectedLocation ||
+    if (oldWidget.level != widget.level ||
+        oldWidget.selectedLocation != widget.selectedLocation ||
         oldWidget.selectedSubLocation != widget.selectedSubLocation ||
         oldWidget.selectedDepartment != widget.selectedDepartment ||
         oldWidget.selectedTeam != widget.selectedTeam ||
@@ -123,29 +126,7 @@ class _OfferingModuleState extends State<OfferingModule> {
     }
   }
 
-  // --- SUPABASE CAPACITY FETCHING (ALL SAINTS) ---
-  Future<void> _fetchMasterMembers() async {
-    try {
-      setState(() => _isLoadingMembers = true);
-      final res = await Supabase.instance.client
-          .from('members')
-          .select('id, name, location, sub_location, current_dept, dept, team_number, team, cell_number, cell');
 
-      if (mounted) {
-        setState(() {
-          _masterMembers = List<Map<String, dynamic>>.from(res as List);
-          _isLoadingMembers = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingMembers = false);
-      }
-      debugPrint('OfferingModule: members table fetch note: $e');
-    }
-  }
-
-  // --- STRICT CASCADING FILTER ---
   bool _matchesCascade(Map<String, dynamic> item) {
     Map<String, dynamic> m = {};
     if (item['members'] is Map) {
@@ -153,9 +134,10 @@ class _OfferingModuleState extends State<OfferingModule> {
     }
 
     String loc = item['location']?.toString() ?? m['location']?.toString() ?? '';
+    if (CompLevel.isMou(item)) loc = CompLevel.mou; // MOUWakiso etc. belong to the MOU location
     String sub = item['sub_location']?.toString() ?? m['sub_location']?.toString() ?? '';
-    String dept = item['current_dept']?.toString() ?? item['dept']?.toString() ?? m['current_dept']?.toString() ?? m['dept']?.toString() ?? '';
-    String team = item['team_number']?.toString() ?? item['team']?.toString() ?? m['team_number']?.toString() ?? m['team']?.toString() ?? '';
+    String dept = item['department']?.toString() ?? item['dept']?.toString() ?? m['department']?.toString() ?? '';
+    String team = item['team']?.toString() ?? item['team_number']?.toString() ?? m['team']?.toString() ?? '';
 
     if (widget.selectedLocation.isNotEmpty &&
         widget.selectedLocation != 'All' &&
@@ -192,36 +174,32 @@ class _OfferingModuleState extends State<OfferingModule> {
     return true;
   }
 
-  // --- UNIT GROUPING KEY ---
-  String _getUnitKey(Map<String, dynamic> item) {
-    Map<String, dynamic> m = {};
-    if (item['members'] is Map) {
-      m = Map<String, dynamic>.from(item['members']);
-    }
+  String _resolveLocationBucket(dynamic record) {
+    String dept = (record['department'] ?? record['members']?['department'] ?? '').toString().trim().toUpperCase();
+    if (dept.contains('MOU')) return 'MOU';
 
-    String k = 'cell_number';
-    String gb = widget.groupBy.toLowerCase().trim();
-    if (gb.contains('team')) k = 'team_number';
-    else if (gb.contains('dept')) k = 'current_dept';
-    else if (gb.contains('sub')) k = 'sub_location';
-    else if (gb.contains('loc')) k = 'location';
+    String loc = (record['location'] ?? record['members']?['location'] ?? '').toString().trim();
+    String locLower = loc.toLowerCase();
 
-    String val = item[k]?.toString() ?? m[k]?.toString() ?? '';
-    if (val.isEmpty) {
-      if (k == 'cell_number') val = item['cell']?.toString() ?? m['cell']?.toString() ?? '';
-      if (k == 'team_number') val = item['team']?.toString() ?? m['team']?.toString() ?? '';
-      if (k == 'current_dept') val = item['dept']?.toString() ?? m['dept']?.toString() ?? '';
-      if (k == 'sub_location') val = item['sub']?.toString() ?? m['sub']?.toString() ?? '';
-      if (k == 'location') val = item['loc']?.toString() ?? m['loc']?.toString() ?? '';
+    if (locLower == '24dept' || locLower == '24부서' || locLower == 'church' || locLower == '교회') {
+      return '24Dept';
     }
-    return val.trim().isNotEmpty ? val.trim() : 'Unassigned';
+    return loc.isNotEmpty ? loc : 'Other';
   }
 
-  // --- HELPER: CHECK IF OFFERING WAS PAID ---
+  // SOLVED: Accurate Unit Mapping
+  // Same level rules as every other module (shared CompLevel); the old
+  // contains('location status') check also caught "Sub location status".
+  String _getUnitKey(Map<String, dynamic> item) => CompLevel.unitKey(item, widget.level);
+
+  // An amount greater than 0 or any "yes"-type answer counts as given
+  // (amounts such as "5000" used to count as not paid).
   bool _isPaid(dynamic val) {
-    if (val == null) return false;
-    final s = val.toString().trim().toLowerCase();
-    return s == 'yes' || s == 'paid' || s == 'true' || s == 'done' || s == '1';
+    final s = CompStatus.norm(val);
+    if (s.isEmpty) return false;
+    final num? amount = num.tryParse(s.replaceAll(',', '').replaceAll(' ', ''));
+    if (amount != null) return amount > 0;
+    return CompStatus.isPositive(s);
   }
 
   DateTime? _parseDate(dynamic val) {
@@ -233,18 +211,15 @@ class _OfferingModuleState extends State<OfferingModule> {
     }
   }
 
-  // --- AGGREGATION PIPELINE ---
+  // SOLVED: Next-Tier Decomposition (Never suppresses to null)
   List<_OfferingUnitStat> _calculateStats() {
-    // 1. Cascaded logs
     final cascadedLogs = widget.logs.where((l) {
       if (l is! Map) return false;
       return _matchesCascade(Map<String, dynamic>.from(l));
     }).toList();
 
-    // 2. Cascaded master members (Saints capacity)
-    final cascadedMembers = _masterMembers.where((m) => _matchesCascade(m)).toList();
+    final cascadedMembers = _effectiveMembers.where((m) => _matchesCascade(m)).toList();
 
-    // Group members by unit for true capacity
     final Map<String, int> unitSaintsCount = {};
     for (var m in cascadedMembers) {
       final u = _getUnitKey(m);
@@ -253,7 +228,6 @@ class _OfferingModuleState extends State<OfferingModule> {
       }
     }
 
-    // Group logs by unit
     final Map<String, List<dynamic>> unitLogs = {};
     for (var l in cascadedLogs) {
       final u = _getUnitKey(Map<String, dynamic>.from(l));
@@ -271,7 +245,6 @@ class _OfferingModuleState extends State<OfferingModule> {
       final uLogs = unitLogs[u] ?? [];
       int saints = unitSaintsCount[u] ?? 0;
 
-      // Fallback to distinct members in logs if master capacity is unavailable
       if (saints == 0) {
         final distinctIds = <dynamic>{};
         for (var l in uLogs) {
@@ -281,21 +254,23 @@ class _OfferingModuleState extends State<OfferingModule> {
         saints = distinctIds.isNotEmpty ? distinctIds.length : uLogs.length;
       }
 
-      int t = uLogs.where((l) => _isPaid(l['offering_tithe'])).length;
-      int w = uLogs.where((l) => _isPaid(l['offering_weekly'])).length;
-      int th = uLogs.where((l) => _isPaid(l['offering_thanks'])).length;
-      int c = uLogs.where((l) => _isPaid(l['offering_construction'])).length;
-      int d = uLogs.where((l) => _isPaid(l['offering_donation'])).length;
+      // Per-week averages over the period (one week for "Current status")
+      final int sessions = _sessions;
+      int per(int v) => CompPeriod.perSession(v, sessions);
+      int t = per(uLogs.where((l) => _isPaid(l['offering_tithe'])).length);
+      int w = per(uLogs.where((l) => _isPaid(l['offering_weekly'])).length);
+      int th = per(uLogs.where((l) => _isPaid(l['offering_thanks'])).length);
+      int c = per(uLogs.where((l) => _isPaid(l['offering_construction'])).length);
+      int d = per(uLogs.where((l) => _isPaid(l['offering_donation'])).length);
 
-      int givers = uLogs.where((l) =>
+      int givers = per(uLogs.where((l) =>
         _isPaid(l['offering_tithe']) ||
         _isPaid(l['offering_weekly']) ||
         _isPaid(l['offering_thanks']) ||
         _isPaid(l['offering_construction']) ||
         _isPaid(l['offering_donation'])
-      ).length;
+      ).length);
 
-      // Ensure total capacity is at least equal to maximum recorded count
       saints = math.max(saints, math.max(givers, math.max(t, math.max(w, math.max(th, math.max(c, d))))));
 
       stats.add(_OfferingUnitStat(
@@ -345,24 +320,36 @@ class _OfferingModuleState extends State<OfferingModule> {
   }
 
   // --- UI: TABLE SUMMARY (13 Columns) ---
+  // Centres the table when it is narrower than the screen; scrolls sideways when wider.
+  Widget _centeredScroll({required Widget child}) => LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth.isFinite ? constraints.maxWidth : 0),
+            child: Center(child: child),
+          ),
+        ),
+      );
+
   Widget _buildOfferingTable(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) {
     const double rh = 24.0;
     const double hh = 28.0;
 
     final Map<int, TableColumnWidth> colWidths = {
-      0: const FixedColumnWidth(130), // Unit name
-      1: const FixedColumnWidth(65),  // Saints
-      2: const FixedColumnWidth(65),  // Givers
-      3: const FixedColumnWidth(55),  // Tithe
-      4: const FixedColumnWidth(50),  // Tithe %
-      5: const FixedColumnWidth(55),  // Wkly
-      6: const FixedColumnWidth(50),  // Wkly %
-      7: const FixedColumnWidth(55),  // Thks
-      8: const FixedColumnWidth(50),  // Thks %
-      9: const FixedColumnWidth(55),  // Const
-      10: const FixedColumnWidth(50), // Const %
-      11: const FixedColumnWidth(55), // Donat
-      12: const FixedColumnWidth(50), // Donat %
+      0: const FixedColumnWidth(130),
+      1: const FixedColumnWidth(65),
+      2: const FixedColumnWidth(65),
+      3: const FixedColumnWidth(55),
+      4: const FixedColumnWidth(50),
+      5: const FixedColumnWidth(55),
+      6: const FixedColumnWidth(50),
+      7: const FixedColumnWidth(55),
+      8: const FixedColumnWidth(50),
+      9: const FixedColumnWidth(55),
+      10: const FixedColumnWidth(50),
+      11: const FixedColumnWidth(55),
+      12: const FixedColumnWidth(50),
     };
 
     List<String> headers = [
@@ -370,8 +357,7 @@ class _OfferingModuleState extends State<OfferingModule> {
       "Saints", "Givers", "Tithe", "%", "Wkly", "%", "Thks", "%", "Const", "%", "Donat", "%"
     ];
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return _centeredScroll(
       child: Table(
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         columnWidths: colWidths,
@@ -379,7 +365,7 @@ class _OfferingModuleState extends State<OfferingModule> {
         children: [
           // Header Row
           TableRow(
-            decoration: const BoxDecoration(color: Color(0xFF1E293B)),
+            decoration: const BoxDecoration(color: Color(0xFFF3E5F5)),
             children: headers.map((title) {
               return SizedBox(
                 height: hh,
@@ -389,7 +375,7 @@ class _OfferingModuleState extends State<OfferingModule> {
                     child: Text(
                       title,
                       style: GoogleFonts.merriweather(
-                        color: Colors.white,
+                        color: pPurple,
                         fontSize: 9.5,
                         fontWeight: FontWeight.bold,
                       ),
@@ -402,8 +388,29 @@ class _OfferingModuleState extends State<OfferingModule> {
             }).toList(),
           ),
 
+          // General Total Summary Row
+          TableRow(
+            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
+            children: [
+              _cellText("General total", 26.0, isBold: true, color: pPurple),
+              _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
+              _cellText("${totalStat.givers}", 26.0, isBold: true, color: pPurple),
+              _cellText("${totalStat.tithe}", 26.0, isBold: true),
+              _cellPercent(totalStat.tithePct, 26.0, pPurple, isBold: true),
+              _cellText("${totalStat.weekly}", 26.0, isBold: true),
+              _cellPercent(totalStat.weeklyPct, 26.0, Colors.blue[900]!, isBold: true),
+              _cellText("${totalStat.thanks}", 26.0, isBold: true),
+              _cellPercent(totalStat.thanksPct, 26.0, Colors.orange[900]!, isBold: true),
+              _cellText("${totalStat.construction}", 26.0, isBold: true),
+              _cellPercent(totalStat.constructionPct, 26.0, Colors.teal[900]!, isBold: true),
+              _cellText("${totalStat.donation}", 26.0, isBold: true),
+              _cellPercent(totalStat.donationPct, 26.0, Colors.indigo[900]!, isBold: true),
+            ],
+          ),
+
           // Data Rows
-          ...stats.asMap().entries.map((entry) {
+          // A single unit row would just repeat the General total
+          if (stats.length > 1) ...stats.asMap().entries.map((entry) {
             int idx = entry.key;
             _OfferingUnitStat u = entry.value;
             final isEven = idx.isEven;
@@ -412,7 +419,7 @@ class _OfferingModuleState extends State<OfferingModule> {
             return TableRow(
               decoration: BoxDecoration(color: rowColor),
               children: [
-                _cellText(u.unitName, rh, isBold: true, align: TextAlign.left, padLeft: 6),
+                _cellText(u.unitName, rh, isBold: true),
                 _cellText("${u.totalSaints}", rh),
                 _cellText("${u.givers}", rh, color: pPurple, isBold: true),
                 _cellText("${u.tithe}", rh),
@@ -428,26 +435,6 @@ class _OfferingModuleState extends State<OfferingModule> {
               ],
             );
           }),
-
-          // General Total Summary Row
-          TableRow(
-            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
-            children: [
-              _cellText("General total", 26.0, isBold: true, color: pPurple, align: TextAlign.left, padLeft: 6),
-              _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
-              _cellText("${totalStat.givers}", 26.0, isBold: true, color: pPurple),
-              _cellText("${totalStat.tithe}", 26.0, isBold: true),
-              _cellPercent(totalStat.tithePct, 26.0, pPurple, isBold: true),
-              _cellText("${totalStat.weekly}", 26.0, isBold: true),
-              _cellPercent(totalStat.weeklyPct, 26.0, Colors.blue[900]!, isBold: true),
-              _cellText("${totalStat.thanks}", 26.0, isBold: true),
-              _cellPercent(totalStat.thanksPct, 26.0, Colors.orange[900]!, isBold: true),
-              _cellText("${totalStat.construction}", 26.0, isBold: true),
-              _cellPercent(totalStat.constructionPct, 26.0, Colors.teal[900]!, isBold: true),
-              _cellText("${totalStat.donation}", 26.0, isBold: true),
-              _cellPercent(totalStat.donationPct, 26.0, Colors.indigo[900]!, isBold: true),
-            ],
-          ),
         ],
       ),
     );
@@ -461,6 +448,7 @@ class _OfferingModuleState extends State<OfferingModule> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
         child: Row(
           children: units.map((u) {
             final isSelected = _selectedChartUnit == u;
@@ -492,27 +480,33 @@ class _OfferingModuleState extends State<OfferingModule> {
     );
   }
 
-  // --- UI: DYNAMIC TREND CHART (Linked to Unit Selector) ---
+  // --- UI: DYNAMIC TREND CHART (Week 1–5 or Month 1–4) ---
   Widget _buildTrendChart(List<_OfferingUnitStat> stats) {
-    // Filter cascaded logs
     final cascadedLogs = widget.logs.where((l) {
       if (l is! Map) return false;
       return _matchesCascade(Map<String, dynamic>.from(l));
     }).toList();
 
-    // Further filter by selected unit if not General total
     final filteredLogs = _selectedChartUnit == 'General total'
         ? cascadedLogs
         : cascadedLogs.where((l) => _getUnitKey(Map<String, dynamic>.from(l)) == _selectedChartUnit).toList();
 
     Map<DateTime, List<dynamic>> timeMap = {};
     for (var log in filteredLogs) {
-      DateTime? d = _parseDate(log['report_date'] ?? log['date'] ?? log['created_at']);
-      if (d != null) {
-        timeMap.putIfAbsent(DateTime(d.year, d.month, d.day), () => []).add(log);
+      // One point per week (Weekly) or month (Monthly), else per date
+      final key = DateTime.tryParse(CompPeriod.bucketKey(log, widget.timePeriod));
+      if (key != null) {
+        timeMap.putIfAbsent(key, () => []).add(log);
       }
     }
 
+    // Weekly = Week 1..Week 5, Monthly = the 4 months, even if one has no reports
+    final expected = CompPeriod.expectedBuckets(widget.timePeriod);
+    if (expected != null && timeMap.isNotEmpty) {
+      for (final k in expected) {
+        timeMap.putIfAbsent(DateTime.parse(k), () => []);
+      }
+    }
     var sortedDates = timeMap.keys.toList()..sort();
     if (sortedDates.isEmpty) {
       return Column(
@@ -522,6 +516,19 @@ class _OfferingModuleState extends State<OfferingModule> {
           const SizedBox(height: 120, child: Center(child: Text("No offering date records found for trend chart"))),
         ],
       );
+    }
+
+    List<String> periodLabels = [];
+    if (widget.timePeriod == "Weekly status") {
+      periodLabels = List.generate(sortedDates.length, (i) {
+        return "Week ${i + 1}\n(${DateFormat('MM/dd').format(sortedDates[i])})";
+      });
+    } else if (widget.timePeriod == "Monthly status") {
+      periodLabels = List.generate(sortedDates.length, (i) {
+        return DateFormat('MMM').format(sortedDates[i]);
+      });
+    } else {
+      periodLabels = sortedDates.map((d) => DateFormat('MM/dd').format(d)).toList();
     }
 
     return Column(
@@ -590,15 +597,16 @@ class _OfferingModuleState extends State<OfferingModule> {
                   sideTitles: SideTitles(
                     showTitles: true,
                     interval: 1,
-                    reservedSize: 28,
+                    reservedSize: 32,
                     getTitlesWidget: (v, m) {
                       int idx = v.toInt();
-                      if (idx < 0 || idx >= sortedDates.length) return const SizedBox();
+                      if (idx < 0 || idx >= periodLabels.length) return const SizedBox();
                       return Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
+                        padding: const EdgeInsets.only(top: 4.0),
                         child: Text(
-                          DateFormat('dd/MM').format(sortedDates[idx]),
-                          style: GoogleFonts.merriweather(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+                          periodLabels[idx],
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
                         ),
                       );
                     },
@@ -926,15 +934,6 @@ class _OfferingModuleState extends State<OfferingModule> {
   Widget build(BuildContext context) {
     final List<_OfferingUnitStat> unitStats = _calculateStats();
     final _OfferingUnitStat totalStat = _calculateTotalStat(unitStats);
-
-    if (_isLoadingMembers && _masterMembers.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32.0),
-          child: CircularProgressIndicator(color: pPurple),
-        ),
-      );
-    }
 
     return Column(
       children: [

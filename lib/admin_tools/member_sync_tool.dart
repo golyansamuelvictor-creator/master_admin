@@ -75,10 +75,31 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       // Col index resolver: uses header row position if recognized, otherwise falls back to SQL column index
       int col(String name, int defaultIndex) => headerMap[name] ?? defaultIndex;
 
+      // Existing members (paged), so required columns can be filled in for
+      // rows that leave them blank and so we know which records already exist.
+      setState(() => _log = "Step 2: Loading existing member records...");
+      final Map<String, Map<String, dynamic>> existingByScj = {};
+      int offset = 0;
+      while (true) {
+        final page = await _supabase
+            .from('members')
+            .select('scj_id, english_name, sub_location, dob, location, reg_status')
+            .order('id')
+            .range(offset, offset + 999);
+        for (final r in page) {
+          final id = r['scj_id']?.toString().trim();
+          if (id != null && id.isNotEmpty) existingByScj[id] = Map<String, dynamic>.from(r);
+        }
+        if (page.length < 1000) break;
+        offset += 1000;
+      }
+
       final List<Map<String, dynamic>> upsertData = [];
       final List<String> scjIdsInFile = [];
+      final Set<String> locationsInFile = {};
+      final List<String> skipped = [];
 
-      setState(() => _log = "Step 2: Parsing member records...");
+      setState(() => _log = "Step 3: Parsing member records...");
 
       for (int i = 1; i < table.maxRows; i++) {
         final row = table.rows[i];
@@ -89,7 +110,6 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
 
         scjIdsInFile.add(scjId);
 
-        // Map all 42 fields matching SQL member table order (excluding id and created_at)
         final memberMap = <String, dynamic>{
           'scj_id': scjId,
           'location': _getCellValue(row, col('location', 1)),
@@ -100,10 +120,9 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
           'duty': _getCellValue(row, col('duty', 6)),
           'english_name': _getCellValue(row, col('english_name', 7)),
           'korean_name': _getCellValue(row, col('korean_name', 8)),
-          'book_of_life': _getCellValue(row, col('book_of_life', 10)),
           'dob': _getCellValue(row, col('dob', 11)),
           'gender': _getCellValue(row, col('gender', 12)),
-          'reg_status': _getCellValue(row, col('reg_status', 13)) ?? 'Active',
+          'reg_status': _getCellValue(row, col('reg_status', 13)),
           'appointment': _getCellValue(row, col('appointment', 14)),
           'bol_dept': _getCellValue(row, col('bol_dept', 16)),
           'sub_location_id': _getCellValue(row, col('sub_location_id', 17)),
@@ -114,7 +133,6 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
           'marital_status': _getCellValue(row, col('marital_status', 22)),
           'photograph_url': _getCellValue(row, col('photograph_url', 23)),
           'health_status': _getCellValue(row, col('health_status', 24)),
-          'phone_numbers': _getCellValue(row, col('phone_numbers', 25)),
           'email_address': _getCellValue(row, col('email_address', 26)),
           'physical_address': _getCellValue(row, col('physical_address', 27)),
           'emergency_contact': _getCellValue(row, col('emergency_contact', 28)),
@@ -133,43 +151,76 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
           'introduced_by_id': _getCellValue(row, col('introduced_by_id', 41)),
         };
 
-        // Remove null foreign keys so Postgres doesn't attempt empty string parsing
-        memberMap.removeWhere((key, value) =>
-            (key.endsWith('_id') && key != 'scj_id') && value == null);
+        // book_of_life is GENERATED from bol_dept in the database and can't be
+        // written (writing it made the whole sync fail); use it to fill bol_dept.
+        final bolFromSheet = _getCellValue(row, col('book_of_life', 10));
+        if (memberMap['bol_dept'] == null && bolFromSheet != null) memberMap['bol_dept'] = bolFromSheet;
+
+        // phone_numbers is a list column (text[]): "0700..., 0780..." -> ["0700...", "0780..."]
+        final phones = _getCellValue(row, col('phone_numbers', 25));
+        if (phones != null) {
+          memberMap['phone_numbers'] = phones
+              .split(RegExp(r'[,;/]'))
+              .map((p) => p.trim())
+              .where((p) => p.isNotEmpty)
+              .toList();
+        }
+
+        // Blank cells are left out so they never wipe existing data
+        memberMap.removeWhere((key, value) => value == null);
+
+        // english_name, sub_location and dob are required by the table. For an
+        // existing member, keep the stored value when the sheet leaves it blank.
+        final existing = existingByScj[scjId];
+        for (final req in const ['english_name', 'sub_location', 'dob']) {
+          if (memberMap[req] == null && existing != null && existing[req] != null) {
+            memberMap[req] = existing[req];
+          }
+        }
+        if (memberMap['english_name'] == null || memberMap['sub_location'] == null || memberMap['dob'] == null) {
+          skipped.add(scjId);
+          continue;
+        }
+
+        final loc = (memberMap['location'] ?? existing?['location'])?.toString();
+        if (loc != null && loc.isNotEmpty) locationsInFile.add(loc);
 
         upsertData.add(memberMap);
       }
 
       if (upsertData.isEmpty) {
-        throw Exception("No valid rows with an SCJ ID were found in the file.");
+        throw Exception("No valid rows with an SCJ ID, name, sub-location and date of birth were found in the file.");
       }
 
-      // Step 3: Batch upsert in chunks of 100
-      setState(() => _log = "Step 3: Updating ${upsertData.length} records in database...");
-      for (int i = 0; i < upsertData.length; i += 100) {
-        final chunk = upsertData.sublist(
-          i,
-          (i + 100 > upsertData.length) ? upsertData.length : i + 100,
-        );
-        await _supabase.from('members').upsert(chunk, onConflict: 'scj_id');
+      // Step 4: upsert. Rows are grouped by which columns they fill, because a
+      // bulk upsert sets every column in the batch: a row without (say) a phone
+      // would otherwise have its stored phone overwritten with NULL.
+      setState(() => _log = "Step 4: Updating ${upsertData.length} records in database...");
+      final Map<String, List<Map<String, dynamic>>> byColumns = {};
+      for (final m in upsertData) {
+        final keys = m.keys.toList()..sort();
+        byColumns.putIfAbsent(keys.join(','), () => []).add(m);
       }
-
-      // Step 4: Find active database members omitted from the file and mark as Dropped
-      setState(() => _log = "Step 4: Checking for omitted members to mark as dropped...");
-      final activeMembers = await _supabase
-          .from('members')
-          .select('scj_id')
-          .neq('reg_status', 'Dropped');
-
-      final Set<String> fileScjIdSet = scjIdsInFile.toSet();
-      final List<String> toDrop = [];
-
-      for (final record in activeMembers) {
-        final id = record['scj_id']?.toString().trim();
-        if (id != null && id.isNotEmpty && !fileScjIdSet.contains(id)) {
-          toDrop.add(id);
+      for (final group in byColumns.values) {
+        for (int i = 0; i < group.length; i += 100) {
+          final chunk = group.sublist(i, (i + 100 > group.length) ? group.length : i + 100);
+          await _supabase.from('members').upsert(chunk, onConflict: 'scj_id');
         }
       }
+
+      // Step 5: mark members missing from the file as Dropped — but only in the
+      // locations this file covers. (Before, uploading one location's sheet
+      // marked every other member of the church as Dropped.)
+      setState(() => _log = "Step 5: Checking for omitted members to mark as dropped...");
+      final Set<String> fileScjIdSet = scjIdsInFile.toSet();
+      final List<String> toDrop = [];
+      existingByScj.forEach((id, r) {
+        final loc = (r['location'] ?? '').toString();
+        final status = (r['reg_status'] ?? '').toString();
+        if (status != 'Dropped' && locationsInFile.contains(loc) && !fileScjIdSet.contains(id)) {
+          toDrop.add(id);
+        }
+      });
 
       int droppedCount = 0;
       if (toDrop.isNotEmpty) {
@@ -186,11 +237,17 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
         }
       }
 
+      if (skipped.isNotEmpty) {
+        debugPrint("Member sync skipped (missing name / sub-location / dob): ${skipped.join(', ')}");
+      }
+
       setState(() {
         _totalInFile = scjIdsInFile.length;
         _totalUpserted = upsertData.length;
         _totalDropped = droppedCount;
-        _log = "Full sync completed successfully.";
+        _log = skipped.isEmpty
+            ? "Full sync completed successfully."
+            : "Sync completed. ${skipped.length} row(s) skipped because name, sub-location or date of birth is missing: ${skipped.take(20).join(', ')}${skipped.length > 20 ? ' ...' : ''}";
       });
     } catch (e) {
       setState(() => _log = "Error: $e");

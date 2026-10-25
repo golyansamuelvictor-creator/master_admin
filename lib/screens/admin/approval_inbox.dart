@@ -89,7 +89,14 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
   }
 
   Future<void> _signRequest(dynamic request, bool approved) async {
-    String? myLevel = TransferWorkflow.getRoleLevel(widget.userRole);
+    final String? myLevel = TransferWorkflow.getRoleLevel(widget.userRole);
+    if (myLevel == null) {
+      // Not a signer for transfers (this used to crash on `myLevel as Object`)
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Your role can't sign transfer requests.")),
+      );
+      return;
+    }
 
     try {
       // 1. Record the signature
@@ -113,12 +120,12 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
             .from('transfer_approvals')
             .select('approver_role')
             .eq('request_id', request['id'])
-            .eq('approval_level', myLevel as Object);
+            .eq('approval_level', myLevel);
 
         List<String> rolesWhoSigned =
             signatures.map((s) => s['approver_role'].toString()).toList();
 
-        if (TransferWorkflow.isLevelComplete(myLevel!, rolesWhoSigned)) {
+        if (TransferWorkflow.isLevelComplete(myLevel, rolesWhoSigned)) {
           // Level is complete! Move to next level OR execute if IA
           String? nextLevel = TransferWorkflow.getNextLevel(myLevel);
 
@@ -142,17 +149,57 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
       _loadRequests();
     } catch (e) {
       debugPrint("Approval Error: $e");
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't record your decision. Please try again.")),
+      );
     }
   }
 
   Future<void> _executeMemberTransfer(dynamic request) async {
     final newUnit = request['new_unit_details'];
-    // Update the member's profile in the database
-    await _supabase.from('members').update({
-      'location': newUnit['loc'],
-      'team_number': newUnit['team'],
-      'cell_number': newUnit['cell'],
-    }).eq('id', request['member_id']);
+    final oldUnit = request['old_unit_details'];
+    String? pick(dynamic unit, String key, String legacy) {
+      if (unit is! Map) return null;
+      final v = unit[key] ?? unit[legacy];
+      return v?.toString();
+    }
+
+    // Update the member's unit. The request stores location / sub_location /
+    // department / team / cell_group (the old code read 'loc' and wrote
+    // team_number / cell_number, which don't exist on members).
+    final Map<String, dynamic> update = {
+      'location': pick(newUnit, 'location', 'loc'),
+      'sub_location': pick(newUnit, 'sub_location', 'sub'),
+      'department': pick(newUnit, 'department', 'dept'),
+      'team': pick(newUnit, 'team', 'team'),
+      'cell_group': pick(newUnit, 'cell_group', 'cell'),
+    }..removeWhere((k, v) => v == null || v.isEmpty);
+    if (update.isNotEmpty) {
+      await _supabase.from('members').update(update).eq('id', request['member_id']);
+    }
+
+    // Keep a history row in member_transfers
+    try {
+      await _supabase.from('member_transfers').insert({
+        'member_id': request['member_id'],
+        'old_location': pick(oldUnit, 'location', 'loc'),
+        'old_sub_location': pick(oldUnit, 'sub_location', 'sub'),
+        'old_dept': pick(oldUnit, 'department', 'dept'),
+        'old_team': pick(oldUnit, 'team', 'team'),
+        'old_cell': pick(oldUnit, 'cell_group', 'cell'),
+        'new_location': update['location'],
+        'new_sub_location': update['sub_location'],
+        'new_dept': update['department'],
+        'new_team': update['team'],
+        'new_cell': update['cell_group'],
+        'transfer_date': DateTime.now().toIso8601String().substring(0, 10),
+        'reason': request['reason'],
+        'authorized_by': _supabase.auth.currentUser?.id,
+      });
+    } catch (e) {
+      debugPrint("Transfer history insert failed: $e");
+    }
 
     await _supabase
         .from('transfer_requests')

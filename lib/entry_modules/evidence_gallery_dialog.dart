@@ -113,18 +113,22 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
 
       final ext = file.extension ?? 'jpg';
       final fileName = "${DateTime.now().millisecondsSinceEpoch}_$uploadedCount.$ext";
-      final storagePath = "${widget.sheetName}/${widget.unitName}/$dateStr/$fileName";
+      // The report-evidence bucket only accepts files inside the uploader's own folder (<uid>/...)
+      final storagePath = "${user?.id ?? 'anonymous'}/${widget.sheetName}/${widget.unitName}/$dateStr/$fileName";
+      final contentType = (ext.toLowerCase() == 'jpg' || ext.toLowerCase() == 'jpeg') ? 'image/jpeg' : 'image/${ext.toLowerCase()}';
 
       try {
         await supabase.storage.from('report-evidence').uploadBinary(
               storagePath,
               file.bytes!,
-              fileOptions: FileOptions(contentType: 'image/$ext', upsert: true),
+              fileOptions: FileOptions(contentType: contentType, upsert: true),
             );
 
         final publicUrl = supabase.storage.from('report-evidence').getPublicUrl(storagePath);
 
         await supabase.from('report_evidence').insert({
+          'duty_name': widget.sheetName, // required column (the insert failed without it)
+          'uploaded_by': user?.id,
           'sheet_name': widget.sheetName,
           'unit_name': widget.unitName,
           'report_date': dateStr,
