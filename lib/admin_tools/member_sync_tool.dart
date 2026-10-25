@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' hide Border;
+import 'package:master_admin/core/app_palette.dart';
 
 class MemberSyncTool extends StatefulWidget {
   const MemberSyncTool({super.key});
@@ -260,15 +261,15 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppPalette.bg(_backgroundColor),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         title: Text(
           "Member Database Sync",
           style: GoogleFonts.merriweather(
             fontWeight: FontWeight.w900,
-            color: _primaryPurple,
+            color: AppPalette.fg(_primaryPurple),
             fontSize: 23,
           ),
         ),
@@ -305,16 +306,16 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
+        color: AppPalette.bg(const Color(0xFFFFFBEB)),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFFDE68A), width: 1.5),
+        border: Border.all(color: AppPalette.line(const Color(0xFFFDE68A)), width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 2),
-            child: Icon(Icons.info_outline_rounded, color: Color(0xFFB45309), size: 24),
+            child: Icon(Icons.info_outline_rounded, color: AppPalette.fg(Color(0xFFB45309)), size: 24),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -325,7 +326,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                   "Important Notice",
                   style: GoogleFonts.merriweather(
                     fontWeight: FontWeight.w900,
-                    color: const Color(0xFF92400E),
+                    color: AppPalette.fg(const Color(0xFF92400E)),
                     fontSize: 17.5,
                   ),
                 ),
@@ -333,7 +334,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                 Text(
                   "This operation synchronizes members using their SCJ ID as the unique key. Existing members will have their details updated, and any active members not present in the uploaded spreadsheet will be marked as Dropped.",
                   style: GoogleFonts.merriweather(
-                    color: const Color(0xFF78350F),
+                    color: AppPalette.fg(const Color(0xFF78350F)),
                     fontSize: 14.5,
                     height: 1.45,
                   ),
@@ -350,9 +351,9 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
   Widget _buildGuideCard() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
       ),
       child: Column(
         children: [
@@ -364,7 +365,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
               style: GoogleFonts.merriweather(
                 fontWeight: FontWeight.w900,
                 fontSize: 17.5,
-                color: const Color(0xFF1E293B),
+                color: AppPalette.fg(const Color(0xFF1E293B)),
               ),
             ),
             subtitle: Text(
@@ -373,13 +374,13 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                   : "Click to preview expected column structure",
               style: GoogleFonts.merriweather(
                 fontSize: 14,
-                color: Colors.grey.shade600,
+                color: AppPalette.fg(Colors.grey.shade600),
               ),
             ),
             trailing: IconButton(
               icon: Icon(
                 _showColumnGuide ? Icons.expand_less : Icons.expand_more,
-                color: _primaryPurple,
+                color: AppPalette.fg(_primaryPurple),
                 size: 26,
               ),
               onPressed: () => setState(() => _showColumnGuide = !_showColumnGuide),
@@ -396,7 +397,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                     "Columns must match the SQL table order. Columns marked with tags are handled automatically by the system:",
                     style: GoogleFonts.merriweather(
                       fontSize: 14,
-                      color: Colors.grey.shade700,
+                      color: AppPalette.fg(Colors.grey.shade700),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -463,7 +464,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
             width: 75,
             child: Text(
               "Col $index",
-              style: GoogleFonts.robotoMono(fontSize: 13, color: Colors.grey.shade600),
+              style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade600)),
             ),
           ),
           Expanded(
@@ -475,18 +476,18 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
             decoration: BoxDecoration(
-              color: isKey
+              color: AppPalette.bg(isKey
                   ? Colors.purple.shade50
                   : isSkipped
                       ? Colors.orange.shade50
-                      : Colors.grey.shade100,
+                      : Colors.grey.shade100),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: isKey
+                color: AppPalette.line(isKey
                     ? Colors.purple.shade200
                     : isSkipped
                         ? Colors.orange.shade300
-                        : Colors.grey.shade300,
+                        : Colors.grey.shade300),
               ),
             ),
             child: Text(
@@ -494,11 +495,11 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
               style: GoogleFonts.merriweather(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: isKey
+                color: AppPalette.fg(isKey
                     ? _primaryPurple
                     : isSkipped
                         ? Colors.orange.shade900
-                        : Colors.grey.shade700,
+                        : Colors.grey.shade700),
               ),
             ),
           ),
@@ -511,9 +512,9 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+        border: Border.all(color: AppPalette.line(const Color(0xFFE2E8F0)), width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -523,7 +524,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
             style: GoogleFonts.merriweather(
               fontWeight: FontWeight.w900,
               fontSize: 17,
-              color: const Color(0xFF1E293B),
+              color: AppPalette.fg(const Color(0xFF1E293B)),
             ),
           ),
           const SizedBox(height: 12),
@@ -545,9 +546,9 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.06),
+          color: AppPalette.bg(color.withValues(alpha: 0.06)),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          border: Border.all(color: AppPalette.line(color.withValues(alpha: 0.2))),
         ),
         child: Column(
           children: [
@@ -556,7 +557,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
               style: GoogleFonts.merriweather(
                 fontWeight: FontWeight.w900,
                 fontSize: 22,
-                color: color,
+                color: AppPalette.fg(color),
               ),
             ),
             const SizedBox(height: 3),
@@ -565,7 +566,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
               textAlign: TextAlign.center,
               style: GoogleFonts.merriweather(
                 fontSize: 12.5,
-                color: Colors.grey.shade700,
+                color: AppPalette.fg(Colors.grey.shade700),
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -580,9 +581,9 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
       ),
       child: Column(
         children: [
@@ -596,7 +597,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
             style: GoogleFonts.merriweather(
               fontWeight: FontWeight.w700,
               fontSize: 15.5,
-              color: _log.startsWith("Error") ? Colors.red.shade700 : const Color(0xFF1E293B),
+              color: AppPalette.fg(_log.startsWith("Error") ? Colors.red.shade700 : const Color(0xFF1E293B)),
             ),
           ),
         ],
@@ -607,8 +608,8 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
   Widget _buildSyncButton() {
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
-        backgroundColor: _primaryPurple,
-        foregroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(_primaryPurple),
+        foregroundColor: AppPalette.fg(Colors.white),
         disabledBackgroundColor: Colors.grey.shade300,
         minimumSize: const Size(double.infinity, 50),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

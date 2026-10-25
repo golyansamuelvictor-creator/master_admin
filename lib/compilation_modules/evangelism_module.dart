@@ -7,6 +7,8 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/compilation_style.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class _EvangelismUnitStat {
   final String unitName;
@@ -376,7 +378,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
         children: [
           // Header Row
           TableRow(
-            decoration: const BoxDecoration(color: Color(0xFFF3E5F5)),
+            decoration: BoxDecoration(color: AppPalette.bg(CompStyle.headerBg)),
             children: headers.map((title) {
               return SizedBox(
                 height: hh,
@@ -386,8 +388,8 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                     child: Text(
                       title,
                       style: GoogleFonts.merriweather(
-                        color: pPurple,
-                        fontSize: 9.0,
+                        color: AppPalette.fg(CompStyle.headerFg),
+                        fontSize: CompStyle.headerFont,
                         fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.center,
@@ -401,7 +403,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
 
           // General Total Summary Row
           TableRow(
-            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
+            decoration: BoxDecoration(color: AppPalette.bg(CompStyle.totalBg)),
             children: [
               _cellText("General total", 26.0, isBold: true, color: pPurple),
               _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
@@ -432,7 +434,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
             final rowColor = isEven ? Colors.white : const Color(0xFFF8FAFC);
 
             return TableRow(
-              decoration: BoxDecoration(color: rowColor),
+              decoration: BoxDecoration(color: AppPalette.bg(rowColor)),
               children: [
                 _cellText(u.unitName, rh, isBold: true),
                 _cellText("${u.totalSaints}", rh),
@@ -462,10 +464,10 @@ class _EvangelismModuleState extends State<EvangelismModule> {
   // --- UI: RANKING LIST ---
   Widget _buildRankingList(List<_EvangelismUnitStat> stats, bool isTop) {
     if (stats.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(20),
-          child: Text("No ranking data found", style: TextStyle(color: Colors.grey)),
+          child: Text("No ranking data found", style: TextStyle(color: AppPalette.fg(Colors.grey))),
         ),
       );
     }
@@ -483,16 +485,16 @@ class _EvangelismModuleState extends State<EvangelismModule> {
         return ListTile(
           dense: true,
           leading: CircleAvatar(
-            backgroundColor: isTop ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12),
+            backgroundColor: AppPalette.bg(isTop ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12)),
             radius: 16,
             child: Text(
               "#$rank",
-              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(color)),
             ),
           ),
           title: Row(
             children: [
-              Icon(isTop ? Icons.trending_up_rounded : Icons.priority_high_rounded, size: 14, color: color),
+              Icon(isTop ? Icons.trending_up_rounded : Icons.priority_high_rounded, size: 14, color: AppPalette.fg(color)),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(item.unitName, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -501,11 +503,11 @@ class _EvangelismModuleState extends State<EvangelismModule> {
           ),
           subtitle: Text(
             "Saints: ${item.totalSaints} | Wkly Avg: ${item.weeklyAvg.toStringAsFixed(1)}",
-            style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+            style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.blueGrey)),
           ),
           trailing: Text(
             "${item.weeklyAvgPct.toStringAsFixed(1)}%",
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: color),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(color)),
           ),
         );
       }).toList(),
@@ -532,12 +534,12 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                   style: GoogleFonts.merriweather(
                     fontSize: 11,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    color: isSelected ? Colors.white : Colors.black87,
+                    color: AppPalette.fg(isSelected ? Colors.white : Colors.black87),
                   ),
                 ),
                 selected: isSelected,
-                selectedColor: pPurple,
-                backgroundColor: const Color(0xFFF1F5F9),
+                selectedColor: AppPalette.bg(pPurple),
+                backgroundColor: AppPalette.bg(const Color(0xFFF1F5F9)),
                 visualDensity: VisualDensity.compact,
                 onSelected: (selected) {
                   if (selected) {
@@ -590,20 +592,19 @@ class _EvangelismModuleState extends State<EvangelismModule> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              Expanded(child: Text(
                 "Displaying: ${active.unitName} (${active.totalSaints} Saints)",
-                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
-              ),
+                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])), maxLines: 2, overflow: TextOverflow.ellipsis)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
+                  color: AppPalette.bg(Colors.red.withValues(alpha: 0.1)),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.redAccent, width: 0.5),
+                  border: Border.all(color: AppPalette.line(Colors.redAccent), width: 0.5),
                 ),
                 child: Text(
                   "Target: ${widget.targetValue.toInt()}%",
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.redAccent),
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.redAccent)),
                 ),
               ),
             ],
@@ -621,15 +622,15 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                 drawVerticalLine: false,
                 horizontalInterval: 20,
                 getDrawingHorizontalLine: (val) => FlLine(
-                  color: Colors.grey.withValues(alpha: 0.18),
+                  color: AppPalette.line(Colors.grey.withValues(alpha: 0.18)),
                   strokeWidth: 1,
                 ),
               ),
               borderData: FlBorderData(
                 show: true,
-                border: const Border(
-                  bottom: BorderSide(color: Colors.black, width: 1.0),
-                  left: BorderSide(color: Colors.black, width: 1.0),
+                border: Border(
+                  bottom: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
+                  left: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
                 ),
               ),
               extraLinesData: ExtraLinesData(
@@ -643,7 +644,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                       show: true,
                       alignment: Alignment.topRight,
                       labelResolver: (_) => '${widget.targetValue.toInt()}% Target',
-                      style: const TextStyle(color: Colors.redAccent, fontSize: 9.5, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: AppPalette.fg(Colors.redAccent), fontSize: 9.5, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -656,7 +657,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                     interval: 20,
                     getTitlesWidget: (val, meta) => Text(
                       "${val.toInt()}%",
-                      style: GoogleFonts.merriweather(fontSize: 9, color: Colors.blueGrey),
+                      style: GoogleFonts.merriweather(fontSize: 9, color: AppPalette.fg(Colors.blueGrey)),
                     ),
                   ),
                 ),
@@ -673,7 +674,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                         padding: const EdgeInsets.only(top: 8.0),
                         child: Text(
                           days[idx],
-                          style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+                          style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
                         ),
                       );
                     },
@@ -688,7 +689,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                     final pct = rod.toY.toStringAsFixed(1);
                     return BarTooltipItem(
                       "$day\n$count Evangelised ($pct%)",
-                      const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                      TextStyle(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 11),
                     );
                   },
                 ),
@@ -842,7 +843,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
           text,
           style: GoogleFonts.merriweather(
             fontSize: 9.5,
-            color: color ?? Colors.black87,
+            color: AppPalette.fg(color ?? Colors.black87),
             fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
           ),
           overflow: TextOverflow.ellipsis,
@@ -860,7 +861,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
           "${pct.toStringAsFixed(0)}%",
           style: GoogleFonts.merriweather(
             fontSize: 9.0,
-            color: color,
+            color: AppPalette.fg(color),
             fontWeight: isBold ? FontWeight.w900 : FontWeight.bold,
           ),
         ),
@@ -873,9 +874,9 @@ class _EvangelismModuleState extends State<EvangelismModule> {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.black, width: 1.0),
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -889,8 +890,8 @@ class _EvangelismModuleState extends State<EvangelismModule> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.black12, width: 1.0)),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black12), width: 1.0)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -901,18 +902,18 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                     style: GoogleFonts.merriweather(
                       fontWeight: FontWeight.w900,
                       fontSize: 13,
-                      color: pPurple,
+                      color: AppPalette.fg(pPurple),
                     ),
                   ),
                 ),
                 if (onPdf != null)
                   IconButton(
-                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 20, color: pPurple),
+                    icon: Icon(Icons.picture_as_pdf_outlined, size: 20, color: AppPalette.fg(pPurple)),
                     tooltip: 'Export PDF Report',
                     onPressed: onPdf,
                   ),
                 IconButton(
-                  icon: const Icon(Icons.open_in_full_rounded, size: 19, color: Colors.blueGrey),
+                  icon: Icon(Icons.open_in_full_rounded, size: 19, color: AppPalette.fg(Colors.blueGrey)),
                   tooltip: 'Fullscreen View',
                   onPressed: () => _showFull(context, title, content),
                 ),
@@ -931,10 +932,10 @@ class _EvangelismModuleState extends State<EvangelismModule> {
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (context) => Scaffold(
-          backgroundColor: const Color(0xFFF8FAFC),
+          backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
           appBar: AppBar(
-            backgroundColor: pPurple,
-            foregroundColor: Colors.white,
+            backgroundColor: AppPalette.bg(pPurple),
+            foregroundColor: AppPalette.fg(Colors.white),
             title: Text(title, style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold)),
             centerTitle: true,
           ),

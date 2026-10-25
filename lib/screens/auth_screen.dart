@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/profile_refresh.dart';
 import 'add_account_screen.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 /// Result of checking a signed-in user's profile.
 enum _Approval { approved, pending, needsVerification, rejected, error }
@@ -600,23 +601,23 @@ class _AuthScreenState extends State<AuthScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.error_outline_rounded, color: Colors.red, size: 28),
+            Icon(Icons.error_outline_rounded, color: AppPalette.fg(Colors.red), size: 28),
             const SizedBox(width: 8),
             Text(
               "Access Denied",
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red.shade900),
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 16, color: AppPalette.fg(Colors.red.shade900)),
             ),
           ],
         ),
         content: Text(
           "${detail ?? 'Your Full Names and SCJ ID were not found inside church records.'}\n\nPlease contact your immediate leaders to confirm your details before requesting access.",
-          style: GoogleFonts.merriweather(fontSize: 13, height: 1.5, color: Colors.blueGrey.shade800),
+          style: GoogleFonts.merriweather(fontSize: 13, height: 1.5, color: AppPalette.fg(Colors.blueGrey.shade800)),
         ),
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            style: ElevatedButton.styleFrom(backgroundColor: pPurple),
-            child: Text("OK", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple)),
+            child: Text("OK", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -743,7 +744,7 @@ class _AuthScreenState extends State<AuthScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(m, style: GoogleFonts.merriweather(fontSize: 12, color: Colors.white)),
+        content: Text(m, style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.white))),
         backgroundColor: isError ? Colors.red.shade800 : Colors.green.shade800,
         behavior: SnackBarBehavior.floating,
       ),
@@ -757,7 +758,7 @@ class _AuthScreenState extends State<AuthScreen> {
         labelText: label,
         hintText: hint,
         labelStyle: GoogleFonts.merriweather(fontSize: 12),
-        prefixIcon: Icon(icon, size: 18, color: pPurple),
+        prefixIcon: Icon(icon, size: 18, color: AppPalette.fg(pPurple)),
         suffixIcon: suffix,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -792,7 +793,7 @@ class _AuthScreenState extends State<AuthScreen> {
           style: GoogleFonts.merriweather(
             fontSize: 11,
             fontWeight: FontWeight.bold,
-            color: _matchedMemberRecord != null ? Colors.green.shade800 : Colors.red.shade800,
+            color: AppPalette.fg(_matchedMemberRecord != null ? Colors.green.shade800 : Colors.red.shade800),
           ),
         ),
       ),
@@ -823,7 +824,7 @@ class _AuthScreenState extends State<AuthScreen> {
             icon: Icon(
               _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
               size: 18,
-              color: Colors.grey,
+              color: AppPalette.fg(Colors.grey),
             ),
             onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
             tooltip: _obscurePassword ? 'Show password' : 'Hide password',
@@ -842,7 +843,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final bool googleLogin = _flags['google_login'] == true;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF7F8FC)),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(vertical: 24),
@@ -861,9 +862,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           margin: const EdgeInsets.all(20),
                           padding: const EdgeInsets.all(28.0),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: AppPalette.bg(Colors.white),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: pPurple.withValues(alpha: 0.08), width: 1.2),
+                            border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.08)), width: 1.2),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withValues(alpha: 0.04),
@@ -877,14 +878,14 @@ class _AuthScreenState extends State<AuthScreen> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(color: pPurple.withValues(alpha: 0.08), shape: BoxShape.circle),
-                                child: Icon(Icons.admin_panel_settings_rounded, size: 46, color: pPurple),
+                                decoration: BoxDecoration(color: AppPalette.bg(pPurple.withValues(alpha: 0.08)), shape: BoxShape.circle),
+                                child: Icon(Icons.admin_panel_settings_rounded, size: 46, color: AppPalette.fg(pPurple)),
                               ),
                               const SizedBox(height: 12),
                               Text(
                                 _appName,
                                 textAlign: TextAlign.center,
-                                style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: pPurple),
+                                style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple)),
                               ),
                               const SizedBox(height: 20),
                               if (!_isSignUp && !_otpSent && phoneLogin) ...[
@@ -924,9 +925,9 @@ class _AuthScreenState extends State<AuthScreen> {
       margin: const EdgeInsets.all(20),
       padding: const EdgeInsets.all(28.0),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: pPurple.withValues(alpha: 0.2), width: 1.5),
+        border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.2)), width: 1.5),
         boxShadow: [
           BoxShadow(color: pPurple.withValues(alpha: 0.06), blurRadius: 24, offset: const Offset(0, 8)),
         ],
@@ -938,20 +939,20 @@ class _AuthScreenState extends State<AuthScreen> {
           Center(
             child: Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: pPurple.withValues(alpha: 0.08), shape: BoxShape.circle),
-              child: Icon(Icons.verified_user_outlined, size: 42, color: pPurple),
+              decoration: BoxDecoration(color: AppPalette.bg(pPurple.withValues(alpha: 0.08)), shape: BoxShape.circle),
+              child: Icon(Icons.verified_user_outlined, size: 42, color: AppPalette.fg(pPurple)),
             ),
           ),
           const SizedBox(height: 12),
           Text(
             "Member Verification",
             textAlign: TextAlign.center,
-            style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: pPurple),
+            style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple)),
           ),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.purple.shade50, borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(color: AppPalette.bg(Colors.purple.shade50), borderRadius: BorderRadius.circular(8)),
             child: Row(
               children: [
                 const FaIcon(FontAwesomeIcons.google, size: 14, color: Color(0xFF4A148C)),
@@ -959,7 +960,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 Expanded(
                   child: Text(
                     "Connected: $email",
-                    style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple),
+                    style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -969,7 +970,7 @@ class _AuthScreenState extends State<AuthScreen> {
           const SizedBox(height: 14),
           Text(
             "Please verify your church membership details to complete account registration.",
-            style: GoogleFonts.merriweather(fontSize: 11, color: Colors.blueGrey[700]),
+            style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.blueGrey[700])),
           ),
           const SizedBox(height: 16),
           _scjIdField(hint: 'Enter SCJ ID', tooltip: 'Lookup Member'),
@@ -983,7 +984,7 @@ class _AuthScreenState extends State<AuthScreen> {
             onPressed: _handleSignOut,
             child: Text(
               "Sign in with a different account",
-              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[700]),
+              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey[700])),
             ),
           ),
         ],
@@ -998,15 +999,15 @@ class _AuthScreenState extends State<AuthScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.purple.shade50, borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(color: AppPalette.bg(Colors.purple.shade50), borderRadius: BorderRadius.circular(8)),
             child: Row(
               children: [
-                Icon(Icons.how_to_reg_outlined, color: pPurple, size: 20),
+                Icon(Icons.how_to_reg_outlined, color: AppPalette.fg(pPurple), size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     "Request Access: Verification with Church Records",
-                    style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple),
+                    style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
                   ),
                 ),
               ],
@@ -1014,7 +1015,7 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
           const SizedBox(height: 14),
           Container(
-            decoration: BoxDecoration(color: const Color(0xFFF1F3F9), borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF1F3F9)), borderRadius: BorderRadius.circular(10)),
             child: Row(
               children: [
                 _toggleBtn('Use Email', _requestAccessMethod == 'email', () {
@@ -1046,7 +1047,7 @@ class _AuthScreenState extends State<AuthScreen> {
             onPressed: () => setState(() => _isSignUp = false),
             child: Text(
               'Already registered? Sign In',
-              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple),
+              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
             ),
           ),
         ],
@@ -1067,7 +1068,7 @@ class _AuthScreenState extends State<AuthScreen> {
             onPressed: () => setState(() => _isSignUp = true),
             child: Text(
               _signupPrompt,
-              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple),
+              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
             ),
           ),
         ],
@@ -1088,7 +1089,7 @@ class _AuthScreenState extends State<AuthScreen> {
             onPressed: () => setState(() => _isSignUp = true),
             child: Text(
               _signupPrompt,
-              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple),
+              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
             ),
           ),
         ],
@@ -1103,14 +1104,14 @@ class _AuthScreenState extends State<AuthScreen> {
               const SizedBox(width: 8),
               Text(
                 'Verify WhatsApp Code',
-                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: pPurple),
+                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: AppPalette.fg(pPurple)),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             "Enter the 6-digit code sent to your WhatsApp",
-            style: GoogleFonts.merriweather(fontSize: 11, color: Colors.blueGrey),
+            style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.blueGrey)),
           ),
           const SizedBox(height: 14),
           TextField(
@@ -1135,7 +1136,7 @@ class _AuthScreenState extends State<AuthScreen> {
               _otpController.clear();
             }),
             child: Text("Change Phone Number",
-                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple)),
+                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
           ),
         ],
       );
@@ -1145,8 +1146,8 @@ class _AuthScreenState extends State<AuthScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: Colors.grey.shade400),
+              color: AppPalette.bg(Colors.white),
+              border: Border.all(color: AppPalette.line(Colors.grey.shade400)),
               borderRadius: BorderRadius.circular(10),
             ),
             child: DropdownButton<Map<String, dynamic>>(
@@ -1187,9 +1188,9 @@ class _AuthScreenState extends State<AuthScreen> {
       margin: const EdgeInsets.all(20),
       padding: const EdgeInsets.all(32.0),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.3), width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.orange.withValues(alpha: 0.3)), width: 1.5),
         boxShadow: [
           BoxShadow(color: Colors.orange.withValues(alpha: 0.08), blurRadius: 24, offset: const Offset(0, 8)),
         ],
@@ -1199,26 +1200,26 @@ class _AuthScreenState extends State<AuthScreen> {
         children: [
           Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: const Icon(Icons.hourglass_top_rounded, size: 52, color: Colors.orange),
+            decoration: BoxDecoration(color: AppPalette.bg(Colors.orange.withValues(alpha: 0.1)), shape: BoxShape.circle),
+            child: Icon(Icons.hourglass_top_rounded, size: 52, color: AppPalette.fg(Colors.orange)),
           ),
           const SizedBox(height: 18),
           Text(
             "Account Under Review",
             textAlign: TextAlign.center,
-            style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: pPurple),
+            style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple)),
           ),
           const SizedBox(height: 12),
           Text(
             "Your registration for \"$_pendingUserEmail\" has been received.",
             textAlign: TextAlign.center,
-            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
           ),
           const SizedBox(height: 10),
           Text(
             "For security purposes, church administration must verify your jurisdiction and approve your account before access is granted. You will be notified once approved.",
             textAlign: TextAlign.center,
-            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.blueGrey[600], height: 1.5),
+            style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.blueGrey[600]), height: 1.5),
           ),
           const SizedBox(height: 26),
           SizedBox(
@@ -1230,8 +1231,8 @@ class _AuthScreenState extends State<AuthScreen> {
               label: Text("Check Approval Status",
                   style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: pPurple,
-                foregroundColor: Colors.white,
+                backgroundColor: AppPalette.bg(pPurple),
+                foregroundColor: AppPalette.fg(Colors.white),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
@@ -1241,7 +1242,7 @@ class _AuthScreenState extends State<AuthScreen> {
             onPressed: _handleSignOut,
             child: Text(
               "Sign in with a different account",
-              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey[700]),
+              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey[700])),
             ),
           ),
         ],
@@ -1250,7 +1251,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildAuthSwitcher() => Container(
-        decoration: BoxDecoration(color: const Color(0xFFF1F3F9), borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF1F3F9)), borderRadius: BorderRadius.circular(10)),
         child: Row(children: [
           _toggleBtn('Email', _authMethod == 'email', () => setState(() => _authMethod = 'email')),
           _toggleBtn('WhatsApp OTP', _authMethod == 'whatsapp', () => setState(() => _authMethod = 'whatsapp'),
@@ -1265,12 +1266,12 @@ class _AuthScreenState extends State<AuthScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.sync_problem_rounded, size: 80, color: Colors.orange),
+                Icon(Icons.sync_problem_rounded, size: 80, color: AppPalette.fg(Colors.orange)),
                 const SizedBox(height: 20),
                 Text("Under Maintenance", style: GoogleFonts.merriweather(fontSize: 22, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 10),
                 Text(_signupPrompt,
-                    textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: Colors.grey, fontSize: 12)),
+                    textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontSize: 12)),
               ],
             ),
           ),
@@ -1282,11 +1283,11 @@ class _AuthScreenState extends State<AuthScreen> {
         icon: const FaIcon(FontAwesomeIcons.google, color: Color(0xFF4A148C), size: 16),
         label: Text(
           'Sign in with Google',
-          style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 12),
+          style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87), fontSize: 12),
         ),
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(double.infinity, 48),
-          side: BorderSide(color: pPurple.withValues(alpha: 0.15)),
+          side: BorderSide(color: AppPalette.line(pPurple.withValues(alpha: 0.15))),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
@@ -1298,14 +1299,14 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: active ? (activeColor ?? pPurple) : Colors.transparent,
+              color: AppPalette.bg(active ? (activeColor ?? pPurple) : Colors.transparent),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
               label,
               textAlign: TextAlign.center,
               style: GoogleFonts.merriweather(
-                color: active ? Colors.white : Colors.black54,
+                color: AppPalette.fg(active ? Colors.white : Colors.black54),
                 fontWeight: FontWeight.bold,
                 fontSize: 12,
               ),
@@ -1320,8 +1321,8 @@ class _AuthScreenState extends State<AuthScreen> {
         child: ElevatedButton(
           onPressed: _isLoading ? null : action,
           style: ElevatedButton.styleFrom(
-            backgroundColor: color ?? pPurple,
-            foregroundColor: Colors.white,
+            backgroundColor: AppPalette.bg(color ?? pPurple),
+            foregroundColor: AppPalette.fg(Colors.white),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
           child: _isLoading
@@ -1341,7 +1342,7 @@ class _AuthScreenState extends State<AuthScreen> {
         const Expanded(child: Divider()),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text("OR", style: GoogleFonts.merriweather(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+          child: Text("OR", style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(Colors.grey), fontWeight: FontWeight.bold)),
         ),
         const Expanded(child: Divider()),
       ]);

@@ -7,7 +7,9 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/compilation_style.dart';
 import 'package:intl/intl.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class DailyParticipationModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -263,8 +265,8 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
   Widget _buildToolbar() => Row(
     mainAxisAlignment: MainAxisAlignment.start,
     children: [
-      IconButton(onPressed: _printReport, icon: const Icon(Icons.print, color: Colors.blueGrey, size: 18)),
-      IconButton(onPressed: () {}, icon: const Icon(Icons.download, color: Colors.green, size: 18)),
+      IconButton(onPressed: _printReport, icon: Icon(Icons.print, color: AppPalette.fg(Colors.blueGrey), size: 18)),
+      IconButton(onPressed: () {}, icon: Icon(Icons.download, color: AppPalette.fg(Colors.green), size: 18)),
     ],
   );
 
@@ -287,12 +289,12 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
             padding: const EdgeInsets.only(bottom: 12),
             child: Container(
               width: effectiveTotalWidth,
-              decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 1.0)),
+              decoration: BoxDecoration(border: Border.all(color: AppPalette.line(Colors.black), width: 1.0)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildMergedHeader(effectiveCw),
-                  _mergedRow("Total", "General total", tot, effectiveCw, b: true),
+                  _totalRow(() => _mergedRow("Total", "General total", tot, effectiveCw, b: true)),
                   if (childRows != null) childRows,
                 ],
               ),
@@ -335,7 +337,29 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     return _mergedBlock(categoryName, blockData, colW);
   }
 
+  // Header row and General total row share one look across all modules
+  // (CompStyle): their own fills, header text a little larger.
+  ({Color bg, Color fg, double fs, bool force})? _rowStyle;
+
   Widget _buildMergedHeader(double colW) {
+    _rowStyle = (bg: CompStyle.headerBg, fg: CompStyle.headerFg, fs: CompStyle.headerFont, force: true);
+    try {
+      return _buildMergedHeaderRaw(colW);
+    } finally {
+      _rowStyle = null;
+    }
+  }
+
+  Widget _totalRow(Widget Function() build) {
+    _rowStyle = (bg: CompStyle.totalBg, fg: CompStyle.totalFg, fs: CompStyle.cellFont, force: false);
+    try {
+      return build();
+    } finally {
+      _rowStyle = null;
+    }
+  }
+
+  Widget _buildMergedHeaderRaw(double colW) {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _cell("Classification", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
       _cell("Unit", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
@@ -417,11 +441,15 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
       height: h,
       alignment: a,
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      decoration: BoxDecoration(color: bg ?? Colors.white, border: Border.all(color: Colors.black45, width: 0.4)),
+      decoration: BoxDecoration(color: AppPalette.bg((_rowStyle?.force ?? false) ? _rowStyle!.bg : (bg ?? _rowStyle?.bg ?? Colors.white)), border: Border.all(color: AppPalette.line(Colors.black45), width: 0.4)),
       child: Text(
         t,
         textAlign: TextAlign.center,
-        style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: b ? FontWeight.w900 : FontWeight.normal, color: color ?? Colors.black87),
+        style: GoogleFonts.merriweather(
+          fontSize: _rowStyle?.fs ?? CompStyle.cellFont,
+          fontWeight: (b || (_rowStyle?.force ?? false)) ? FontWeight.w900 : FontWeight.normal,
+          color: AppPalette.fg((_rowStyle?.force ?? false) ? _rowStyle!.fg : (color ?? _rowStyle?.fg ?? Colors.black87)),
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -450,16 +478,16 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: isSel ? pPurple : const Color(0xFFF1F5F9),
+                          color: AppPalette.bg(isSel ? pPurple : const Color(0xFFF1F5F9)),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: isSel ? Colors.black : Colors.black26),
+                          border: Border.all(color: AppPalette.line(isSel ? Colors.black : Colors.black26)),
                         ),
                         child: Text(
                           u,
                           style: GoogleFonts.merriweather(
                             fontSize: 10.5,
                             fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
-                            color: isSel ? Colors.white : Colors.black87,
+                            color: AppPalette.fg(isSel ? Colors.white : Colors.black87),
                           ),
                         ),
                       ),
@@ -492,7 +520,7 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
         padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
         child: BarChart(BarChartData(
           maxY: 100,
-          borderData: FlBorderData(show: true, border: const Border(left: BorderSide(color: Colors.black, width: 1.0), bottom: BorderSide(color: Colors.black, width: 1.0))),
+          borderData: FlBorderData(show: true, border: Border(left: BorderSide(color: AppPalette.line(Colors.black), width: 1.0), bottom: BorderSide(color: AppPalette.line(Colors.black), width: 1.0))),
           gridData: const FlGridData(show: true, drawVerticalLine: false),
           extraLinesData: ExtraLinesData(horizontalLines: [
             HorizontalLine(
@@ -503,7 +531,7 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
               label: HorizontalLineLabel(
                 show: true,
                 alignment: Alignment.topRight,
-                style: GoogleFonts.merriweather(color: Colors.green[800], fontSize: 9.5, fontWeight: FontWeight.bold),
+                style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.green[800]), fontSize: 9.5, fontWeight: FontWeight.bold),
                 labelResolver: (_) => "Target ${widget.targetValue.toInt()}%",
               ),
             ),
@@ -565,7 +593,7 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
         child: Center(
           child: Text(
             "No historical records found for this period",
-            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey.shade700),
+            style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700)),
           ),
         ),
       );
@@ -662,9 +690,9 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
               maxY: min(100.0, max(maxPct * 1.25, 40.0)),
               borderData: FlBorderData(
                 show: true, 
-                border: const Border(
-                  left: BorderSide(color: Colors.black, width: 1.0), 
-                  bottom: BorderSide(color: Colors.black, width: 1.0),
+                border: Border(
+                  left: BorderSide(color: AppPalette.line(Colors.black), width: 1.0), 
+                  bottom: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
                 ),
               ),
               gridData: const FlGridData(show: true, drawVerticalLine: false),
@@ -724,9 +752,9 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
   Widget _lgItem(String t, Color c, {bool isDashed = false}) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Container(width: 12, height: isDashed ? 3 : 10, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(isDashed ? 0 : 2))),
+      Container(width: 12, height: isDashed ? 3 : 10, decoration: BoxDecoration(color: AppPalette.bg(c), borderRadius: BorderRadius.circular(isDashed ? 0 : 2))),
       const SizedBox(width: 6),
-      Text(t, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.black87)),
+      Text(t, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
     ],
   );
 
@@ -739,9 +767,9 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
   Widget _section(String title, Widget content, BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 6),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       boxShadow: [
         BoxShadow(
           color: Colors.black.withValues(alpha: 0.04),
@@ -753,7 +781,7 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     child: Column(children: [
       ListTile(
         dense: true,
-        title: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14.5, color: pPurple)),
+        title: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14.5, color: AppPalette.fg(pPurple))),
         trailing: IconButton(
           icon: const Icon(Icons.fullscreen, size: 18),
           onPressed: () => Navigator.push(context, MaterialPageRoute(
@@ -764,7 +792,7 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
           )),
         ),
       ),
-      const Divider(height: 1, color: Colors.black26),
+      Divider(height: 1, color: AppPalette.bg(Colors.black26)),
       content,
     ]),
   );

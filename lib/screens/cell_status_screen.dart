@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:math' as math; 
 import 'entry_form_screen.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class CellStatusScreen extends StatefulWidget {
   final String sheetName, cellName, initialMode, location, subLocation, dept, team;
@@ -166,15 +167,15 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
   Widget build(BuildContext context) {
     bool isDesktop = MediaQuery.of(context).size.width > 1100;
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: AppPalette.bg(const Color(0xFFF1F5F9)),
       appBar: AppBar(
-        backgroundColor: Colors.white, 
+        backgroundColor: AppPalette.bg(Colors.white), 
         elevation: 0.5, 
         centerTitle: true,
         leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => Navigator.pop(context)),
-        title: Text(widget.sheetName, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 18)),
-        bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: Colors.black, height: 1.0)),
-        actions: [IconButton(onPressed: _navToEntry, icon: const Icon(Icons.add_chart_rounded, color: Color(0xFF4A148C))), const SizedBox(width: 15)],
+        title: Text(widget.sheetName, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 18)),
+        bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: AppPalette.bg(Colors.black), height: 1.0)),
+        actions: [IconButton(onPressed: _navToEntry, icon: Icon(Icons.add_chart_rounded, color: AppPalette.fg(Color(0xFF4A148C)))), const SizedBox(width: 15)],
       ),
       body: _isLoading ? const Center(child: CircularProgressIndicator()) : Padding(
         padding: const EdgeInsets.all(15),
@@ -198,7 +199,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
   Widget _buildExpandGeoBar() => Align(alignment: Alignment.centerRight, child: TextButton.icon(
     onPressed: () => setState(() => _isExpanded = !_isExpanded),
     icon: Icon(_isExpanded ? Icons.unfold_less : Icons.unfold_more, size: 18),
-    label: Text(_isExpanded ? "Squeeze geo-details" : "Expand geo-details (Kampala/Village/Abroad)", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)),
+    label: Text(_isExpanded ? "Squeeze geo-details" : "Expand geo-details (Kampala/Village/Abroad)", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
   ));
 
   Widget _buildProfessionalTable() {
@@ -229,7 +230,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
               headingRowColor: WidgetStateProperty.all(const Color(0xFF1E293B)),
               columnSpacing: 0, horizontalMargin: 0,
               border: TableBorder.all(color: Colors.grey.withValues(alpha: 0.4), width: 1.0),
-              columns: h.map((s) => DataColumn(label: SizedBox(width: cellW, child: Center(child: Text(s, style: GoogleFonts.merriweather(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)))))).toList(),
+              columns: h.map((s) => DataColumn(label: SizedBox(width: cellW, child: Center(child: Text(s, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 10, fontWeight: FontWeight.bold)))))).toList(),
               rows: [DataRow(cells: _processRestoredCells(h, cellW))],
             ),
           ),
@@ -243,7 +244,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
     List<DataCell> cells = [];
     void addC(String t, {Color? c, bool isP = false, bool isBold = false}) {
       String text = isP ? "${tot > 0 ? (double.parse(t)/tot*100).toStringAsFixed(1) : 0}%" : t;
-      cells.add(DataCell(SizedBox(width: cellW, child: Center(child: Text(text, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: isP || isBold ? FontWeight.bold : FontWeight.w500, color: c ?? Colors.black87))))));
+      cells.add(DataCell(SizedBox(width: cellW, child: Center(child: Text(text, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: isP || isBold ? FontWeight.bold : FontWeight.w500, color: AppPalette.fg(c ?? Colors.black87)))))));
     }
 
     addC(_selectedFilter); addC("$tot");
@@ -378,9 +379,9 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
             gridData: const FlGridData(show: false), 
             borderData: FlBorderData(
               show: true,
-              border: const Border(
-                left: BorderSide(color: Colors.black87, width: 1.5),
-                bottom: BorderSide(color: Colors.black87, width: 1.5),
+              border: Border(
+                left: BorderSide(color: AppPalette.line(Colors.black87), width: 1.5),
+                bottom: BorderSide(color: AppPalette.line(Colors.black87), width: 1.5),
               ),
             ),
             titlesData: FlTitlesData(
@@ -390,7 +391,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
                   reservedSize: 42, 
                   getTitlesWidget: (v, m) => Text(
                     "${v.toInt()}%", 
-                    style: GoogleFonts.merriweather(fontSize: 10, color: Colors.black87, fontWeight: FontWeight.bold)
+                    style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.bold)
                   )
                 )
               ),
@@ -405,7 +406,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
                       padding: const EdgeInsets.only(top: 8), 
                       child: Text(
                         bars[idx].title, 
-                        style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black87)
+                        style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))
                       )
                     );
                   }
@@ -442,22 +443,22 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
   Widget _leg(String l, Color c) => Row(
     mainAxisSize: MainAxisSize.min, 
     children: [
-      Container(width: 12, height: 12, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(3), border: Border.all(color: Colors.black, width: 0.8))), 
+      Container(width: 12, height: 12, decoration: BoxDecoration(color: AppPalette.bg(c), borderRadius: BorderRadius.circular(3), border: Border.all(color: AppPalette.line(Colors.black), width: 0.8))), 
       const SizedBox(width: 6), 
-      Text(l, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87))
+      Text(l, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)))
     ]
   );
 
   Widget _buildFindingsBox() => Container(
     padding: const EdgeInsets.all(20), 
     decoration: BoxDecoration(
-      color: Colors.white, 
+      color: AppPalette.bg(Colors.white), 
       borderRadius: BorderRadius.circular(20), 
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))]
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text("Cell leader's findings", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: Colors.black87, fontSize: 16)),
+      Text("Cell leader's findings", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87), fontSize: 16)),
       const SizedBox(height: 12),
       TextField(
         controller: _findingsController, 
@@ -466,8 +467,8 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
         decoration: InputDecoration(
           hintText: "Enter unit status observations...", 
           filled: true, 
-          fillColor: const Color(0xFFFBFBFE), 
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black38, width: 0.8))
+          fillColor: AppPalette.bg(const Color(0xFFFBFBFE)), 
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppPalette.line(Colors.black38), width: 0.8))
         )
       ),
       const SizedBox(height: 12),
@@ -475,9 +476,9 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
         alignment: Alignment.centerRight, 
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: pPurple, 
-            foregroundColor: Colors.white, 
-            side: const BorderSide(color: Colors.black, width: 1.0),
+            backgroundColor: AppPalette.bg(pPurple), 
+            foregroundColor: AppPalette.fg(Colors.white), 
+            side: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
             padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ), 
@@ -491,29 +492,29 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
   Widget _sectionCard(String t, Widget c, {VoidCallback? onFull}) => Container(
     margin: const EdgeInsets.only(bottom: 15),
     decoration: BoxDecoration(
-      color: Colors.white, 
+      color: AppPalette.bg(Colors.white), 
       borderRadius: BorderRadius.circular(20), 
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))]
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       ListTile(
-        title: Text(t, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: pPurple)), 
+        title: Text(t, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: AppPalette.fg(pPurple))), 
         trailing: IconButton(icon: const Icon(Icons.open_in_full_rounded, size: 20), onPressed: onFull)
       ),
-      const Divider(height: 1, color: Colors.black26),
+      Divider(height: 1, color: AppPalette.bg(Colors.black26)),
       Padding(padding: const EdgeInsets.all(15), child: c),
     ]),
   );
 
-  void _openFull(String t, Widget c) => Navigator.push(context, MaterialPageRoute(fullscreenDialog: true, builder: (context) => Scaffold(backgroundColor: const Color(0xFFF1F5F9), appBar: AppBar(title: Text(t, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold)), centerTitle: true), body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(20), child: c)))));
+  void _openFull(String t, Widget c) => Navigator.push(context, MaterialPageRoute(fullscreenDialog: true, builder: (context) => Scaffold(backgroundColor: AppPalette.bg(const Color(0xFFF1F5F9)), appBar: AppBar(title: Text(t, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold)), centerTitle: true), body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(20), child: c)))));
 
   Widget _buildSidebar(bool isDesktop) => Container(
     width: isDesktop ? 280 : double.infinity,
     decoration: BoxDecoration(
-      color: Colors.white, 
+      color: AppPalette.bg(Colors.white), 
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))]
     ),
     child: Scrollbar(
@@ -551,13 +552,13 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
   Widget _bentoNavCard(String t, List<String> i, String cur, Function(String) onS) => Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(15),
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(t, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.black87)),
-      const Divider(height: 16, color: Colors.black26),
+      Text(t, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),
+      Divider(height: 16, color: AppPalette.bg(Colors.black26)),
       ...i.map((item) => InkWell(
         onTap: () => onS(item), 
         child: AnimatedContainer(
@@ -565,14 +566,14 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           margin: const EdgeInsets.only(bottom: 4), 
           decoration: BoxDecoration(
-            color: cur == item ? pPurple : const Color(0xFFFBFBFE), 
+            color: AppPalette.bg(cur == item ? pPurple : const Color(0xFFFBFBFE)), 
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: cur == item ? Colors.black : Colors.grey.shade300, width: 0.8),
+            border: Border.all(color: AppPalette.line(cur == item ? Colors.black : Colors.grey.shade300), width: 0.8),
           ), 
           child: Row(children: [
-            Icon(cur == item ? Icons.check_circle : Icons.circle_outlined, color: cur == item ? Colors.white : Colors.grey, size: 14), 
+            Icon(cur == item ? Icons.check_circle : Icons.circle_outlined, color: AppPalette.fg(cur == item ? Colors.white : Colors.grey), size: 14), 
             const SizedBox(width: 8), 
-            Expanded(child: Text(item, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: cur == item ? Colors.white : Colors.black87)))
+            Expanded(child: Text(item, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(cur == item ? Colors.white : Colors.black87))))
           ])
         )
       ))

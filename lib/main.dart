@@ -13,6 +13,8 @@ import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/app_lock_manager.dart';
 import 'services/profile_refresh.dart';
+import 'services/device_accounts.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 // ==========================================
 // SHARED CONSTANTS
@@ -34,12 +36,55 @@ void main() async {
 
   await AppLockManager.instance.init();
 
+  // Remember every account's sign-in on this device (email, Google, WhatsApp)
+  // so Switch Account works without a password.
+  DeviceAccounts.startTracking();
+
   try {
     final prefs = await SharedPreferences.getInstance();
-    themeNotifier.value = prefs.getString('theme_mode') == 'dark' ? ThemeMode.dark : ThemeMode.light;
+    themeNotifier.value = themeModeFromName(prefs.getString('theme_mode'));
+  } catch (_) {}
+
+  // Load every Merriweather weight the app uses BEFORE the first screen.
+  // Otherwise text first appears in a fallback font and then switches to
+  // Merriweather a moment later (each weight was fetched the first time it
+  // was drawn). Capped so a slow connection never blocks the app.
+  try {
+    await GoogleFonts.pendingFonts([
+      GoogleFonts.merriweather(),
+      GoogleFonts.merriweather(fontWeight: FontWeight.w300),
+      GoogleFonts.merriweather(fontWeight: FontWeight.w500),
+      GoogleFonts.merriweather(fontWeight: FontWeight.w600),
+      GoogleFonts.merriweather(fontWeight: FontWeight.bold),
+      GoogleFonts.merriweather(fontWeight: FontWeight.w800),
+      GoogleFonts.merriweather(fontWeight: FontWeight.w900),
+      GoogleFonts.merriweather(fontStyle: FontStyle.italic),
+      GoogleFonts.merriweather(fontStyle: FontStyle.italic, fontWeight: FontWeight.bold),
+    ]).timeout(const Duration(seconds: 6));
   } catch (_) {}
 
   runApp(const MasterAdminApp());
+}
+
+/// Theme choice saved on the device: 'system', 'light' or 'dark'.
+ThemeMode themeModeFromName(String? name) {
+  switch (name) {
+    case 'dark':
+      return ThemeMode.dark;
+    case 'system':
+      return ThemeMode.system;
+    default:
+      return ThemeMode.light;
+  }
+}
+
+/// Applies and remembers the theme (System follows the device setting).
+Future<void> setAppThemeMode(ThemeMode mode) async {
+  themeNotifier.value = mode;
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme_mode', mode == ThemeMode.dark ? 'dark' : (mode == ThemeMode.system ? 'system' : 'light'));
+  } catch (_) {}
 }
 
 class MasterAdminApp extends StatelessWidget {
@@ -57,6 +102,8 @@ class MasterAdminApp extends StatelessWidget {
             useMaterial3: true,
             brightness: Brightness.light,
             colorScheme: ColorScheme.fromSeed(seedColor: kPurple, brightness: Brightness.light),
+            // Merriweather for every text, including plain TextStyle()s
+            fontFamily: GoogleFonts.merriweather().fontFamily,
             textTheme: GoogleFonts.merriweatherTextTheme(ThemeData.light().textTheme),
             scaffoldBackgroundColor: kLightBg,
           ),
@@ -64,6 +111,7 @@ class MasterAdminApp extends StatelessWidget {
             useMaterial3: true,
             brightness: Brightness.dark,
             colorScheme: ColorScheme.fromSeed(seedColor: kPurple, brightness: Brightness.dark),
+            fontFamily: GoogleFonts.merriweather().fontFamily,
             textTheme: GoogleFonts.merriweatherTextTheme(ThemeData.dark().textTheme),
             scaffoldBackgroundColor: kDarkBg,
           ),
@@ -79,7 +127,24 @@ class MasterAdminApp extends StatelessWidget {
             '/home': (context) => const _SessionGate(child: HomeScreen()),
             '/auth': (context) => const AuthScreen(),
           },
-          builder: (context, child) => _AppShell(child: child ?? const SizedBox.shrink()),
+          // Keep text readable on every screen size: phone accessibility settings
+          // can enlarge text up to 3x, which pushed labels out of cards.
+          builder: (context, child) {
+            final mq = MediaQuery.of(context);
+            // Screens drawn with fixed colours follow this flag (core/app_palette.dart).
+            final dark = currentMode == ThemeMode.dark ||
+                (currentMode == ThemeMode.system && mq.platformBrightness == Brightness.dark);
+            if (dark != AppPalette.isDark) {
+              AppPalette.isDark = dark;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (context.mounted) AppPalette.rebuildAll(context);
+              });
+            }
+            return MediaQuery(
+              data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.15)),
+              child: _AppShell(child: child ?? const SizedBox.shrink()),
+            );
+          },
           home: const AuthWrapper(),
         );
       },
@@ -233,7 +298,7 @@ class _BrandHeaderState extends State<BrandHeader> with TickerProviderStateMixin
                 'assets/images/app_logo.png',
                 fit: BoxFit.cover,
                 errorBuilder: (ctx, err, stack) =>
-                    Icon(Icons.admin_panel_settings_rounded, size: c ? 70 : 80, color: kGold),
+                    Icon(Icons.admin_panel_settings_rounded, size: c ? 70 : 80, color: AppPalette.fg(kGold)),
               ),
             ),
           ),
@@ -247,19 +312,19 @@ class _BrandHeaderState extends State<BrandHeader> with TickerProviderStateMixin
               children: [
                 Text("MASTER",
                     style: GoogleFonts.merriweather(
-                        fontSize: titleSize, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 4.0)),
+                        fontSize: titleSize, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.white), letterSpacing: 4.0)),
                 const SizedBox(height: 6),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(width: lineWidth, height: 1.5, color: kGold),
+                    Container(width: lineWidth, height: 1.5, color: AppPalette.bg(kGold)),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: hPad),
                       child: Text("ADMINISTRATION",
                           style: GoogleFonts.merriweather(
-                              fontSize: subSize, fontWeight: FontWeight.bold, color: kGold, letterSpacing: 3.0)),
+                              fontSize: subSize, fontWeight: FontWeight.bold, color: AppPalette.fg(kGold), letterSpacing: 3.0)),
                     ),
-                    Container(width: lineWidth, height: 1.5, color: kGold),
+                    Container(width: lineWidth, height: 1.5, color: AppPalette.bg(kGold)),
                   ],
                 ),
               ],
@@ -281,7 +346,7 @@ class CinematicSplashGateway extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kDarkBg,
+      backgroundColor: AppPalette.bg(kDarkBg),
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -295,7 +360,7 @@ class CinematicSplashGateway extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text(statusText,
-                style: GoogleFonts.merriweather(color: Colors.white54, fontSize: 11, fontStyle: FontStyle.italic)),
+                style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white54), fontSize: 11, fontStyle: FontStyle.italic)),
           ],
         ),
       ),
@@ -395,7 +460,7 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
     final bool error = _isWrongPin || _isLockedOut;
 
     return Material(
-      color: kDarkBg,
+      color: AppPalette.bg(kDarkBg),
       child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -408,9 +473,9 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
                 constraints: const BoxConstraints(maxWidth: 320),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
+                  color: AppPalette.bg(Colors.white.withValues(alpha: 0.05)),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: error ? Colors.redAccent : kPurple.withValues(alpha: 0.3), width: 1.2),
+                  border: Border.all(color: AppPalette.line(error ? Colors.redAccent : kPurple.withValues(alpha: 0.3)), width: 1.2),
                 ),
                 child: Column(
                   children: [
@@ -418,7 +483,7 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
                       _message,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.merriweather(
-                          fontSize: 12, fontWeight: FontWeight.bold, color: error ? Colors.redAccent : Colors.white70),
+                          fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(error ? Colors.redAccent : Colors.white70)),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -433,12 +498,12 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
                         LengthLimitingTextInputFormatter(_maxPinLength),
                       ],
                       style: GoogleFonts.merriweather(
-                          fontSize: 20, color: Colors.white, letterSpacing: 8, fontWeight: FontWeight.w900),
+                          fontSize: 20, color: AppPalette.fg(Colors.white), letterSpacing: 8, fontWeight: FontWeight.w900),
                       decoration: InputDecoration(
                         hintText: "••••",
-                        hintStyle: const TextStyle(color: Colors.white24, letterSpacing: 6),
+                        hintStyle: TextStyle(color: AppPalette.fg(Colors.white24), letterSpacing: 6),
                         filled: true,
-                        fillColor: Colors.black26,
+                        fillColor: AppPalette.bg(Colors.black26),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                       ),
@@ -451,11 +516,11 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
                       child: ElevatedButton(
                         onPressed: _isLockedOut ? null : _verifyPin,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: kPurple,
+                          backgroundColor: AppPalette.bg(kPurple),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         child: Text("Unlock",
-                            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.white))),
                       ),
                     ),
                   ],
@@ -500,6 +565,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
     _session = _client.auth.currentSession;
     _authSub = _client.auth.onAuthStateChange.listen(_onAuthChange);
+    RegistrationGuard.onRelease = _resyncAfterRegistration;
 
     final user = _session?.user;
     if (user != null) {
@@ -515,6 +581,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     profileRefreshNotifier.removeListener(_onRefreshRequested);
     _authSub?.cancel();
+    if (RegistrationGuard.onRelease == _resyncAfterRegistration) RegistrationGuard.onRelease = null;
     _disposeChannel();
     super.dispose();
   }
@@ -525,10 +592,26 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
   void _onAuthChange(AuthState s) {
     if (!mounted) return;
+    // Another account is being registered on this device: wait (see RegistrationGuard)
+    if (RegistrationGuard.active) return;
+    _applySession(s.session, s.event);
+  }
 
-    final newUser = s.session?.user;
+  /// After a registration on this device: follow the session that is active now.
+  void _resyncAfterRegistration() {
+    if (!mounted) return;
+    final current = _client.auth.currentSession;
+    if (current?.user.id == _session?.user.id) {
+      _session = current;
+      return;
+    }
+    _applySession(current, AuthChangeEvent.signedIn);
+  }
+
+  void _applySession(Session? session, AuthChangeEvent event) {
+    final newUser = session?.user;
     final prevId = _session?.user.id;
-    _session = s.session;
+    _session = session;
 
     if (newUser == null) {
       _disposeChannel();
@@ -543,7 +626,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       _profile = null;
       _listenToProfile(newUser.id);
       _loadProfile(showSplash: true);
-    } else if (s.event == AuthChangeEvent.signedIn || s.event == AuthChangeEvent.userUpdated) {
+    } else if (event == AuthChangeEvent.signedIn || event == AuthChangeEvent.userUpdated) {
       _loadProfile(showSplash: false);
     }
   }
@@ -690,7 +773,7 @@ class _AccountPendingScreen extends StatelessWidget {
     final bool isRejected = approvalStatus == 'rejected';
 
     return Scaffold(
-      backgroundColor: kDarkBg,
+      backgroundColor: AppPalette.bg(kDarkBg),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -703,10 +786,10 @@ class _AccountPendingScreen extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 360),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
+                  color: AppPalette.bg(Colors.white.withValues(alpha: 0.05)),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: isRejected ? Colors.redAccent.withValues(alpha: 0.5) : kGold.withValues(alpha: 0.35),
+                    color: AppPalette.line(isRejected ? Colors.redAccent.withValues(alpha: 0.5) : kGold.withValues(alpha: 0.35)),
                     width: 1.2,
                   ),
                 ),
@@ -715,7 +798,7 @@ class _AccountPendingScreen extends StatelessWidget {
                     Icon(
                       isRejected ? Icons.error_outline_rounded : Icons.hourglass_top_rounded,
                       size: 44,
-                      color: isRejected ? Colors.redAccent : kGold,
+                      color: AppPalette.fg(isRejected ? Colors.redAccent : kGold),
                     ),
                     const SizedBox(height: 14),
                     Text(
@@ -723,7 +806,7 @@ class _AccountPendingScreen extends StatelessWidget {
                       style: GoogleFonts.merriweather(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
-                        color: Colors.white,
+                        color: AppPalette.fg(Colors.white),
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -736,7 +819,7 @@ class _AccountPendingScreen extends StatelessWidget {
                           : "Your account is currently awaiting administrative approval.",
                       style: GoogleFonts.merriweather(
                         fontSize: 12,
-                        color: Colors.white70,
+                        color: AppPalette.fg(Colors.white70),
                         height: 1.5,
                       ),
                       textAlign: TextAlign.center,
@@ -750,8 +833,8 @@ class _AccountPendingScreen extends StatelessWidget {
                         icon: const Icon(Icons.refresh_rounded, size: 16),
                         label: const Text("Check Approval Status"),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: kPurple,
-                          foregroundColor: Colors.white,
+                          backgroundColor: AppPalette.bg(kPurple),
+                          foregroundColor: AppPalette.fg(Colors.white),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       ),
@@ -759,7 +842,7 @@ class _AccountPendingScreen extends StatelessWidget {
                     const SizedBox(height: 10),
                     TextButton(
                       onPressed: onSignOut,
-                      child: Text("Sign Out", style: GoogleFonts.merriweather(color: Colors.white54, fontSize: 12)),
+                      child: Text("Sign Out", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white54), fontSize: 12)),
                     ),
                   ],
                 ),
@@ -783,35 +866,35 @@ class _ProfileErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kDarkBg,
+      backgroundColor: AppPalette.bg(kDarkBg),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.cloud_off_rounded, size: 56, color: kGold),
+              Icon(Icons.cloud_off_rounded, size: 56, color: AppPalette.fg(kGold)),
               const SizedBox(height: 20),
               Text("Couldn't load your profile",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                  style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.white))),
               const SizedBox(height: 8),
               Text("Check your connection and try again.",
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.merriweather(fontSize: 12, color: Colors.white54)),
+                  style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.white54))),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: onRetry,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: kPurple,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppPalette.bg(kPurple),
+                  foregroundColor: AppPalette.fg(Colors.white),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 child: const Text("Retry"),
               ),
               TextButton(
                 onPressed: onSignOut,
-                child: const Text("Sign out", style: TextStyle(color: Colors.white54)),
+                child: Text("Sign out", style: TextStyle(color: AppPalette.fg(Colors.white54))),
               ),
             ],
           ),

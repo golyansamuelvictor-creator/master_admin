@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class MediaPlayerScreen extends StatefulWidget {
   final dynamic mediaItem;
@@ -33,11 +34,11 @@ class _MediaPlayerScreenState extends State<MediaPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppPalette.bg(Colors.black),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPalette.bg(Colors.transparent),
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: AppPalette.fg(Colors.white)),
       ),
       body: Column(
         children: [
@@ -51,8 +52,8 @@ class _MediaPlayerScreenState extends State<MediaPlayerScreen> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(25, 35, 25, 50),
-            decoration: const BoxDecoration(
-              color: Colors.white,
+            decoration: BoxDecoration(
+              color: AppPalette.bg(Colors.white),
               borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
             ),
             child: Column(
@@ -72,12 +73,12 @@ class _MediaPlayerScreenState extends State<MediaPlayerScreen> {
                           const SizedBox(height: 5),
                           Text(widget.mediaItem['artist'] ?? "Unknown Artist",
                               style: GoogleFonts.merriweather(
-                                  fontSize: 15, color: Colors.grey[600])),
+                                  fontSize: 15, color: AppPalette.fg(Colors.grey[600]))),
                         ],
                       ),
                     ),
-                    const Icon(Icons.favorite_border,
-                        color: Colors.grey, size: 28),
+                    Icon(Icons.favorite_border,
+                        color: AppPalette.fg(Colors.grey), size: 28),
                   ],
                 ),
                 const SizedBox(height: 40),
@@ -100,11 +101,11 @@ class _MediaPlayerScreenState extends State<MediaPlayerScreen> {
   Widget _utilBtn(IconData icon, String label) {
     return Column(
       children: [
-        Icon(icon, color: Colors.grey[800], size: 24),
+        Icon(icon, color: AppPalette.fg(Colors.grey[800]), size: 24),
         const SizedBox(height: 8),
         Text(label,
             style: GoogleFonts.merriweather(
-                fontSize: 10, color: Colors.grey[600])),
+                fontSize: 10, color: AppPalette.fg(Colors.grey[600]))),
       ],
     );
   }

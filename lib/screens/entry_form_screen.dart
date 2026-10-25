@@ -18,6 +18,7 @@ import '../entry_modules/workers_education_entry.dart';
 import '../entry_modules/daily_participation_entry.dart';
 import '../entry_modules/bb_file_entry.dart';
 import '../core/compilation_rules.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class EntryFormScreen extends StatefulWidget {
   final String sheetName, cellName, location, subLocation, dept, team;
@@ -777,9 +778,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
+          color: AppPalette.bg(Colors.grey.shade100),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade300),
+          border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
         ),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -797,9 +798,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
+          color: AppPalette.bg(Colors.grey.shade100),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade300),
+          border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -820,9 +821,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
+          color: AppPalette.bg(Colors.grey.shade100),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade300),
+          border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -842,9 +843,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 4),
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: AppPalette.bg(Colors.grey.shade100),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -869,7 +870,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? pPurple : Colors.transparent,
+          color: AppPalette.bg(isSelected ? pPurple : Colors.transparent),
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
@@ -877,7 +878,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           style: GoogleFonts.merriweather(
             fontSize: 11,
             fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.white : Colors.black87,
+            color: AppPalette.fg(isSelected ? Colors.white : Colors.black87),
           ),
         ),
       ),
@@ -959,9 +960,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: AppPalette.bg(Colors.white),
           elevation: 0.5,
           automaticallyImplyLeading: false,
           titleSpacing: isDesktop ? 0 : 8,
@@ -1006,7 +1007,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                           _saveStatus,
                           style: GoogleFonts.merriweather(
                             fontWeight: FontWeight.bold,
-                            color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                            color: AppPalette.fg(_saveStatus == "Saved" ? Colors.green : pPurple),
                             fontSize: 13,
                           ),
                         ),
@@ -1023,7 +1024,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
             style: GoogleFonts.merriweather(
               fontSize: isDesktop ? 20 : 16,
               fontWeight: FontWeight.w900,
-              color: pPurple,
+              color: AppPalette.fg(pPurple),
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1039,10 +1040,10 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                   margin: const EdgeInsets.symmetric(vertical: 10),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: isPastReport ? Colors.orange.shade50 : pPurple.withValues(alpha: 0.08),
+                    color: AppPalette.bg(isPastReport ? Colors.orange.shade50 : pPurple.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: isPastReport ? Colors.orange.shade300 : pPurple.withValues(alpha: 0.2),
+                      color: AppPalette.line(isPastReport ? Colors.orange.shade300 : pPurple.withValues(alpha: 0.2)),
                     ),
                   ),
                   child: Row(
@@ -1051,7 +1052,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       Icon(
                         isPastReport ? Icons.history_rounded : Icons.calendar_today_rounded,
                         size: 14,
-                        color: isPastReport ? Colors.orange[900] : pPurple,
+                        color: AppPalette.fg(isPastReport ? Colors.orange[900] : pPurple),
                       ),
                       const SizedBox(width: 5),
                       Text(
@@ -1059,7 +1060,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                         style: GoogleFonts.merriweather(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: isPastReport ? Colors.orange[900] : pPurple,
+                          color: AppPalette.fg(isPastReport ? Colors.orange[900] : pPurple),
                         ),
                       ),
                     ],
@@ -1080,7 +1081,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                   ),
                   const SizedBox(width: 4),
                   IconButton(
-                    icon: const Icon(Icons.delete_sweep_outlined, size: 22, color: Colors.red),
+                    icon: Icon(Icons.delete_sweep_outlined, size: 22, color: AppPalette.fg(Colors.red)),
                     onPressed: _clearGrid,
                     tooltip: "Clear table",
                     padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -1100,9 +1101,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.purple.shade50,
+                        color: AppPalette.bg(Colors.purple.shade50),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.purple.shade200),
+                        border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1112,7 +1113,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                             style: GoogleFonts.merriweather(
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
-                              color: pPurple,
+                              color: AppPalette.fg(pPurple),
                             ),
                           ),
                           Switch(
@@ -1132,9 +1133,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       margin: EdgeInsets.fromLTRB(sideMargin, 8, sideMargin, 0),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppPalette.bg(Colors.white),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.withValues(alpha: 0.18)),
+                        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.18))),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.02),
@@ -1169,7 +1170,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                                   Container(
                                     height: 18,
                                     width: 1,
-                                    color: Colors.grey.shade300,
+                                    color: AppPalette.bg(Colors.grey.shade300),
                                   ),
                                   const SizedBox(width: 8),
                                   InkWell(
@@ -1178,14 +1179,14 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                       decoration: BoxDecoration(
-                                        color: _saveStatus == "Saved"
+                                        color: AppPalette.bg(_saveStatus == "Saved"
                                             ? Colors.green.withValues(alpha: 0.1)
-                                            : pPurple.withValues(alpha: 0.08),
+                                            : pPurple.withValues(alpha: 0.08)),
                                         borderRadius: BorderRadius.circular(6),
                                         border: Border.all(
-                                          color: _saveStatus == "Saved"
+                                          color: AppPalette.line(_saveStatus == "Saved"
                                               ? Colors.green
-                                              : pPurple.withValues(alpha: 0.3),
+                                              : pPurple.withValues(alpha: 0.3)),
                                         ),
                                       ),
                                       child: Row(
@@ -1193,14 +1194,14 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                                           Icon(
                                             _saveStatus == "Saved" ? Icons.check_circle : Icons.save_rounded,
                                             size: 14,
-                                            color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                            color: AppPalette.fg(_saveStatus == "Saved" ? Colors.green : pPurple),
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
                                             _saveStatus,
                                             style: GoogleFonts.merriweather(
                                               fontWeight: FontWeight.bold,
-                                              color: _saveStatus == "Saved" ? Colors.green : pPurple,
+                                              color: AppPalette.fg(_saveStatus == "Saved" ? Colors.green : pPurple),
                                               fontSize: 12,
                                             ),
                                           ),
@@ -1220,7 +1221,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                                       Icon(
                                         isPastReport ? Icons.history_rounded : Icons.calendar_today_rounded,
                                         size: 13,
-                                        color: isPastReport ? Colors.orange[900] : pPurple,
+                                        color: AppPalette.fg(isPastReport ? Colors.orange[900] : pPurple),
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
@@ -1228,7 +1229,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                                         style: GoogleFonts.merriweather(
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          color: isPastReport ? Colors.orange[900] : pPurple,
+                                          color: AppPalette.fg(isPastReport ? Colors.orange[900] : pPurple),
                                         ),
                                       ),
                                     ],
@@ -1268,7 +1269,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       padding: EdgeInsets.fromLTRB(sideMargin, 6, sideMargin, 0),
                       child: Text(
                         _pendingInfo.detail,
-                        style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.orange[900], fontWeight: FontWeight.w600),
+                        style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(Colors.orange[900]), fontWeight: FontWeight.w600),
                       ),
                     ),
 
@@ -1279,9 +1280,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       width: double.infinity,
                       margin: EdgeInsets.fromLTRB(sideMargin, 0, sideMargin, 16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppPalette.bg(Colors.white),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2))),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.02),
@@ -1308,9 +1309,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         height: isDesktop ? 46 : 50,
         padding: EdgeInsets.symmetric(horizontal: isDesktop ? 12 : 6, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppPalette.bg(Colors.white),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: c.withValues(alpha: 0.22), width: 1.2),
+          border: Border.all(color: AppPalette.line(c.withValues(alpha: 0.22)), width: 1.2),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.02),
@@ -1327,10 +1328,10 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                     children: [
                       Text(l, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
                       const SizedBox(width: 8),
-                      Text(v, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: c)),
+                      Text(v, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(c))),
                     ],
                   ),
-                  Icon(Icons.info_outline, size: 16, color: c.withValues(alpha: 0.5)),
+                  Icon(Icons.info_outline, size: 16, color: AppPalette.fg(c.withValues(alpha: 0.5))),
                 ],
               )
             : Column(
@@ -1343,7 +1344,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       style: GoogleFonts.merriweather(
                         fontSize: 15,
                         fontWeight: FontWeight.w900,
-                        color: c,
+                        color: AppPalette.fg(c),
                       ),
                     ),
                   ),
@@ -1355,7 +1356,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       style: GoogleFonts.merriweather(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade700,
+                        color: AppPalette.fg(Colors.grey.shade700),
                       ),
                       maxLines: 1,
                     ),
@@ -1375,9 +1376,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           height: isDesktop ? 46 : 50,
           padding: EdgeInsets.symmetric(horizontal: isDesktop ? 12 : 6, vertical: 4),
           decoration: BoxDecoration(
-            color: Colors.blue.withValues(alpha: 0.05),
+            color: AppPalette.bg(Colors.blue.withValues(alpha: 0.05)),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.blue.withValues(alpha: 0.3), width: 1.2),
+            border: Border.all(color: AppPalette.line(Colors.blue.withValues(alpha: 0.3)), width: 1.2),
           ),
           child: isDesktop
               ? Row(
@@ -1385,15 +1386,15 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                   children: [
                     Text(
                       groupEvidenceCount > 0 ? "$groupEvidenceCount Photos" : "Add evidence",
-                      style: GoogleFonts.merriweather(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.bold),
+                      style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.blue), fontWeight: FontWeight.bold),
                     ),
-                    const Icon(Icons.camera_alt_outlined, color: Colors.blue, size: 18),
+                    Icon(Icons.camera_alt_outlined, color: AppPalette.fg(Colors.blue), size: 18),
                   ],
                 )
               : Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.camera_alt_outlined, color: Colors.blue, size: 16),
+                    Icon(Icons.camera_alt_outlined, color: AppPalette.fg(Colors.blue), size: 16),
                     const SizedBox(height: 1),
                     FittedBox(
                       fit: BoxFit.scaleDown,
@@ -1401,7 +1402,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                         groupEvidenceCount > 0 ? "$groupEvidenceCount Photos" : "Add evidence",
                         style: GoogleFonts.merriweather(
                           fontSize: 10,
-                          color: Colors.blue,
+                          color: AppPalette.fg(Colors.blue),
                           fontWeight: FontWeight.bold,
                         ),
                         maxLines: 1,

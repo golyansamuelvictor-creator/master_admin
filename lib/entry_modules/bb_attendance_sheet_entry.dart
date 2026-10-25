@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class BbAttendanceSheet extends StatefulWidget {
   final List<dynamic> students;
@@ -190,7 +191,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                         style: GoogleFonts.merriweather(
                           fontSize: isMobile ? 16 : 18,
                           fontWeight: FontWeight.w900,
-                          color: widget.pPurple,
+                          color: AppPalette.fg(widget.pPurple),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -198,7 +199,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                         dateStr,
                         style: GoogleFonts.merriweather(
                           fontSize: 11.5,
-                          color: Colors.grey[700],
+                          color: AppPalette.fg(Colors.grey[700]),
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -208,16 +209,16 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.green.shade50,
+                    color: AppPalette.bg(Colors.green.shade50),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green.shade300),
+                    border: Border.all(color: AppPalette.line(Colors.green.shade300)),
                   ),
                   child: Text(
                     "$attendedCount / ${filtered.length} Attended",
                     style: GoogleFonts.merriweather(
                       fontSize: 11.5,
                       fontWeight: FontWeight.bold,
-                      color: Colors.green[800],
+                      color: AppPalette.fg(Colors.green[800]),
                     ),
                   ),
                 ),
@@ -263,11 +264,11 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                   const SizedBox(width: 8),
                   TextButton(
                     onPressed: () => _markAll('Attended'),
-                    child: const Text("All Attended", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.green)),
+                    child: Text("All Attended", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.green))),
                   ),
                   TextButton(
                     onPressed: () => _markAll('Absent'),
-                    child: const Text("All Absent", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.red)),
+                    child: Text("All Absent", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.red))),
                   ),
                 ],
               ),
@@ -305,11 +306,11 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                   const SizedBox(width: 10),
                   TextButton(
                     onPressed: () => _markAll('Attended'),
-                    child: const Text("All Attended", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                    child: Text("All Attended", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.green))),
                   ),
                   TextButton(
                     onPressed: () => _markAll('Absent'),
-                    child: const Text("All Absent", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red)),
+                    child: Text("All Absent", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.red))),
                   ),
                 ],
               ),
@@ -342,17 +343,17 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                               return Container(
                                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                                 decoration: BoxDecoration(
-                                  color: isAttended ? Colors.green.withValues(alpha: 0.04) : Colors.transparent,
+                                  color: AppPalette.bg(isAttended ? Colors.green.withValues(alpha: 0.04) : Colors.transparent),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
                                   children: [
                                     CircleAvatar(
                                       radius: 15,
-                                      backgroundColor: widget.pPurple.withValues(alpha: 0.1),
+                                      backgroundColor: AppPalette.bg(widget.pPurple.withValues(alpha: 0.1)),
                                       child: Text(
                                         "${i + 1}",
-                                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: widget.pPurple),
+                                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(widget.pPurple)),
                                       ),
                                     ),
                                     const SizedBox(width: 10),
@@ -366,7 +367,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                                           ),
                                           Text(
                                             "Teacher: ${s['teacher_name'] ?? s['teacher_id'] ?? 'None'}  |  Center: ${s['center_place'] ?? 'N/A'}",
-                                            style: TextStyle(fontSize: 10.5, color: Colors.grey[600]),
+                                            style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.grey[600])),
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ],
@@ -385,9 +386,9 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                                         duration: const Duration(milliseconds: 150),
                                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                         decoration: BoxDecoration(
-                                          color: isAttended ? Colors.green : Colors.red.shade50,
+                                          color: AppPalette.bg(isAttended ? Colors.green : Colors.red.shade50),
                                           borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: isAttended ? Colors.green : Colors.red.shade300),
+                                          border: Border.all(color: AppPalette.line(isAttended ? Colors.green : Colors.red.shade300)),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
@@ -395,7 +396,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                                             Icon(
                                               isAttended ? Icons.check_circle : Icons.cancel_outlined,
                                               size: 14,
-                                              color: isAttended ? Colors.white : Colors.red,
+                                              color: AppPalette.fg(isAttended ? Colors.white : Colors.red),
                                             ),
                                             const SizedBox(width: 4),
                                             Text(
@@ -403,7 +404,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                                               style: TextStyle(
                                                 fontSize: 11.5,
                                                 fontWeight: FontWeight.bold,
-                                                color: isAttended ? Colors.white : Colors.red.shade900,
+                                                color: AppPalette.fg(isAttended ? Colors.white : Colors.red.shade900),
                                               ),
                                             ),
                                           ],
@@ -434,8 +435,8 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                       : const Icon(Icons.check, size: 16),
                   label: Text(_isSaving ? "Saving..." : "Save Attendance"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: widget.pPurple,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppPalette.bg(widget.pPurple),
+                    foregroundColor: AppPalette.fg(Colors.white),
                     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
                   ),
                   onPressed: _isSaving ? null : _saveAttendance,

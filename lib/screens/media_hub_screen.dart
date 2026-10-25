@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'media_player_screen.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class MediaHubScreen extends StatefulWidget {
   final String title;
@@ -36,15 +37,15 @@ class _MediaHubScreenState extends State<MediaHubScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0,
         title: Text("Media Hub",
             style: GoogleFonts.merriweather(
                 fontWeight: FontWeight.w900, // FIXED: black changed to w900
                 fontSize: 18,
-                color: const Color(0xFF0D47A1))),
+                color: AppPalette.fg(const Color(0xFF0D47A1)))),
         centerTitle: true,
         bottom: TabBar(
           controller: _tabController,
@@ -78,7 +79,7 @@ class _MediaHubScreenState extends State<MediaHubScreen>
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
           BoxShadow(
@@ -93,8 +94,8 @@ class _MediaHubScreenState extends State<MediaHubScreen>
         style: GoogleFonts.merriweather(fontSize: 14),
         decoration: InputDecoration(
           hintText: "Search title or artist...",
-          hintStyle: GoogleFonts.merriweather(color: Colors.grey, fontSize: 13),
-          prefixIcon: const Icon(Icons.search, color: Color(0xFF0D47A1)),
+          hintStyle: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontSize: 13),
+          prefixIcon: Icon(Icons.search, color: AppPalette.fg(Color(0xFF0D47A1))),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
                   icon: const Icon(Icons.clear, size: 20),
@@ -131,7 +132,7 @@ class _MediaHubScreenState extends State<MediaHubScreen>
         if (!snapshot.hasData || (snapshot.data as List).isEmpty) {
           return Center(
               child: Text("No items found",
-                  style: GoogleFonts.merriweather(color: Colors.grey)));
+                  style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))));
         }
 
         final data = snapshot.data as List<dynamic>;
@@ -149,7 +150,7 @@ class _MediaHubScreenState extends State<MediaHubScreen>
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -174,9 +175,9 @@ class _MediaHubScreenState extends State<MediaHubScreen>
                 width: 100,
                 height: 100,
                 fit: BoxFit.cover,
-                placeholder: (c, u) => Container(color: Colors.grey[200]),
+                placeholder: (c, u) => Container(color: AppPalette.bg(Colors.grey[200])),
                 errorWidget: (c, u, e) => Container(
-                    color: Colors.grey[300],
+                    color: AppPalette.bg(Colors.grey[300]),
                     child: const Icon(Icons.music_note)),
               ),
             ),
@@ -194,15 +195,15 @@ class _MediaHubScreenState extends State<MediaHubScreen>
                     const SizedBox(height: 4),
                     Text(item['artist'] ?? "Unknown",
                         style: GoogleFonts.merriweather(
-                            fontSize: 12, color: Colors.grey[600])),
+                            fontSize: 12, color: AppPalette.fg(Colors.grey[600]))),
                   ],
                 ),
               ),
             ),
-            const Padding(
+            Padding(
                 padding: EdgeInsets.only(right: 15),
                 child: Icon(Icons.play_circle_fill,
-                    color: Color(0xFF0D47A1), size: 30)),
+                    color: AppPalette.fg(Color(0xFF0D47A1)), size: 30)),
           ],
         ),
       ),

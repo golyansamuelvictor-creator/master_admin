@@ -2,6 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+import '../services/notice_permissions.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class IntentionsScreen extends StatefulWidget {
   final double s;
@@ -25,10 +28,197 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
 
   final Color pPurple = const Color(0xFF4A148C);
 
+  // Who may add intentions comes from the role's admin actions (app_roles)
+  NoticePermissions _perm = NoticePermissions.none;
+
   @override
   void initState() {
     super.initState();
     _fetchIntentions();
+    NoticePermissions.load().then((p) {
+      if (mounted) setState(() => _perm = p);
+    });
+  }
+
+  // Which card a category belongs to, and who sees it:
+  //   Headquarters / Tribe / Church -> everyone (Internal Affairs Dept Sec)
+  //   Regions                       -> the author's location (Location Sec)
+  //   Department                    -> the author's location + sub-location + department (Dept Sec)
+  static String _levelOf(String category) =>
+      category == 'Regions' ? 'location' : (category == 'Department' ? 'department' : 'church');
+
+  List<String> get _allowedCategories => [
+        if (_perm.can(NoticePermissions.churchIntentions)) ...['Headquarters', 'Tribe', 'Church'],
+        if (_perm.can(NoticePermissions.locationIntentions)) 'Regions',
+        if (_perm.can(NoticePermissions.departmentIntentions)) 'Department',
+      ];
+
+  /// The database decides for real; this only hides buttons that would fail.
+  bool _canManage(dynamic p) {
+    if (_perm.isAdmin) return true;
+    final level = (p['scope_level'] ?? 'church').toString();
+    if (level == 'church') return _perm.can(NoticePermissions.churchIntentions);
+    if (level == 'location') {
+      return _perm.can(NoticePermissions.locationIntentions) && p['scope_location'] == _perm.location;
+    }
+    return _perm.can(NoticePermissions.departmentIntentions) &&
+        p['scope_location'] == _perm.location &&
+        p['scope_sub_location'] == _perm.subLocation &&
+        p['scope_department'] == _perm.department;
+  }
+
+  Future<void> _deleteIntention(dynamic p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text("Remove intention?", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16)),
+        content: Text(p['point_text']?.toString() ?? '', style: GoogleFonts.merriweather(fontSize: 13)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text("Remove", style: TextStyle(color: AppPalette.fg(Colors.red.shade700)))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supabase.from('app_intentions').delete().eq('id', p['id']);
+      _fetchIntentions();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't remove it. You may not have permission.")));
+      }
+    }
+  }
+
+  Future<void> _openIntentionForm({dynamic existing}) async {
+    final cats = _allowedCategories;
+    if (cats.isEmpty && existing == null) return;
+    String category = (existing?['category'] ?? (cats.isNotEmpty ? cats.first : 'Church')).toString();
+    if (!cats.contains(category) && existing == null) category = cats.first;
+    final textC = TextEditingController(text: existing?['point_text']?.toString() ?? '');
+    final subjectC = TextEditingController(text: existing?['subject']?.toString() ?? '');
+    final orderC = TextEditingController(text: (existing?['sort_order'] ?? 0).toString());
+    DateTime? deadline = DateTime.tryParse(existing?['deadline']?.toString() ?? '');
+    String? error;
+    bool saving = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
+        final level = _levelOf(category);
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Text(existing == null ? "Add intention" : "Edit intention",
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(pPurple))),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (existing == null)
+                  DropdownButtonFormField<String>(
+                    initialValue: category,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: "Category", border: OutlineInputBorder()),
+                    items: cats.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (v) => setD(() => category = v ?? category),
+                  ),
+                const SizedBox(height: 6),
+                Text(existing == null ? _perm.audienceFor(level) : "Category: $category",
+                    style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.blueGrey[700]), fontStyle: FontStyle.italic)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: textC,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration: const InputDecoration(labelText: "Intention / directive", border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 10),
+                TextField(controller: subjectC, decoration: const InputDecoration(labelText: "Subject (optional)", border: OutlineInputBorder())),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.event_rounded, size: 18),
+                      label: Text(deadline == null ? "Deadline (optional)" : "Deadline: ${DateFormat('d MMM yyyy').format(deadline!)}",
+                          overflow: TextOverflow.ellipsis),
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: ctx,
+                          initialDate: deadline ?? DateTime.now(),
+                          firstDate: DateTime(2023),
+                          lastDate: DateTime(2035),
+                        );
+                        if (d != null) setD(() => deadline = d);
+                      },
+                    ),
+                  ),
+                  if (deadline != null) IconButton(onPressed: () => setD(() => deadline = null), icon: const Icon(Icons.clear_rounded)),
+                ]),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: orderC,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: "Order", border: OutlineInputBorder()),
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(error!, style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.red.shade800))),
+                ],
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: saving ? null : () => Navigator.pop(ctx), child: const Text("Cancel")),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple), foregroundColor: AppPalette.fg(Colors.white)),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      final text = textC.text.trim();
+                      if (text.isEmpty) {
+                        setD(() => error = "Write the intention first.");
+                        return;
+                      }
+                      setD(() {
+                        saving = true;
+                        error = null;
+                      });
+                      final data = <String, dynamic>{
+                        'point_text': text,
+                        'subject': subjectC.text.trim().isEmpty ? null : subjectC.text.trim(),
+                        'deadline': deadline == null ? null : DateFormat('yyyy-MM-dd').format(deadline!),
+                        'sort_order': int.tryParse(orderC.text.trim()) ?? 0,
+                        'updated_at': DateTime.now().toIso8601String(),
+                      };
+                      try {
+                        if (existing == null) {
+                          await _supabase.from('app_intentions').insert({
+                            ...data,
+                            'category': category,
+                            'is_active': true,
+                            ..._perm.scopeFor(_levelOf(category)),
+                          });
+                        } else {
+                          await _supabase.from('app_intentions').update(data).eq('id', existing['id']);
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _fetchIntentions();
+                      } catch (e) {
+                        setD(() {
+                          saving = false;
+                          error = "Couldn't save. Your role may not be allowed to add this category.";
+                        });
+                      }
+                    },
+              child: Text(saving ? "Saving..." : "Save"),
+            ),
+          ],
+        );
+      }),
+    );
   }
 
   Future<void> _fetchIntentions() async {
@@ -191,16 +381,16 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
       return bodyContent;
     } else {
       return Scaffold(
-        backgroundColor: const Color(0xFFF7F8FC),
+        backgroundColor: AppPalette.bg(const Color(0xFFF7F8FC)),
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: AppPalette.bg(Colors.white),
           elevation: 0.5,
           centerTitle: true,
           title: Text(
             "Strategic Intentions",
             style: GoogleFonts.merriweather(
               fontWeight: FontWeight.w900,
-              color: pPurple,
+              color: AppPalette.fg(pPurple),
               fontSize: 18,
             ),
           ),
@@ -221,10 +411,10 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
         vertical: 18,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: pPurple.withValues(alpha: 0.08),
+          color: AppPalette.line(pPurple.withValues(alpha: 0.08)),
           width: 1.2,
         ),
         boxShadow: [
@@ -249,10 +439,10 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: pPurple.withValues(alpha: 0.08),
+                    color: AppPalette.bg(pPurple.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.track_changes_rounded, color: pPurple, size: 26),
+                  child: Icon(Icons.track_changes_rounded, color: AppPalette.fg(pPurple), size: 26),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -263,7 +453,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                         "Strategic Intentions & Directives",
                         style: GoogleFonts.merriweather(
                           fontSize: isDesktop ? 20 : 16,
-                          color: pPurple,
+                          color: AppPalette.fg(pPurple),
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.3,
                         ),
@@ -275,7 +465,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                         "Executive Alignment • Headquarters • Tribes • Churches",
                         style: GoogleFonts.merriweather(
                           fontSize: isDesktop ? 12 : 10,
-                          color: Colors.blueGrey[600],
+                          color: AppPalette.fg(Colors.blueGrey[600]),
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -286,24 +476,38 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
             ),
           ),
           const SizedBox(width: 10),
+          if (_perm.canAddIntentions) ...[
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppPalette.bg(pPurple),
+                foregroundColor: AppPalette.fg(Colors.white),
+                padding: EdgeInsets.symmetric(horizontal: isDesktop ? 14 : 10, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => _openIntentionForm(),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: Text(isDesktop ? "Add intention" : "Add", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12)),
+            ),
+            const SizedBox(width: 8),
+          ],
           // Total Directives Badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: pPurple.withValues(alpha: 0.08),
+              color: AppPalette.bg(pPurple.withValues(alpha: 0.08)),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.checklist_rounded, size: 15, color: pPurple),
+                Icon(Icons.checklist_rounded, size: 15, color: AppPalette.fg(pPurple)),
                 const SizedBox(width: 6),
                 Text(
                   "$totalDirectives Active",
                   style: GoogleFonts.merriweather(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    color: pPurple,
+                    color: AppPalette.fg(pPurple),
                   ),
                 ),
               ],
@@ -325,10 +529,10 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
   ) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: pPurple.withValues(alpha: 0.08),
+          color: AppPalette.line(pPurple.withValues(alpha: 0.08)),
           width: 1.2,
         ),
         boxShadow: [
@@ -346,11 +550,11 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.06),
+              color: AppPalette.bg(accentColor.withValues(alpha: 0.06)),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
               border: Border(
                 bottom: BorderSide(
-                  color: accentColor.withValues(alpha: 0.12),
+                  color: AppPalette.line(accentColor.withValues(alpha: 0.12)),
                   width: 1.0,
                 ),
               ),
@@ -358,41 +562,48 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: accentColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppPalette.bg(accentColor.withValues(alpha: 0.12)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(icon, color: AppPalette.fg(accentColor), size: 18),
                       ),
-                      child: Icon(icon, color: accentColor, size: 18),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      title,
-                      style: GoogleFonts.merriweather(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 17,
-                        color: pPurple,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.merriweather(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 17,
+                            color: AppPalette.fg(pPurple),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 // Count Tag
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppPalette.bg(Colors.white),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: accentColor.withValues(alpha: 0.25)),
+                    border: Border.all(color: AppPalette.line(accentColor.withValues(alpha: 0.25))),
                   ),
                   child: Text(
                     "${points.length} Directives",
                     style: GoogleFonts.merriweather(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: accentColor,
+                      color: AppPalette.fg(accentColor),
                     ),
                   ),
                 ),
@@ -410,7 +621,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                       child: Text(
                         "No active intentions found.",
                         style: GoogleFonts.merriweather(
-                          color: Colors.blueGrey[400],
+                          color: AppPalette.fg(Colors.blueGrey[400]),
                           fontSize: 13,
                           fontStyle: FontStyle.italic,
                         ),
@@ -430,7 +641,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                               ? null
                               : Border(
                                   bottom: BorderSide(
-                                    color: Colors.grey.withValues(alpha: 0.10),
+                                    color: AppPalette.line(Colors.grey.withValues(alpha: 0.10)),
                                     width: 1.0,
                                   ),
                                 ),
@@ -444,10 +655,10 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                               height: 24,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color: accentColor.withValues(alpha: 0.1),
+                                color: AppPalette.bg(accentColor.withValues(alpha: 0.1)),
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: accentColor.withValues(alpha: 0.25),
+                                  color: AppPalette.line(accentColor.withValues(alpha: 0.25)),
                                   width: 1,
                                 ),
                               ),
@@ -456,7 +667,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                                 style: GoogleFonts.merriweather(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w900,
-                                  color: accentColor,
+                                  color: AppPalette.fg(accentColor),
                                 ),
                               ),
                             ),
@@ -468,13 +679,23 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                                 p['point_text'] ?? "",
                                 style: GoogleFonts.merriweather(
                                   fontSize: 14,
-                                  color: const Color(0xFF212121),
+                                  color: AppPalette.fg(const Color(0xFF212121)),
                                   fontWeight: FontWeight.w500,
                                   height: 1.5,
                                   letterSpacing: 0.1,
                                 ),
                               ),
                             ),
+                            if (_canManage(p))
+                              PopupMenuButton<String>(
+                                tooltip: "Edit or remove",
+                                icon: Icon(Icons.more_vert_rounded, size: 18, color: AppPalette.fg(Colors.blueGrey[400])),
+                                onSelected: (v) => v == 'edit' ? _openIntentionForm(existing: p) : _deleteIntention(p),
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(value: 'edit', child: Text("Edit")),
+                                  PopupMenuItem(value: 'delete', child: Text("Remove")),
+                                ],
+                              ),
                           ],
                         ),
                       );

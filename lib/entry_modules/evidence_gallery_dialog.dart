@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:crypto/crypto.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class EvidenceGalleryDialog extends StatefulWidget {
   final String sheetName;
@@ -190,7 +191,7 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppPalette.bg(Colors.transparent),
         insetPadding: const EdgeInsets.all(12),
         child: Stack(
           alignment: Alignment.topRight,
@@ -202,9 +203,9 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
               ),
             ),
             IconButton(
-              icon: const CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: Icon(Icons.close, color: Colors.white, size: 20),
+              icon: CircleAvatar(
+                backgroundColor: AppPalette.bg(Colors.black54),
+                child: Icon(Icons.close, color: AppPalette.fg(Colors.white), size: 20),
               ),
               onPressed: () => Navigator.pop(ctx),
             ),
@@ -231,15 +232,15 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: widget.pPurple.withValues(alpha: 0.1),
-                  child: Icon(Icons.photo_library_rounded, color: widget.pPurple),
+                  backgroundColor: AppPalette.bg(widget.pPurple.withValues(alpha: 0.1)),
+                  child: Icon(Icons.photo_library_rounded, color: AppPalette.fg(widget.pPurple)),
                 ),
                 const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Evidence Album", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: widget.pPurple)),
-                    Text("$dateDisplay  •  ${widget.unitName}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    Text("Evidence Album", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: AppPalette.fg(widget.pPurple))),
+                    Text("$dateDisplay  •  ${widget.unitName}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
                   ],
                 ),
                 const Spacer(),
@@ -249,7 +250,7 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
                         ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.add_a_photo_outlined, size: 14),
                     label: Text(isDesktop ? "Upload Photos" : "Add"),
-                    style: ElevatedButton.styleFrom(backgroundColor: widget.pPurple, foregroundColor: Colors.white, visualDensity: VisualDensity.compact),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(widget.pPurple), foregroundColor: AppPalette.fg(Colors.white), visualDensity: VisualDensity.compact),
                     onPressed: _isUploading ? null : _pickAndUpload,
                   ),
                 const SizedBox(width: 6),
@@ -266,9 +267,9 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.camera_alt_outlined, size: 48, color: Colors.grey.shade400),
+                              Icon(Icons.camera_alt_outlined, size: 48, color: AppPalette.fg(Colors.grey.shade400)),
                               const SizedBox(height: 8),
-                              const Text("No evidence uploaded for this date.", style: TextStyle(color: Colors.grey)),
+                              Text("No evidence uploaded for this date.", style: TextStyle(color: AppPalette.fg(Colors.grey))),
                               if (_isEditable) ...[
                                 const SizedBox(height: 12),
                                 OutlinedButton.icon(
@@ -309,10 +310,10 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
                                       right: 4,
                                       child: GestureDetector(
                                         onTap: () => _deletePhoto(id, storagePath),
-                                        child: const CircleAvatar(
+                                        child: CircleAvatar(
                                           radius: 13,
-                                          backgroundColor: Colors.black,
-                                          child: Icon(Icons.delete_outline, size: 15, color: Colors.redAccent),
+                                          backgroundColor: AppPalette.bg(Colors.black),
+                                          child: Icon(Icons.delete_outline, size: 15, color: AppPalette.fg(Colors.redAccent)),
                                         ),
                                       ),
                                     ),

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 import 'package:file_picker/file_picker.dart'; 
 import 'package:csv/csv.dart' as csv_lib; // FIXED: Using a prefix to avoid name conflicts
 
@@ -87,11 +88,11 @@ class _AdminToolsScreenState extends State<AdminToolsScreen> {
     const pPurple = Color(0xFF4A148C);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFBFBFE),
+      backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
       appBar: AppBar(
-        title: Text("ADMIN TOOLS", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple)),
+        title: Text("ADMIN TOOLS", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
         centerTitle: true,
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
       ),
       body: Center(
@@ -104,14 +105,14 @@ class _AdminToolsScreenState extends State<AdminToolsScreen> {
                   margin: const EdgeInsets.symmetric(horizontal: 30),
                   padding: const EdgeInsets.all(40),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: AppPalette.bg(Colors.white),
                     borderRadius: BorderRadius.circular(30),
                     boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20)],
-                    border: Border.all(color: pPurple.withValues(alpha: 0.1), width: 2),
+                    border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.1)), width: 2),
                   ),
                   child: Column(
                     children: [
-                      const Icon(Icons.group_add_rounded, size: 80, color: pPurple),
+                      Icon(Icons.group_add_rounded, size: 80, color: AppPalette.fg(pPurple)),
                       const SizedBox(height: 25),
                       Text("Bulk Member Enrollment", 
                         textAlign: TextAlign.center,
@@ -122,8 +123,8 @@ class _AdminToolsScreenState extends State<AdminToolsScreen> {
                         icon: const Icon(Icons.upload_file_rounded),
                         label: const Text("SELECT CSV FILE"),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: pPurple,
-                          foregroundColor: Colors.white,
+                          backgroundColor: AppPalette.bg(pPurple),
+                          foregroundColor: AppPalette.fg(Colors.white),
                           minimumSize: const Size(double.infinity, 60),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                         ),
@@ -134,7 +135,7 @@ class _AdminToolsScreenState extends State<AdminToolsScreen> {
                 const SizedBox(height: 30),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: Text("GO BACK", style: GoogleFonts.merriweather(color: Colors.grey, fontWeight: FontWeight.bold)),
+                  child: Text("GO BACK", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontWeight: FontWeight.bold)),
                 ),
               ],
             ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/workflow_logic.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class ApprovalInbox extends StatefulWidget {
   final String userRole;
@@ -345,16 +346,16 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: Colors.grey.shade50,
+        backgroundColor: AppPalette.bg(Colors.grey.shade50),
         appBar: AppBar(
           centerTitle: true,
           elevation: 0.5,
-          backgroundColor: Colors.white,
+          backgroundColor: AppPalette.bg(Colors.white),
           title: Text(
             "Governance Inbox",
             style: GoogleFonts.merriweather(
               fontWeight: FontWeight.bold,
-              color: pPurple,
+              color: AppPalette.fg(pPurple),
               fontSize: 19,
             ),
           ),
@@ -410,34 +411,34 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
   Widget _buildSearchBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       child: TextField(
         controller: _searchController,
         onChanged: (val) => setState(() => _searchQuery = val),
         decoration: InputDecoration(
           hintText: "Search by keyword or date (e.g. John, Oct 24)...",
-          hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-          prefixIcon: Icon(Icons.search, color: pPurple, size: 20),
+          hintStyle: TextStyle(fontSize: 13, color: AppPalette.fg(Colors.grey.shade500)),
+          prefixIcon: Icon(Icons.search, color: AppPalette.fg(pPurple), size: 20),
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (_searchQuery.isNotEmpty)
                 IconButton(
-                  icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                  icon: Icon(Icons.clear, size: 18, color: AppPalette.fg(Colors.grey)),
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _searchQuery = '');
                   },
                 ),
               IconButton(
-                icon: Icon(Icons.calendar_today_outlined, size: 18, color: pPurple),
+                icon: Icon(Icons.calendar_today_outlined, size: 18, color: AppPalette.fg(pPurple)),
                 tooltip: "Filter by date",
                 onPressed: _pickDateFilter,
               ),
             ],
           ),
           filled: true,
-          fillColor: Colors.grey.shade100,
+          fillColor: AppPalette.bg(Colors.grey.shade100),
           contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(25),
@@ -464,7 +465,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                         ? Icons.mark_email_read_outlined
                         : Icons.drafts_outlined,
                     size: 52,
-                    color: Colors.grey.shade400,
+                    color: AppPalette.fg(Colors.grey.shade400),
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -473,7 +474,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                         : isUnreadTab
                             ? "Your inbox is clear. No unread transfers."
                             : "No read messages in this folder.",
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                    style: TextStyle(color: AppPalette.fg(Colors.grey.shade600), fontSize: 14),
                   ),
                 ],
               ),
@@ -505,7 +506,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
-          color: isUnread ? pPurple.withValues(alpha: 0.25) : Colors.grey.shade200,
+          color: AppPalette.line(isUnread ? pPurple.withValues(alpha: 0.25) : Colors.grey.shade200),
           width: 1,
         ),
       ),
@@ -528,11 +529,11 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                   CircleAvatar(
                     radius: 17,
                     backgroundColor:
-                        isUnread ? pPurple : Colors.grey.shade400,
+                        AppPalette.bg(isUnread ? pPurple : Colors.grey.shade400),
                     child: Text(
                       sender.isNotEmpty ? sender[0].toUpperCase() : "T",
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: AppPalette.fg(Colors.white),
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                       ),
@@ -553,7 +554,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                                   fontSize: 13,
                                   fontWeight:
                                       isUnread ? FontWeight.bold : FontWeight.w600,
-                                  color: Colors.black87,
+                                  color: AppPalette.fg(Colors.black87),
                                 ),
                               ),
                             ),
@@ -563,7 +564,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                                 width: 8,
                                 height: 8,
                                 decoration: BoxDecoration(
-                                  color: pPurple,
+                                  color: AppPalette.bg(pPurple),
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -574,7 +575,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                           "Date sent: $dateSent",
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.grey.shade600,
+                            color: AppPalette.fg(Colors.grey.shade600),
                           ),
                         ),
                       ],
@@ -583,14 +584,14 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
+                      color: AppPalette.bg(Colors.blue.shade50),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       "Level: ${req['current_level'] ?? 'N/A'}",
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.blue.shade800,
+                        color: AppPalette.fg(Colors.blue.shade800),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -605,7 +606,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
-                  color: Colors.black87,
+                  color: AppPalette.fg(Colors.black87),
                 ),
               ),
               const SizedBox(height: 6),
@@ -614,7 +615,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
+                  color: AppPalette.bg(Colors.grey.shade50),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -622,16 +623,16 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                     Expanded(
                       child: Text(
                         "From: Loc ${oldU['loc'] ?? '-'}, Team ${oldU['team'] ?? '-'}",
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                        style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700)),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
+                    Icon(Icons.arrow_forward, size: 14, color: AppPalette.fg(Colors.grey)),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         "To: Loc ${newU['loc'] ?? '-'}, Team ${newU['team'] ?? '-'}",
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                        style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700)),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -656,13 +657,13 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
           child: OutlinedButton(
             onPressed: () => _signRequest(req, false),
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.red),
+              side: BorderSide(color: AppPalette.line(Colors.red)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               padding: const EdgeInsets.symmetric(vertical: 8),
             ),
-            child: const Text(
+            child: Text(
               "Reject",
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
+              style: TextStyle(color: AppPalette.fg(Colors.red), fontWeight: FontWeight.w600),
             ),
           ),
         ),
@@ -671,14 +672,14 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
           child: ElevatedButton(
             onPressed: () => _signRequest(req, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade700,
+              backgroundColor: AppPalette.bg(Colors.green.shade700),
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               padding: const EdgeInsets.symmetric(vertical: 8),
             ),
-            child: const Text(
+            child: Text(
               "Approve & Sign",
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              style: TextStyle(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.w600),
             ),
           ),
         ),
@@ -712,7 +713,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: AppPalette.bg(Colors.grey.shade300),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -726,7 +727,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                     style: GoogleFonts.merriweather(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: pPurple,
+                      color: AppPalette.fg(pPurple),
                     ),
                   ),
                   TextButton.icon(
@@ -754,13 +755,13 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
               const SizedBox(height: 4),
               Text("Date sent: $dateSent",
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                  style: TextStyle(color: AppPalette.fg(Colors.grey.shade600), fontSize: 12)),
               const SizedBox(height: 4),
               Text("Member: $memberName",
                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
               const SizedBox(height: 4),
               Text("Workflow level: ${req['current_level'] ?? 'N/A'}",
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                  style: TextStyle(color: AppPalette.fg(Colors.grey.shade600), fontSize: 12)),
               const SizedBox(height: 16),
 
               // From / To Comparison Table
@@ -774,9 +775,9 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                       oldU['cell']?.toString(),
                     ),
                   ),
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Icon(Icons.arrow_forward, color: Colors.grey),
+                    child: Icon(Icons.arrow_forward, color: AppPalette.fg(Colors.grey)),
                   ),
                   Expanded(
                     child: _unitInfoBox(
@@ -801,9 +802,9 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: AppPalette.bg(Colors.grey.shade50),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -812,7 +813,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
             label,
             style: TextStyle(
               fontSize: 11,
-              color: pPurple,
+              color: AppPalette.fg(pPurple),
               fontWeight: FontWeight.bold,
             ),
           ),

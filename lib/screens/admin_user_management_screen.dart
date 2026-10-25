@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class AdminUserManagementScreen extends StatefulWidget {
   const AdminUserManagementScreen({super.key});
@@ -107,9 +108,9 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(Colors.red)),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("Reject", style: TextStyle(color: Colors.white)),
+            child: Text("Reject", style: TextStyle(color: AppPalette.fg(Colors.white))),
           ),
         ],
       ),
@@ -189,7 +190,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: Text("Change Role: ${user['full_name'] ?? 'Member'}",
-                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: pPurple)),
+                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: AppPalette.fg(pPurple))),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -296,7 +297,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: pPurple),
+                style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple)),
                 onPressed: (selectedRoleName == null || selectedRoleKey == null) ? null : () async {
                   // Saves the role_key, which the rest of the app looks roles up by
                   // (it used to save the display name, e.g. "Cell Leader", so the new
@@ -313,7 +314,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                     SnackBar(content: Text("Role updated to '$selectedRoleName'"), backgroundColor: Colors.green),
                   );
                 },
-                child: const Text("Save Role", style: TextStyle(color: Colors.white)),
+                child: Text("Save Role", style: TextStyle(color: AppPalette.fg(Colors.white))),
               ),
             ],
           );
@@ -329,14 +330,14 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text("Remove User: ${user['full_name'] ?? user['email']}", style: const TextStyle(color: Colors.red)),
+        title: Text("Remove User: ${user['full_name'] ?? user['email']}", style: TextStyle(color: AppPalette.fg(Colors.red))),
         content: const Text("Are you sure you want to remove this user from the profiles table? This cannot be undone."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(Colors.red)),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text("Delete User", style: TextStyle(color: Colors.white)),
+            child: Text("Delete User", style: TextStyle(color: AppPalette.fg(Colors.white))),
           ),
         ],
       ),
@@ -353,10 +354,10 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: pPurple,
-        title: Text("User Administration", style: GoogleFonts.merriweather(color: Colors.white, fontSize: 16)),
+        backgroundColor: AppPalette.bg(pPurple),
+        title: Text("User Administration", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 16)),
         leading: _currentView != 'menu'
-            ? IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => setState(() => _currentView = 'menu'))
+            ? IconButton(icon: Icon(Icons.arrow_back, color: AppPalette.fg(Colors.white)), onPressed: () => setState(() => _currentView = 'menu'))
             : null,
       ),
       body: _buildCurrentView(),
@@ -384,11 +385,11 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           children: [
             Text("Profiles Management",
                 textAlign: TextAlign.center,
-                style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: pPurple)),
+                style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
             const SizedBox(height: 6),
             Text("Select an administrative operation",
                 textAlign: TextAlign.center,
-                style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey)),
+                style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey))),
             const SizedBox(height: 28),
 
             _menuCard(
@@ -444,8 +445,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                child: Icon(icon, color: color, size: 26),
+                decoration: BoxDecoration(color: AppPalette.bg(color.withValues(alpha: 0.12)), borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, color: AppPalette.fg(color), size: 26),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -454,11 +455,11 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                   children: [
                     Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14)),
                     const SizedBox(height: 3),
-                    Text(subtitle, style: GoogleFonts.merriweather(fontSize: 11, color: Colors.grey.shade600)),
+                    Text(subtitle, style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+              Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppPalette.fg(Colors.grey)),
             ],
           ),
         ),
@@ -493,7 +494,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : filtered.isEmpty
-                  ? Center(child: Text(isApprovalView ? "No accounts pending approval." : "No profiles found.", style: GoogleFonts.merriweather(color: Colors.grey)))
+                  ? Center(child: Text(isApprovalView ? "No accounts pending approval." : "No profiles found.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
                   : ListView.builder(
                       itemCount: filtered.length,
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -514,18 +515,18 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 if (isApprovalView) ...[
-                                  IconButton(icon: const Icon(Icons.check_circle_rounded, color: Colors.green), tooltip: "Approve", onPressed: () => _approveUser(u)),
-                                  IconButton(icon: const Icon(Icons.cancel_rounded, color: Colors.red), tooltip: "Reject", onPressed: () => _rejectUser(u)),
+                                  IconButton(icon: Icon(Icons.check_circle_rounded, color: AppPalette.fg(Colors.green)), tooltip: "Approve", onPressed: () => _approveUser(u)),
+                                  IconButton(icon: Icon(Icons.cancel_rounded, color: AppPalette.fg(Colors.red)), tooltip: "Reject", onPressed: () => _rejectUser(u)),
                                 ],
                                 if (isRoleChangeView)
                                   ElevatedButton.icon(
                                     icon: const Icon(Icons.edit, size: 14),
                                     label: const Text("Role"),
-                                    style: ElevatedButton.styleFrom(backgroundColor: pPurple, foregroundColor: Colors.white),
+                                    style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple), foregroundColor: AppPalette.fg(Colors.white)),
                                     onPressed: () => _openChangeRoleDialog(u),
                                   ),
                                 if (isRemoveView)
-                                  IconButton(icon: const Icon(Icons.delete_forever_rounded, color: Colors.red), tooltip: "Delete", onPressed: () => _removeUser(u)),
+                                  IconButton(icon: Icon(Icons.delete_forever_rounded, color: AppPalette.fg(Colors.red)), tooltip: "Delete", onPressed: () => _removeUser(u)),
                               ],
                             ),
                           ),

@@ -1,15 +1,20 @@
 // ignore_for_file: depend_on_referenced_packages, use_build_context_synchronously, unused_element, curly_braces_in_flow_control_structures
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import '../main.dart';
+import 'add_account_screen.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 // PRESERVED: UserAccount Model
 class UserAccount {
   final String fullName, userName, phoneNumber, email, role, accountType;
+  final String id; // auth user id ('' when unknown)
   UserAccount({
+    this.id = '',
     required this.fullName,
     required this.userName,
     required this.phoneNumber,
@@ -188,7 +193,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Drawer(
       width: width,
       child: Scaffold(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         body: Column(
           children: [
             // Centered Profile Header
@@ -231,10 +236,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Center(
                       child: TextButton.icon(
                         onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 18),
+                        icon: Icon(Icons.close_rounded, color: AppPalette.fg(Colors.grey), size: 18),
                         label: Text(
                           "Close Dashboard", 
-                          style: GoogleFonts.merriweather(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 14),
+                          style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                       ),
                     ),
@@ -255,7 +260,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(16, isDesktop ? 30 : 20, 16, 22), 
       decoration: BoxDecoration(
-        color: p1,
+        color: AppPalette.bg(p1),
         borderRadius: const BorderRadius.only(
           bottomRight: Radius.circular(40), 
           bottomLeft: Radius.circular(40),
@@ -288,22 +293,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         children: [
                           CircleAvatar(
                             radius: isDesktop ? 38 : 32,
-                            backgroundColor: Colors.white.withValues(alpha: 0.2),
+                            backgroundColor: AppPalette.bg(Colors.white.withValues(alpha: 0.2)),
                             backgroundImage: (_avatarUrl != null && _avatarUrl!.isNotEmpty)
                                 ? NetworkImage(_avatarUrl!)
                                 : null,
                             child: (_avatarUrl == null || _avatarUrl!.isEmpty)
-                                ? Icon(Icons.person_rounded, size: isDesktop ? 38 : 30, color: Colors.white)
+                                ? Icon(Icons.person_rounded, size: isDesktop ? 38 : 30, color: AppPalette.fg(Colors.white))
                                 : null,
                           ),
                           Container(
                             padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(
-                              color: Colors.orangeAccent,
+                              color: AppPalette.bg(Colors.orangeAccent),
                               shape: BoxShape.circle,
-                              border: Border.all(color: p1, width: 2),
+                              border: Border.all(color: AppPalette.line(p1), width: 2),
                             ),
-                            child: const Icon(Icons.camera_alt_rounded, size: 12, color: Colors.black87),
+                            child: Icon(Icons.camera_alt_rounded, size: 12, color: AppPalette.fg(Colors.black87)),
                           ),
                         ],
                       ),
@@ -315,7 +320,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _fullName,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.merriweather(
-                        color: Colors.white,
+                        color: AppPalette.fg(Colors.white),
                         fontSize: isDesktop ? 22 : 17,
                         fontWeight: FontWeight.w900,
                       ),
@@ -329,7 +334,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       "@${_userName.toLowerCase()} • $_phoneNumber",
                       textAlign: TextAlign.center,
                       style: GoogleFonts.merriweather(
-                        color: Colors.white70,
+                        color: AppPalette.fg(Colors.white70),
                         fontSize: isDesktop ? 12.5 : 11,
                         fontWeight: FontWeight.w400,
                       ),
@@ -343,7 +348,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _email,
                       textAlign: TextAlign.center,
                       style: GoogleFonts.merriweather(
-                        color: Colors.white60,
+                        color: AppPalette.fg(Colors.white60),
                         fontSize: isDesktop ? 12 : 10.5,
                         fontWeight: FontWeight.w400,
                       ),
@@ -356,14 +361,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.orangeAccent,
+                        color: AppPalette.bg(Colors.orangeAccent),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         "${_toTitleCase(_accountType)}: ${_toTitleCase(_currentRole.replaceAll('_', ' '))}",
                         textAlign: TextAlign.center,
                         style: GoogleFonts.merriweather(
-                          color: Colors.black,
+                          color: AppPalette.fg(Colors.black),
                           fontSize: isDesktop ? 10 : 9.5,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.4,
@@ -382,7 +387,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               top: 0,
               right: 0,
               child: PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 24),
+                icon: Icon(Icons.more_vert_rounded, color: AppPalette.fg(Colors.white70), size: 24),
                 splashRadius: 20,
                 onSelected: (val) => _handleMenuAction(val),
                 itemBuilder: (context) => [
@@ -391,8 +396,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _popItem(Icons.switch_account_outlined, "Switch Account", 'switch'),
                   _popItem(Icons.person_add_alt_1_outlined, "Add Account", 'add_account'),
                   const PopupMenuDivider(height: 8),
-                  _popItem(Icons.light_mode_outlined, "Light Theme", 'light'),
-                  _popItem(Icons.dark_mode_outlined, "Dark Theme", 'dark'),
+                  _popItem(Icons.brightness_auto_outlined, "System Theme${themeNotifier.value == ThemeMode.system ? '  ✓' : ''}", 'system'),
+                  _popItem(Icons.light_mode_outlined, "Light Theme${themeNotifier.value == ThemeMode.light ? '  ✓' : ''}", 'light'),
+                  _popItem(Icons.dark_mode_outlined, "Dark Theme${themeNotifier.value == ThemeMode.dark ? '  ✓' : ''}", 'dark'),
                 ],
               ),
             ),
@@ -408,7 +414,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       height: 34,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Row(children: [
-        Icon(icon, size: 17, color: const Color(0xFF4A148C)),
+        Icon(icon, size: 17, color: AppPalette.fg(const Color(0xFF4A148C))),
         const SizedBox(width: 10),
         Text(label, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w600)),
       ]),
@@ -420,7 +426,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Text(
         _toTitleCase(title), 
-        style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.blueGrey[900]),
+        style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.blueGrey[900])),
       ),
     );
   }
@@ -447,7 +453,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 18),
             decoration: BoxDecoration(
-              color: Colors.white, 
+              color: AppPalette.bg(Colors.white), 
               borderRadius: BorderRadius.circular(15), 
               boxShadow: [
                 BoxShadow(
@@ -456,18 +462,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   offset: const Offset(0, 3),
                 ),
               ], 
-              border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+              border: Border.all(color: AppPalette.line(Colors.black.withValues(alpha: 0.05))),
             ),
             child: Row(children: [
-              Icon(_getIcon(item['icon_name']), color: pColor, size: 20),
+              Icon(_getIcon(item['icon_name']), color: AppPalette.fg(pColor), size: 20),
               const SizedBox(width: 16), 
               Expanded(
                 child: Text(
                   _toTitleCase(item['label']), 
-                  style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                  style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14, color: AppPalette.fg(Colors.black87)),
                 ),
               ), 
-              const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.black26),
+              Icon(Icons.chevron_right_rounded, size: 18, color: AppPalette.fg(Colors.black26)),
             ]),
           ),
         );
@@ -487,16 +493,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _showSwitchAccountDialog(context);
     } else if (action == 'add_account') {
       _showAddAccountDialog(context);
-    } else if (action == 'light') {
-      themeNotifier.value = ThemeMode.light;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Light theme enabled"))
-      );
-    } else if (action == 'dark') {
-      themeNotifier.value = ThemeMode.dark;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Dark theme enabled"))
-      );
+    } else if (action == 'system' || action == 'light' || action == 'dark') {
+      // Applied app-wide and remembered on this device
+      final mode = action == 'system' ? ThemeMode.system : (action == 'dark' ? ThemeMode.dark : ThemeMode.light);
+      setAppThemeMode(mode);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(action == 'system'
+            ? "Theme follows this device's setting"
+            : (action == 'dark' ? "Dark theme enabled" : "Light theme enabled")),
+      ));
     }
   }
 
@@ -586,7 +591,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Container(
                       width: 40,
                       height: 5,
-                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+                      decoration: BoxDecoration(color: AppPalette.bg(Colors.grey[300]), borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -596,7 +601,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       style: GoogleFonts.merriweather(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
-                        color: const Color(0xFF4A148C),
+                        color: AppPalette.fg(const Color(0xFF4A148C)),
                       ),
                     ),
                   ),
@@ -613,7 +618,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             children: [
                               CircleAvatar(
                                 radius: 38,
-                                backgroundColor: const Color(0xFF4A148C).withValues(alpha: 0.1),
+                                backgroundColor: AppPalette.bg(const Color(0xFF4A148C).withValues(alpha: 0.1)),
                                 backgroundImage: avatarCtrl.text.trim().isNotEmpty
                                     ? NetworkImage(avatarCtrl.text.trim())
                                     : (_avatarUrl != null && _avatarUrl!.isNotEmpty)
@@ -626,13 +631,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4A148C)),
                                       )
                                     : (avatarCtrl.text.trim().isEmpty && (_avatarUrl == null || _avatarUrl!.isEmpty))
-                                        ? const Icon(Icons.person_rounded, size: 38, color: Color(0xFF4A148C))
+                                        ? Icon(Icons.person_rounded, size: 38, color: AppPalette.fg(Color(0xFF4A148C)))
                                         : null,
                               ),
                               Container(
                                 padding: const EdgeInsets.all(5),
-                                decoration: const BoxDecoration(color: Color(0xFF4A148C), shape: BoxShape.circle),
-                                child: const Icon(Icons.camera_alt_rounded, size: 14, color: Colors.white),
+                                decoration: BoxDecoration(color: AppPalette.bg(Color(0xFF4A148C)), shape: BoxShape.circle),
+                                child: Icon(Icons.camera_alt_rounded, size: 14, color: AppPalette.fg(Colors.white)),
                               ),
                             ],
                           ),
@@ -640,13 +645,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const SizedBox(height: 8),
                         TextButton.icon(
                           onPressed: isUploadingImage ? null : pickAndUploadImage,
-                          icon: const Icon(Icons.photo_library_outlined, size: 16, color: Color(0xFF4A148C)),
+                          icon: Icon(Icons.photo_library_outlined, size: 16, color: AppPalette.fg(Color(0xFF4A148C))),
                           label: Text(
                             isUploadingImage ? "Uploading Photo..." : "Choose from Gallery",
                             style: GoogleFonts.merriweather(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: const Color(0xFF4A148C),
+                              color: AppPalette.fg(const Color(0xFF4A148C)),
                             ),
                           ),
                         ),
@@ -701,7 +706,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   if (errorText != null) ...[
                     Text(
                       errorText!,
-                      style: GoogleFonts.merriweather(color: Colors.red.shade800, fontSize: 11.5, fontWeight: FontWeight.bold),
+                      style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.red.shade800), fontSize: 11.5, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -715,14 +720,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          child: Text("Cancel", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                          child: Text("Cancel", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey[700]))),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4A148C),
+                            backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
@@ -795,7 +800,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   height: 18,
                                   child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                 )
-                              : Text("Save Changes", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold)),
+                              : Text("Save Changes", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ],
@@ -813,20 +818,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         padding: const EdgeInsets.only(bottom: 4),
         child: Text(
           label,
-          style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+          style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
         ),
       );
 
   InputDecoration _editInputDecoration(String hint, IconData icon) => InputDecoration(
         hintText: hint,
-        hintStyle: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey),
-        prefixIcon: Icon(icon, size: 18, color: const Color(0xFF4A148C)),
+        hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey)),
+        prefixIcon: Icon(icon, size: 18, color: AppPalette.fg(const Color(0xFF4A148C))),
         filled: true,
-        fillColor: const Color(0xFFFBFBFE),
+        fillColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF4A148C), width: 1.5)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Color(0xFF4A148C)), width: 1.5)),
       );
 
   // --- VIEW PROFILE DOSSIER ---
@@ -841,9 +846,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+            Container(width: 40, height: 5, decoration: BoxDecoration(color: AppPalette.bg(Colors.grey[300]), borderRadius: BorderRadius.circular(10))),
             const SizedBox(height: 22),
-            Text("Account Dossier", style: GoogleFonts.merriweather(fontSize: 19, fontWeight: FontWeight.w900, color: const Color(0xFF4A148C))),
+            Text("Account Dossier", style: GoogleFonts.merriweather(fontSize: 19, fontWeight: FontWeight.w900, color: AppPalette.fg(const Color(0xFF4A148C)))),
             const Divider(height: 36),
             _dossierRow("Full name", _fullName),
             _dossierRow("Contact", _phoneNumber.isNotEmpty ? _phoneNumber : "Not Set"),
@@ -860,13 +865,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Navigator.pop(context);
                       _showEditProfileModal();
                     },
-                    icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF4A148C)),
+                    icon: Icon(Icons.edit_outlined, size: 16, color: AppPalette.fg(Color(0xFF4A148C))),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF4A148C), width: 1.2),
+                      side: BorderSide(color: AppPalette.line(Color(0xFF4A148C)), width: 1.2),
                       minimumSize: const Size(double.infinity, 48),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    label: Text("Edit Profile", style: GoogleFonts.merriweather(color: const Color(0xFF4A148C), fontWeight: FontWeight.bold)),
+                    label: Text("Edit Profile", style: GoogleFonts.merriweather(color: AppPalette.fg(const Color(0xFF4A148C)), fontWeight: FontWeight.bold)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -874,11 +879,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: ElevatedButton(
                     onPressed: () => Navigator.pop(context),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4A148C),
+                      backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
                       minimumSize: const Size(double.infinity, 48),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text("Done", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold)),
+                    child: Text("Done", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -895,8 +900,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 95, child: Text(label, style: GoogleFonts.merriweather(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.bold))),
-        Expanded(child: Text(_toTitleCase(value), style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87))),
+        SizedBox(width: 95, child: Text(label, style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.blueGrey), fontWeight: FontWeight.bold))),
+        Expanded(child: Text(_toTitleCase(value), style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.w600, color: AppPalette.fg(Colors.black87)))),
       ],
     ),
   );
@@ -906,14 +911,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text("Switch account", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17)),
             IconButton(
-              icon: const Icon(Icons.person_add_alt_1_rounded, size: 20, color: Color(0xFF4A148C)),
+              icon: Icon(Icons.person_add_alt_1_rounded, size: 20, color: AppPalette.fg(Color(0xFF4A148C))),
               tooltip: "Add Account",
               onPressed: () {
                 Navigator.pop(dialogCtx);
@@ -929,7 +934,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   child: Center(
                     child: Text("No other accounts registered on this device.", 
-                      style: GoogleFonts.merriweather(fontSize: 12.5, color: Colors.grey)),
+                      style: GoogleFonts.merriweather(fontSize: 12.5, color: AppPalette.fg(Colors.grey))),
                   ),
                 )
               : ListView.builder(
@@ -940,8 +945,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                       leading: CircleAvatar(
-                        backgroundColor: const Color(0xFF4A148C), 
-                        child: Text(acc.fullName.isNotEmpty ? acc.fullName[0].toUpperCase() : "U", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+                        backgroundColor: AppPalette.bg(const Color(0xFF4A148C)), 
+                        child: Text(acc.fullName.isNotEmpty ? acc.fullName[0].toUpperCase() : "U", style: TextStyle(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold))
                       ), 
                       title: Text(acc.fullName, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14)), 
                       subtitle: Text(acc.email, style: GoogleFonts.merriweather(fontSize: 12)),
@@ -961,12 +966,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Navigator.pop(dialogCtx);
               _showAddAccountDialog(context);
             },
-            icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF4A148C)),
-            label: Text("Add Account", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: const Color(0xFF4A148C), fontSize: 12)),
+            icon: Icon(Icons.add_rounded, size: 16, color: AppPalette.fg(Color(0xFF4A148C))),
+            label: Text("Add Account", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(const Color(0xFF4A148C)), fontSize: 12)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx), 
-            child: Text("Close", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
+            child: Text("Close", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey), fontSize: 12)),
           ),
         ],
       ),
@@ -976,33 +981,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ==========================================
   // ADD EXISTING ACCOUNT DIALOG
   // ==========================================
+  /// "0772 123 456" -> "+256772123456"; "+256 772..." kept. Null if not a phone number.
+  String? _normalizePhone(String raw) {
+    var p = raw.replaceAll(RegExp(r'[\s\-()]'), '');
+    if (p.isEmpty) return null;
+    if (p.startsWith('00')) p = '+${p.substring(2)}';
+    if (p.startsWith('0')) p = '+256${p.substring(1)}'; // local Ugandan format
+    if (!p.startsWith('+')) p = '+$p';
+    return RegExp(r'^\+\d{9,15}$').hasMatch(p) ? p : null;
+  }
+
   void _showAddAccountDialog(BuildContext context) {
     final emailCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
     bool obscurePassword = true;
     bool isVerifying = false;
     String? errorMessage;
+    String method = 'email'; // 'email' | 'whatsapp' | 'google'
+    final phoneCtrl = TextEditingController();
+    final codeCtrl = TextEditingController();
+    bool codeSent = false;
 
     showDialog(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFFFBFBFE),
+          backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
           title: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4A148C).withValues(alpha: 0.1),
+                  color: AppPalette.bg(const Color(0xFF4A148C).withValues(alpha: 0.1)),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF4A148C), size: 20),
+                child: Icon(Icons.person_add_alt_1_rounded, color: AppPalette.fg(Color(0xFF4A148C)), size: 20),
               ),
               const SizedBox(width: 10),
               Text(
                 "Add Account",
-                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: const Color(0xFF4A148C)),
+                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(const Color(0xFF4A148C))),
               ),
             ],
           ),
@@ -1014,12 +1033,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Sign in to an existing account to access it on this device without logging out your current session.",
-                    style: GoogleFonts.merriweather(fontSize: 11.5, color: Colors.blueGrey[700], height: 1.4),
+                    "Sign in to another account on this device. Your current account stays in Switch Account, so you can come back to it without signing in again.",
+                    style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey[700]), height: 1.4),
                   ),
                   const SizedBox(height: 16),
 
-                  Text("Email Address", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  // How the account signs in
+                  Wrap(spacing: 6, runSpacing: 6, children: [
+                    for (final m in const [('email', 'Email', Icons.mail_outline_rounded), ('whatsapp', 'WhatsApp', Icons.chat_rounded), ('google', 'Google', Icons.g_mobiledata_rounded)])
+                      ChoiceChip(
+                        avatar: Icon(m.$3, size: 16, color: AppPalette.fg(method == m.$1 ? Colors.white : const Color(0xFF4A148C))),
+                        label: Text(m.$2, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(method == m.$1 ? Colors.white : const Color(0xFF4A148C)))),
+                        selected: method == m.$1,
+                        selectedColor: AppPalette.bg(const Color(0xFF4A148C)),
+                        showCheckmark: false,
+                        onSelected: isVerifying ? null : (_) => setDialogState(() {
+                          method = m.$1;
+                          errorMessage = null;
+                        }),
+                      ),
+                  ]),
+                  const SizedBox(height: 14),
+
+                  if (method == 'email') ...[
+                  Text("Email Address", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
                   const SizedBox(height: 5),
                   TextField(
                     controller: emailCtrl,
@@ -1027,19 +1064,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: GoogleFonts.merriweather(fontSize: 13),
                     decoration: InputDecoration(
                       hintText: "example@domain.com",
-                      hintStyle: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey),
-                      prefixIcon: const Icon(Icons.mail_outline_rounded, size: 18, color: Color(0xFF4A148C)),
+                      hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey)),
+                      prefixIcon: Icon(Icons.mail_outline_rounded, size: 18, color: AppPalette.fg(Color(0xFF4A148C))),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: AppPalette.bg(Colors.white),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF4A148C), width: 1.5)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Color(0xFF4A148C)), width: 1.5)),
                     ),
                   ),
                   const SizedBox(height: 12),
 
-                  Text("Password", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  Text("Password", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
                   const SizedBox(height: 5),
                   TextField(
                     controller: passwordCtrl,
@@ -1047,38 +1084,96 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: GoogleFonts.merriweather(fontSize: 13),
                     decoration: InputDecoration(
                       hintText: "Enter account password",
-                      hintStyle: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey),
-                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18, color: Color(0xFF4A148C)),
+                      hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey)),
+                      prefixIcon: Icon(Icons.lock_outline_rounded, size: 18, color: AppPalette.fg(Color(0xFF4A148C))),
                       suffixIcon: IconButton(
-                        icon: Icon(obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18, color: Colors.grey),
+                        icon: Icon(obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18, color: AppPalette.fg(Colors.grey)),
                         onPressed: () => setDialogState(() => obscurePassword = !obscurePassword),
                       ),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: AppPalette.bg(Colors.white),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF4A148C), width: 1.5)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Color(0xFF4A148C)), width: 1.5)),
                     ),
                   ),
+                  ],
+
+                  if (method == 'whatsapp') ...[
+                    Text("WhatsApp number", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
+                    const SizedBox(height: 5),
+                    TextField(
+                      controller: phoneCtrl,
+                      enabled: !codeSent,
+                      keyboardType: TextInputType.phone,
+                      style: GoogleFonts.merriweather(fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: "+256 7XX XXX XXX",
+                        hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey)),
+                        prefixIcon: Icon(Icons.phone_android_rounded, size: 18, color: AppPalette.fg(Color(0xFF4A148C))),
+                        filled: true,
+                        fillColor: AppPalette.bg(Colors.white),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Color(0xFF4A148C)), width: 1.5)),
+                      ),
+                    ),
+                    if (codeSent) ...[
+                      const SizedBox(height: 12),
+                      Text("6-digit code sent on WhatsApp", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
+                      const SizedBox(height: 5),
+                      TextField(
+                        controller: codeCtrl,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        style: GoogleFonts.merriweather(fontSize: 13, letterSpacing: 4),
+                        decoration: InputDecoration(
+                          counterText: "",
+                          hintText: "••••••",
+                          prefixIcon: Icon(Icons.password_rounded, size: 18, color: AppPalette.fg(Color(0xFF4A148C))),
+                          filled: true,
+                          fillColor: AppPalette.bg(Colors.white),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Color(0xFF4A148C)), width: 1.5)),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: isVerifying ? null : () => setDialogState(() {
+                          codeSent = false;
+                          codeCtrl.clear();
+                        }),
+                        child: Text("Change number / resend code", style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(const Color(0xFF4A148C)))),
+                      ),
+                    ],
+                  ],
+
+                  if (method == 'google')
+                    Text(
+                      "You'll go to Google to choose the account, then come back here signed in to it.",
+                      style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey[700]), height: 1.4),
+                    ),
 
                   if (errorMessage != null) ...[
                     const SizedBox(height: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.red.shade50,
+                        color: AppPalette.bg(Colors.red.shade50),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.shade200),
+                        border: Border.all(color: AppPalette.line(Colors.red.shade200)),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.error_outline_rounded, size: 15, color: Colors.red.shade700),
+                          Icon(Icons.error_outline_rounded, size: 15, color: AppPalette.fg(Colors.red.shade700)),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               errorMessage!,
-                              style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.red.shade900, fontWeight: FontWeight.w600),
+                              style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(Colors.red.shade900), fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
@@ -1092,15 +1187,87 @@ class _DashboardScreenState extends State<DashboardScreen> {
           actions: [
             TextButton(
               onPressed: isVerifying ? null : () => Navigator.pop(dialogCtx),
-              child: Text("Cancel", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
+              child: Text("Cancel", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey), fontSize: 12)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A148C),
+                backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               ),
               onPressed: isVerifying ? null : () async {
+                // ---- WhatsApp: send the code, then verify it ----
+                if (method == 'whatsapp') {
+                  final phone = _normalizePhone(phoneCtrl.text);
+                  if (phone == null) {
+                    setDialogState(() => errorMessage = "Enter the WhatsApp number with country code, e.g. +256 7XX XXX XXX.");
+                    return;
+                  }
+                  setDialogState(() {
+                    isVerifying = true;
+                    errorMessage = null;
+                  });
+                  try {
+                    if (!codeSent) {
+                      await _supabase.auth.signInWithOtp(phone: phone, channel: OtpChannel.whatsapp);
+                      setDialogState(() {
+                        codeSent = true;
+                        isVerifying = false;
+                      });
+                      return;
+                    }
+                    final code = codeCtrl.text.trim();
+                    if (code.length < 6) {
+                      setDialogState(() {
+                        isVerifying = false;
+                        errorMessage = "Enter the 6-digit code.";
+                      });
+                      return;
+                    }
+                    final res = await _supabase.auth.verifyOTP(type: OtpType.sms, token: code, phone: phone);
+                    if (res.user == null) throw AuthException("Couldn't verify the code. Please try again.");
+                    // The app reloads as the added account; the previous one stays in Switch Account.
+                    if (mounted) {
+                      Navigator.pop(dialogCtx);
+                      Navigator.pop(context);
+                    }
+                  } on AuthException catch (e) {
+                    setDialogState(() {
+                      isVerifying = false;
+                      errorMessage = e.message;
+                    });
+                  } catch (e) {
+                    setDialogState(() {
+                      isVerifying = false;
+                      errorMessage = "Couldn't add the account. Check your connection and try again.";
+                    });
+                  }
+                  return;
+                }
+
+                // ---- Google: choose the account on Google's page ----
+                if (method == 'google') {
+                  setDialogState(() {
+                    isVerifying = true;
+                    errorMessage = null;
+                  });
+                  try {
+                    await _supabase.auth.signInWithOAuth(
+                      OAuthProvider.google,
+                      redirectTo: kIsWeb ? Uri.base.origin : 'masteradministration://login-callback',
+                      queryParams: const {'prompt': 'select_account'},
+                    );
+                    if (mounted) Navigator.pop(dialogCtx);
+                  } catch (e) {
+                    setDialogState(() {
+                      isVerifying = false;
+                      errorMessage = "Google sign-in failed. Please try again.";
+                    });
+                  }
+                  return;
+                }
+
+                // ---- Email + password ----
                 final email = emailCtrl.text.trim();
                 final password = passwordCtrl.text.trim();
 
@@ -1124,7 +1291,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   if (profileCheck == null) {
                     if (mounted) {
                       Navigator.pop(dialogCtx);
-                      _showAccountNotFoundDialog(context, email);
+                      _showAccountNotFoundDialog(context, email, password);
                     }
                     return;
                   }
@@ -1189,7 +1356,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       height: 16,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                     )
-                  : Text("Confirm & Load", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                  : Text(
+                      method == 'email'
+                          ? "Confirm & Load"
+                          : (method == 'google' ? "Continue with Google" : (codeSent ? "Verify & Load" : "Send WhatsApp code")),
+                      style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
             ),
           ],
         ),
@@ -1200,44 +1372,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ==========================================
   // ACCOUNT NOT FOUND PROMPT DIALOG
   // ==========================================
-  void _showAccountNotFoundDialog(BuildContext context, String enteredEmail) {
+  void _showAccountNotFoundDialog(BuildContext context, String enteredEmail, String enteredPassword) {
+    // Captured now: the pop-ups below close before the registration form opens
+    final nav = Navigator.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: Row(
           children: [
-            const Icon(Icons.person_off_rounded, color: Colors.orange, size: 22),
+            Icon(Icons.person_off_rounded, color: AppPalette.fg(Colors.orange), size: 22),
             const SizedBox(width: 8),
             Text(
               "Account Not Found",
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: const Color(0xFF4A148C)),
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: AppPalette.fg(const Color(0xFF4A148C))),
             ),
           ],
         ),
         content: Text(
           "No registered account was found with the email \"$enteredEmail\".\n\nWould you like to register and create a new account now?",
-          style: GoogleFonts.merriweather(fontSize: 12.5, height: 1.45, color: Colors.black87),
+          style: GoogleFonts.merriweather(fontSize: 12.5, height: 1.45, color: AppPalette.fg(Colors.black87)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text("Not Now", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
+            child: Text("Not Now", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey), fontSize: 12)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4A148C),
+              backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
-              Navigator.pop(ctx);      
-              Navigator.pop(context);  
-              widget.onNavigate('registration'); 
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+              // Open registration with the email (and password) already typed,
+              // so they don't have to be entered again
+              nav.push(MaterialPageRoute(
+                builder: (_) => AddAccountScreen(
+                  signUpMethod: 'email',
+                  initialEmail: enteredEmail,
+                  initialPassword: enteredPassword.isEmpty ? null : enteredPassword,
+                ),
+              ));
             },
             child: Text(
               "Create Account",
-              style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+              style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 12),
             ),
           ),
         ],

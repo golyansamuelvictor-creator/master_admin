@@ -21,6 +21,8 @@ import 'document_screen.dart';
 import 'presentation_screen.dart';
 import 'communication_screen.dart';
 import 'forms_screen.dart';
+import '../services/device_accounts.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -285,6 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final res = await _supabase.from('profiles').select().inFilter('id', otherIds);
           for (final item in res) {
             loadedOthers.add(UserAccount(
+              id: (item['id'] ?? '').toString(),
               fullName: (item['full_name'] ?? "No name").toString(),
               userName: (item['username'] ?? "user").toString(),
               phoneNumber: (item['phone'] ?? "No phone").toString(),
@@ -314,7 +317,7 @@ class _HomeScreenState extends State<HomeScreen> {
           userCell = (own['cell_group'] ?? "").toString();
         }
 
-        availableAccounts = loadedOthers.where((acc) => acc.email != email).toList();
+        availableAccounts = loadedOthers.where((acc) => acc.id.isNotEmpty ? acc.id != user.id : acc.email != email).toList();
       });
     } catch (e, stack) {
       debugPrint("Profile error handled safely: $e\n$stack");
@@ -327,11 +330,33 @@ class _HomeScreenState extends State<HomeScreen> {
   // still ran as the previous account. A different account now needs a real sign-in.
   Future<void> _switchActiveAccount(UserAccount acc) async {
     final current = _supabase.auth.currentUser;
-    final alreadyActive = current != null && (current.email ?? '').toLowerCase() == acc.email.toLowerCase();
+    final alreadyActive = current != null &&
+        (acc.id.isNotEmpty ? current.id == acc.id : (current.email ?? '').toLowerCase() == acc.email.toLowerCase());
 
     if (alreadyActive) {
       // e.g. the Add Account dialog has just signed in as this account.
       await _fetchInitialData();
+      return;
+    }
+
+    // Every account signed in on this device has its session saved, so
+    // switching needs no password - for email, Google and WhatsApp accounts.
+    final savedId = await DeviceAccounts.findId(id: acc.id, email: acc.email, phone: acc.phoneNumber);
+    if (savedId != null && await DeviceAccounts.restore(savedId)) {
+      // AuthWrapper notices the new user and loads a fresh Home for that account.
+      return;
+    }
+
+    // No valid saved session (e.g. signed out long ago): sign in again
+    final provider = savedId == null ? null : await DeviceAccounts.providerOf(savedId);
+    if (!mounted) return;
+    if (provider == 'google' || provider == 'phone' || !acc.email.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          "This account's saved sign-in has expired. Use Add Account > ${provider == 'google' ? 'Google' : 'WhatsApp'} to sign in to it again.",
+          style: GoogleFonts.merriweather(fontSize: 12),
+        ),
+      ));
       return;
     }
     await _signInAs(acc);
@@ -381,9 +406,9 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: pPurple),
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple)),
               onPressed: () => Navigator.pop(ctx, pwCtrl.text.trim()),
-              child: const Text("Switch", style: TextStyle(color: Colors.white)),
+              child: Text("Switch", style: TextStyle(color: AppPalette.fg(Colors.white))),
             ),
           ],
         ),
@@ -486,7 +511,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: AppPalette.bg(Theme.of(context).scaffoldBackgroundColor),
       drawer: SizedBox(
         width: width,
         child: DashboardScreen(
@@ -542,8 +567,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 68,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: _cs.surface,
-                    border: Border(top: BorderSide(color: Colors.grey.withValues(alpha: 0.15))),
+                    color: AppPalette.bg(_cs.surface),
+                    border: Border(top: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.15)))),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.03),
@@ -582,10 +607,10 @@ class _HomeScreenState extends State<HomeScreen> {
               elevation: 6,
               onPressed: () => _openFullScreenAI(context),
               backgroundColor: pPurple,
-              icon: const Icon(Icons.auto_awesome, color: Colors.amberAccent, size: 18),
+              icon: Icon(Icons.auto_awesome, color: AppPalette.fg(Colors.amberAccent), size: 18),
               label: Text(
                 "Ask AI",
-                style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
           ),
@@ -615,12 +640,12 @@ class _HomeScreenState extends State<HomeScreen> {
           duration: const Duration(milliseconds: 180),
           padding: padding ?? const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: backgroundColor ?? _cs.surface,
+            color: AppPalette.bg(backgroundColor ?? _cs.surface),
             gradient: gradient,
             borderRadius: BorderRadius.circular(16),
             border: customBorder ??
                 Border.all(
-                  color: isHovered ? pAccent.withValues(alpha: 0.28) : pAccent.withValues(alpha: 0.10),
+                  color: AppPalette.line(isHovered ? pAccent.withValues(alpha: 0.28) : pAccent.withValues(alpha: 0.10)),
                   width: 1.2,
                 ),
             boxShadow: [
@@ -656,7 +681,7 @@ class _HomeScreenState extends State<HomeScreen> {
           elevation: 0,
           leading: Builder(
             builder: (context) => IconButton(
-              icon: Icon(Icons.menu_rounded, color: pAccent, size: 28),
+              icon: Icon(Icons.menu_rounded, color: AppPalette.fg(pAccent), size: 28),
               onPressed: () => Scaffold.of(context).openDrawer(),
             ),
           ),
@@ -666,14 +691,14 @@ class _HomeScreenState extends State<HomeScreen> {
             style: GoogleFonts.merriweather(
               fontSize: isDesktop ? 22 : 18,
               fontWeight: FontWeight.w900,
-              color: pAccent,
+              color: AppPalette.fg(pAccent),
               letterSpacing: 0.3,
             ),
           ),
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(1.0),
             child: Container(
-              color: pAccent.withValues(alpha: 0.10),
+              color: AppPalette.bg(pAccent.withValues(alpha: 0.10)),
               height: 1.0,
             ),
           ),
@@ -765,7 +790,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 50,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [pPurple, const Color(0xFF6A1B9A)],
+                      colors: [AppPalette.solid(pPurple), AppPalette.solid(const Color(0xFF6A1B9A))],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -782,7 +807,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       _getInitials(fullName),
                       style: GoogleFonts.merriweather(
-                        color: Colors.white,
+                        color: AppPalette.fg(Colors.white),
                         fontWeight: FontWeight.w900,
                         fontSize: 16,
                       ),
@@ -802,16 +827,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: pGreen.withValues(alpha: 0.1),
+                              color: AppPalette.bg(pGreen.withValues(alpha: 0.1)),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: pGreen.withValues(alpha: 0.25)),
+                              border: Border.all(color: AppPalette.line(pGreen.withValues(alpha: 0.25))),
                             ),
                             child: Text(
                               "Samyeong wansung hapshida",
                               style: GoogleFonts.merriweather(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: _lift(pGreen),
+                                color: AppPalette.fg(_lift(pGreen)),
                               ),
                             ),
                           ),
@@ -819,21 +844,21 @@ class _HomeScreenState extends State<HomeScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: pBlue.withValues(alpha: 0.08),
+                              color: AppPalette.bg(pBlue.withValues(alpha: 0.08)),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.verified_rounded, size: 12, color: _lift(pBlue)),
+                                Icon(Icons.verified_rounded, size: 12, color: AppPalette.fg(_lift(pBlue))),
                                 const SizedBox(width: 4),
                                 Text(
                                   _toTitleCase(selectedRole.replaceAll('_', ' ')),
-                                  style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: _lift(pBlue)),
+                                  style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_lift(pBlue))),
                                 ),
                                 Text(
                                   " • $accountType",
-                                  style: GoogleFonts.merriweather(fontSize: 11, color: pInk, fontWeight: FontWeight.w600),
+                                  style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(pInk), fontWeight: FontWeight.w600),
                                 ),
                               ],
                             ),
@@ -845,7 +870,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           Text(
                             "Welcome back, ",
-                            style: GoogleFonts.merriweather(fontSize: 13, color: Colors.blueGrey[400], fontStyle: FontStyle.italic),
+                            style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.blueGrey[400]), fontStyle: FontStyle.italic),
                           ),
                           Flexible(
                             child: Text(
@@ -853,7 +878,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               style: GoogleFonts.merriweather(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
-                                color: pAccent,
+                                color: AppPalette.fg(pAccent),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -869,7 +894,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Container(
                   height: 48,
                   width: 1,
-                  color: pAccent.withValues(alpha: 0.12),
+                  color: AppPalette.bg(pAccent.withValues(alpha: 0.12)),
                   margin: const EdgeInsets.symmetric(horizontal: 20),
                 ),
 
@@ -880,12 +905,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.schedule_rounded, size: 14, color: pAccent),
+                        Icon(Icons.schedule_rounded, size: 14, color: AppPalette.fg(pAccent)),
                         const SizedBox(width: 6),
                         Text(
                           timeStr,
                           style: GoogleFonts.merriweather(
-                            color: pAccent,
+                            color: AppPalette.fg(pAccent),
                             fontSize: 15,
                             fontWeight: FontWeight.w900,
                           ),
@@ -895,16 +920,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 3),
                     Text(
                       dateStr,
-                      style: GoogleFonts.merriweather(fontSize: 12, color: _cs.onSurface.withValues(alpha: 0.7), fontWeight: FontWeight.w600),
+                      style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(_cs.onSurface.withValues(alpha: 0.7)), fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 3),
                     Row(
                       children: [
-                        Icon(Icons.wb_sunny_rounded, color: Colors.orange[700], size: 13),
+                        Icon(Icons.wb_sunny_rounded, color: AppPalette.fg(Colors.orange[700]), size: 13),
                         const SizedBox(width: 4),
                         Text(
                           locationText,
-                          style: GoogleFonts.merriweather(fontSize: 11, color: _lift(pGreen), fontWeight: FontWeight.bold),
+                          style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(_lift(pGreen)), fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -921,13 +946,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [pPurple, const Color(0xFF6A1B9A)]),
+                        gradient: LinearGradient(colors: [AppPalette.solid(pPurple), AppPalette.solid(const Color(0xFF6A1B9A))]),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Center(
                         child: Text(
                           _getInitials(fullName),
-                          style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                          style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                       ),
                     ),
@@ -939,18 +964,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: pGreen.withValues(alpha: 0.1),
+                              color: AppPalette.bg(pGreen.withValues(alpha: 0.1)),
                               borderRadius: BorderRadius.circular(5),
                             ),
                             child: Text(
                               "Samyeong wansung hapshida",
-                              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: _lift(pGreen)),
+                              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(_lift(pGreen))),
                             ),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             fullName,
-                            style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: pAccent),
+                            style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: AppPalette.fg(pAccent)),
                           ),
                         ],
                       ),
@@ -961,14 +986,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
+                    Expanded(child: Text(
                       _toTitleCase(selectedRole.replaceAll('_', ' ')),
-                      style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: _lift(pBlue)),
-                    ),
+                      style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(_lift(pBlue))), maxLines: 2, overflow: TextOverflow.ellipsis)),
                     Flexible(
                       child: Text(
                         "$timeStr • $locationText",
-                        style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: _cs.onSurface.withValues(alpha: 0.7)),
+                        style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_cs.onSurface.withValues(alpha: 0.7))),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -997,7 +1021,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SizedBox(
           height: 220,
           child: Center(
-            child: Text("No quotes found in database.", style: GoogleFonts.merriweather(color: Colors.grey, fontSize: 13)),
+            child: Text("No quotes found in database.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontSize: 13)),
           ),
         ),
       );
@@ -1028,7 +1052,7 @@ class _HomeScreenState extends State<HomeScreen> {
             top: 28,
             child: Opacity(
               opacity: 0.05,
-              child: Icon(Icons.format_quote_rounded, size: 100, color: pAccent),
+              child: Icon(Icons.format_quote_rounded, size: 100, color: AppPalette.fg(pAccent)),
             ),
           ),
           Column(
@@ -1040,7 +1064,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Expanded(
                     child: Row(
                       children: [
-                        Icon(Icons.format_quote_rounded, color: pAccent, size: 24),
+                        Icon(Icons.format_quote_rounded, color: AppPalette.fg(pAccent), size: 24),
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
@@ -1048,7 +1072,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: GoogleFonts.merriweather(
                               fontWeight: FontWeight.w900,
                               fontSize: 15,
-                              color: pAccent,
+                              color: AppPalette.fg(pAccent),
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1062,18 +1086,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: pAccent.withValues(alpha: 0.06),
+                        color: AppPalette.bg(pAccent.withValues(alpha: 0.06)),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: pAccent.withValues(alpha: 0.2)),
+                        border: Border.all(color: AppPalette.line(pAccent.withValues(alpha: 0.2))),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.calendar_month_rounded, size: 13, color: pAccent),
+                          Icon(Icons.calendar_month_rounded, size: 13, color: AppPalette.fg(pAccent)),
                           const SizedBox(width: 4),
                           Text(
                             "Search Date",
-                            style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pAccent),
+                            style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pAccent)),
                           ),
                         ],
                       ),
@@ -1089,11 +1113,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (quoteDateDisplay.isNotEmpty)
                     Row(
                       children: [
-                        const Icon(Icons.schedule_rounded, size: 12, color: Colors.blueGrey),
+                        Icon(Icons.schedule_rounded, size: 12, color: AppPalette.fg(Colors.blueGrey)),
                         const SizedBox(width: 4),
                         Text(
                           quoteDateDisplay,
-                          style: GoogleFonts.merriweather(fontSize: 11, color: _cs.onSurface.withValues(alpha: 0.7), fontWeight: FontWeight.bold),
+                          style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(_cs.onSurface.withValues(alpha: 0.7)), fontWeight: FontWeight.bold),
                         ),
                       ],
                     )
@@ -1102,13 +1126,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
-                      color: pGold.withValues(alpha: 0.12),
+                      color: AppPalette.bg(pGold.withValues(alpha: 0.12)),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: pGold.withValues(alpha: 0.45)),
+                      border: Border.all(color: AppPalette.line(pGold.withValues(alpha: 0.45))),
                     ),
                     child: Text(
                       "총회장님 말씀",
-                      style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.w900, color: _lift(pGold)),
+                      style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.w900, color: AppPalette.fg(_lift(pGold))),
                     ),
                   ),
                 ],
@@ -1119,9 +1143,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: pSoft,
+                  color: AppPalette.bg(pSoft),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: pAccent.withValues(alpha: 0.1)),
+                  border: Border.all(color: AppPalette.line(pAccent.withValues(alpha: 0.1))),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1132,7 +1156,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         fontSize: 13,
                         fontStyle: FontStyle.italic,
                         height: 1.6,
-                        color: pInk,
+                        color: AppPalette.fg(pInk),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -1144,7 +1168,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: GoogleFonts.merriweather(
                           fontSize: 11,
                           fontWeight: FontWeight.w900,
-                          color: quoteColor,
+                          color: AppPalette.fg(quoteColor),
                         ),
                       ),
                     ),
@@ -1162,7 +1186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                       decoration: BoxDecoration(
-                        color: pPurple,
+                        color: AppPalette.bg(pPurple),
                         borderRadius: BorderRadius.circular(8),
                         boxShadow: [
                           BoxShadow(
@@ -1176,10 +1200,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           Text(
                             "Read more",
-                            style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.white)),
                           ),
                           const SizedBox(width: 4),
-                          const Icon(Icons.arrow_forward_rounded, size: 12, color: Colors.white),
+                          Icon(Icons.arrow_forward_rounded, size: 12, color: AppPalette.fg(Colors.white)),
                         ],
                       ),
                     ),
@@ -1195,7 +1219,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       Text(
                         "${_currentQuoteIndex + 1} / ${_liveQuotes.length}",
-                        style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.w900, color: pAccent),
+                        style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.w900, color: AppPalette.fg(pAccent)),
                       ),
                       IconButton(
                         icon: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
@@ -1228,17 +1252,17 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.bolt_rounded, color: Colors.amber[800], size: 20),
+                  Icon(Icons.bolt_rounded, color: AppPalette.fg(Colors.amber[800]), size: 20),
                   const SizedBox(width: 6),
                   Text(
                     "Quick picks",
-                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pAccent),
+                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(pAccent)),
                   ),
                 ],
               ),
               Text(
                 "Priority items",
-                style: GoogleFonts.merriweather(fontSize: 11, color: _lift(pBlue), fontWeight: FontWeight.bold),
+                style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(_lift(pBlue)), fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -1246,7 +1270,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_quickPicks.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text("No active alerts at this moment.", style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey)),
+              child: Text("No active alerts at this moment.", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey))),
             )
           else
             ..._quickPicks.map((pick) => _pickItem(_getIcon(pick['icon_name']), pick['title'] ?? "")),
@@ -1260,30 +1284,30 @@ class _HomeScreenState extends State<HomeScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: pSoft,
+        color: AppPalette.bg(pSoft),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.12)),
+        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.12))),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
-              color: pBlue.withValues(alpha: 0.08),
+              color: AppPalette.bg(pBlue.withValues(alpha: 0.08)),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Icon(i, size: 15, color: _lift(pBlue)),
+            child: Icon(i, size: 15, color: AppPalette.fg(_lift(pBlue))),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               t,
-              style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pInk),
+              style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pInk)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Icon(Icons.arrow_forward_ios_rounded, size: 11, color: _cs.onSurface.withValues(alpha: 0.25)),
+          Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppPalette.fg(_cs.onSurface.withValues(alpha: 0.25))),
         ],
       ),
     );
@@ -1311,11 +1335,11 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.event_available_rounded, color: _lift(pBlue), size: 20),
+                  Icon(Icons.event_available_rounded, color: AppPalette.fg(_lift(pBlue)), size: 20),
                   const SizedBox(width: 6),
                   Text(
                     "Upcoming Events",
-                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pAccent),
+                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(pAccent)),
                   ),
                 ],
               ),
@@ -1323,7 +1347,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => _navigateToTab('Calendar'),
                 child: Text(
                   "Calendar",
-                  style: GoogleFonts.merriweather(fontSize: 11, color: _lift(pBlue), fontWeight: FontWeight.bold),
+                  style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(_lift(pBlue)), fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -1333,7 +1357,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Center(
-                child: Text("No upcoming church events found.", style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey)),
+                child: Text("No upcoming church events found.", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey))),
               ),
             )
           else
@@ -1350,23 +1374,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: pSoft,
+                  color: AppPalette.bg(pSoft),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.withValues(alpha: 0.12)),
+                  border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.12))),
                 ),
                 child: Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                       decoration: BoxDecoration(
-                        color: pAccent.withValues(alpha: 0.08),
+                        color: AppPalette.bg(pAccent.withValues(alpha: 0.08)),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: pAccent.withValues(alpha: 0.2)),
+                        border: Border.all(color: AppPalette.line(pAccent.withValues(alpha: 0.2))),
                       ),
                       child: Column(
                         children: [
-                          Text(dayNum, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: pAccent)),
-                          Text(monthStr, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 8, color: pAccent)),
+                          Text(dayNum, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: AppPalette.fg(pAccent))),
+                          Text(monthStr, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 8, color: AppPalette.fg(pAccent))),
                         ],
                       ),
                     ),
@@ -1377,14 +1401,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           Text(
                             evt['title'] ?? "Church Event",
-                            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12, color: pInk),
+                            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12, color: AppPalette.fg(pInk)),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
                           Text(
                             timeDisplay,
-                            style: GoogleFonts.merriweather(fontSize: 10, color: _cs.onSurface.withValues(alpha: 0.6)),
+                            style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(_cs.onSurface.withValues(alpha: 0.6))),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1408,10 +1432,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Text(
                       "Read more in Calendar",
-                      style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pAccent),
+                      style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pAccent)),
                     ),
                     const SizedBox(width: 4),
-                    Icon(Icons.arrow_forward_ios_rounded, size: 10, color: pAccent),
+                    Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppPalette.fg(pAccent)),
                   ],
                 ),
               ),
@@ -1446,11 +1470,11 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.track_changes_rounded, color: _lift(pGreen), size: 20),
+                  Icon(Icons.track_changes_rounded, color: AppPalette.fg(_lift(pGreen)), size: 20),
                   const SizedBox(width: 6),
                   Text(
                     "Current Intentions",
-                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pAccent),
+                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(pAccent)),
                   ),
                 ],
               ),
@@ -1458,7 +1482,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => _navigateToTab('Intentions'),
                 child: Text(
                   "Focus",
-                  style: GoogleFonts.merriweather(fontSize: 11, color: _lift(pGreen), fontWeight: FontWeight.bold),
+                  style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(_lift(pGreen)), fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -1468,7 +1492,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 14),
               child: Center(
-                child: Text("No active intentions found.", style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey)),
+                child: Text("No active intentions found.", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey))),
               ),
             )
           else
@@ -1490,16 +1514,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: pSoft,
+                  color: AppPalette.bg(pSoft),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.withValues(alpha: 0.12)),
+                  border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.12))),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       "$idx.",
-                      style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: catText),
+                      style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: AppPalette.fg(catText)),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -1509,18 +1533,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: catColor.withValues(alpha: 0.10),
+                              color: AppPalette.bg(catColor.withValues(alpha: 0.10)),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               cat,
-                              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: catText),
+                              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(catText)),
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             pointText,
-                            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w500, color: pInk, height: 1.3),
+                            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w500, color: AppPalette.fg(pInk), height: 1.3),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1544,10 +1568,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Text(
                       "Read more in Intentions",
-                      style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pAccent),
+                      style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pAccent)),
                     ),
                     const SizedBox(width: 4),
-                    Icon(Icons.arrow_forward_ios_rounded, size: 10, color: pAccent),
+                    Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppPalette.fg(pAccent)),
                   ],
                 ),
               ),
@@ -1568,9 +1592,9 @@ class _HomeScreenState extends State<HomeScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         decoration: BoxDecoration(
-          color: isSelected ? pPurple : _cs.surface,
+          color: AppPalette.bg(isSelected ? pPurple : _cs.surface),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: isSelected ? pPurple : Colors.grey.withValues(alpha: 0.18)),
+          border: Border.all(color: AppPalette.line(isSelected ? pPurple : Colors.grey.withValues(alpha: 0.18))),
           boxShadow: [
             BoxShadow(
               color: isSelected ? pPurple.withValues(alpha: 0.22) : Colors.black.withValues(alpha: 0.03),
@@ -1582,7 +1606,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: isSelected ? Colors.white : pAccent, size: 18),
+            Icon(icon, color: AppPalette.fg(isSelected ? Colors.white : pAccent), size: 18),
             if (isDesktop) const SizedBox(height: 2),
             if (isDesktop)
               Text(
@@ -1590,7 +1614,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: GoogleFonts.merriweather(
                   fontSize: 10,
                   fontWeight: FontWeight.bold,
-                  color: isSelected ? Colors.white : pInk,
+                  color: AppPalette.fg(isSelected ? Colors.white : pInk),
                 ),
               ),
           ],
@@ -1639,15 +1663,15 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (c) => AlertDialog(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: pAccent.withValues(alpha: 0.2), width: 1.2),
+          side: BorderSide(color: AppPalette.line(pAccent.withValues(alpha: 0.2)), width: 1.2),
         ),
         title: Row(
           children: [
-            Icon(Icons.format_quote_rounded, color: quoteColor, size: 26),
+            Icon(Icons.format_quote_rounded, color: AppPalette.fg(quoteColor), size: 26),
             const SizedBox(width: 8),
             Text(
               "Quotes of Chairman",
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pAccent, fontSize: 16),
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pAccent), fontSize: 16),
             ),
           ],
         ),
@@ -1658,14 +1682,14 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Text(
                 quote['quote_text'] ?? "",
-                style: GoogleFonts.merriweather(fontSize: 13, height: 1.6, color: pInk),
+                style: GoogleFonts.merriweather(fontSize: 13, height: 1.6, color: AppPalette.fg(pInk)),
               ),
               const SizedBox(height: 16),
               Align(
                 alignment: Alignment.centerRight,
                 child: Text(
                   "— 총회장님 말씀 (Chairman)",
-                  style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: quoteColor),
+                  style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: AppPalette.fg(quoteColor)),
                 ),
               ),
             ],
@@ -1677,15 +1701,15 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pop(c);
               Navigator.push(context, MaterialPageRoute(builder: (ctx) => const QuotesScreen(isFullPage: true)));
             },
-            child: Text("Open Full Quotes Screen", style: GoogleFonts.merriweather(color: _lift(pBlue), fontWeight: FontWeight.bold, fontSize: 12)),
+            child: Text("Open Full Quotes Screen", style: GoogleFonts.merriweather(color: AppPalette.fg(_lift(pBlue)), fontWeight: FontWeight.bold, fontSize: 12)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: pPurple,
+              backgroundColor: AppPalette.bg(pPurple),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () => Navigator.pop(c),
-            child: Text("Close", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+            child: Text("Close", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 12)),
           ),
         ],
       ),
@@ -1940,21 +1964,21 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: AppPalette.bg(Theme.of(context).scaffoldBackgroundColor),
       appBar: AppBar(
-        backgroundColor: _cs.surface,
+        backgroundColor: AppPalette.bg(_cs.surface),
         elevation: 0.5,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: pAccent),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppPalette.fg(pAccent)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           children: [
-            const Icon(Icons.auto_awesome, color: Colors.amber, size: 20),
+            Icon(Icons.auto_awesome, color: AppPalette.fg(Colors.amber), size: 20),
             const SizedBox(width: 8),
             Text(
               "Ask AI Assistant",
-              style: GoogleFonts.merriweather(color: pAccent, fontWeight: FontWeight.w900, fontSize: 16),
+              style: GoogleFonts.merriweather(color: AppPalette.fg(pAccent), fontWeight: FontWeight.w900, fontSize: 16),
             ),
           ],
         ),
@@ -1964,10 +1988,10 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: pAccent.withValues(alpha: 0.12),
+            color: AppPalette.bg(pAccent.withValues(alpha: 0.12)),
             child: Text(
               "Jurisdiction: ${_formatRole(widget.userRole)} • ${widget.userUnit.isEmpty ? 'Church administration' : widget.userUnit}",
-              style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pAccent),
+              style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pAccent)),
             ),
           ),
           Expanded(
@@ -1983,9 +2007,9 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
                     constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: isUser ? pPurple : _cs.surface,
+                      color: AppPalette.bg(isUser ? pPurple : _cs.surface),
                       borderRadius: BorderRadius.circular(14),
-                      border: isUser ? null : Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+                      border: isUser ? null : Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2))),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.04),
@@ -1997,7 +2021,7 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
                     child: SelectableText(
                       _conversation[i]['text'] ?? "",
                       style: GoogleFonts.merriweather(
-                        color: isUser ? Colors.white : _cs.onSurface,
+                        color: AppPalette.fg(isUser ? Colors.white : _cs.onSurface),
                         fontSize: 13,
                         height: 1.5,
                       ),
@@ -2021,14 +2045,14 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
                   const SizedBox(width: 10),
                   Text(
                     "Searching church knowledge base...",
-                    style: GoogleFonts.merriweather(fontSize: 12, color: Colors.blueGrey, fontStyle: FontStyle.italic),
+                    style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.blueGrey), fontStyle: FontStyle.italic),
                   ),
                 ],
               ),
             ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            color: _cs.surface,
+            color: AppPalette.bg(_cs.surface),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
@@ -2053,8 +2077,8 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _cs.surface,
-              border: Border(top: BorderSide(color: Colors.grey.withValues(alpha: 0.2))),
+              color: AppPalette.bg(_cs.surface),
+              border: Border(top: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2)))),
             ),
             child: SafeArea(
               child: Row(
@@ -2064,13 +2088,13 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
                       controller: _queryCtrl,
                       decoration: InputDecoration(
                         hintText: "Ask about standards, quotes, events, or resources...",
-                        hintStyle: GoogleFonts.merriweather(fontSize: 13, color: Colors.grey),
+                        hintStyle: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey)),
                         filled: true,
-                        fillColor: _cs.surfaceContainerHighest,
+                        fillColor: AppPalette.bg(_cs.surfaceContainerHighest),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.2)),
+                          borderSide: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2))),
                         ),
                       ),
                       onSubmitted: _ask,
@@ -2078,7 +2102,7 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    icon: Icon(Icons.send_rounded, color: pAccent),
+                    icon: Icon(Icons.send_rounded, color: AppPalette.fg(pAccent)),
                     onPressed: () => _ask(_queryCtrl.text),
                   ),
                 ],
@@ -2092,8 +2116,8 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
 
   Widget _chip(String text, VoidCallback onTap) {
     return ActionChip(
-      label: Text(text, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF4A148C))),
-      backgroundColor: const Color(0xFFF3E5F5),
+      label: Text(text, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(const Color(0xFF4A148C)))),
+      backgroundColor: AppPalette.bg(const Color(0xFFF3E5F5)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       side: BorderSide.none,
       onPressed: onTap,

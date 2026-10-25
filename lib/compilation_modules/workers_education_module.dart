@@ -7,7 +7,9 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/compilation_style.dart';
 import 'package:intl/intl.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class WorkersEducationModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -226,8 +228,8 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   Widget _buildToolbar() => Row(
     mainAxisAlignment: MainAxisAlignment.start,
     children: [
-      IconButton(onPressed: _printReport, icon: const Icon(Icons.print, color: Colors.blueGrey, size: 18)),
-      IconButton(onPressed: () {}, icon: const Icon(Icons.download, color: Colors.green, size: 18)),
+      IconButton(onPressed: _printReport, icon: Icon(Icons.print, color: AppPalette.fg(Colors.blueGrey), size: 18)),
+      IconButton(onPressed: () {}, icon: Icon(Icons.download, color: AppPalette.fg(Colors.green), size: 18)),
     ],
   );
 
@@ -240,10 +242,10 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
       child: Padding(
         padding: const EdgeInsets.only(bottom: 15),
         child: Container(
-          decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 1.0)),
+          decoration: BoxDecoration(border: Border.all(color: AppPalette.line(Colors.black), width: 1.0)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _buildMergedHeader(),
-            _mergedRow("Total", "General total", tot, b: true),
+            _totalRow(() => _mergedRow("Total", "General total", tot, b: true)),
             if (childRows != null) childRows,
           ]),
         ),
@@ -278,7 +280,29 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
     return _mergedBlock(label, calculatedBlocks);
   }
 
+  // Header row and General total row share one look across all modules
+  // (CompStyle): their own fills, header text a little larger.
+  ({Color bg, Color fg, double fs, bool force})? _rowStyle;
+
   Widget _buildMergedHeader() {
+    _rowStyle = (bg: CompStyle.headerBg, fg: CompStyle.headerFg, fs: CompStyle.headerFont, force: true);
+    try {
+      return _buildMergedHeaderRaw();
+    } finally {
+      _rowStyle = null;
+    }
+  }
+
+  Widget _totalRow(Widget Function() build) {
+    _rowStyle = (bg: CompStyle.totalBg, fg: CompStyle.totalFg, fs: CompStyle.cellFont, force: false);
+    try {
+      return build();
+    } finally {
+      _rowStyle = null;
+    }
+  }
+
+  Widget _buildMergedHeaderRaw() {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _cell("Classification", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
       _cell("Unit", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
@@ -349,11 +373,15 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
       height: h,
       alignment: a,
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      decoration: BoxDecoration(color: bg ?? Colors.white, border: Border.all(color: Colors.black45, width: 0.4)),
+      decoration: BoxDecoration(color: AppPalette.bg((_rowStyle?.force ?? false) ? _rowStyle!.bg : (bg ?? _rowStyle?.bg ?? Colors.white)), border: Border.all(color: AppPalette.line(Colors.black45), width: 0.4)),
       child: Text(
         t,
         textAlign: TextAlign.center,
-        style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: b ? FontWeight.w900 : FontWeight.normal, color: color ?? Colors.black87),
+        style: GoogleFonts.merriweather(
+          fontSize: _rowStyle?.fs ?? CompStyle.cellFont,
+          fontWeight: (b || (_rowStyle?.force ?? false)) ? FontWeight.w900 : FontWeight.normal,
+          color: AppPalette.fg((_rowStyle?.force ?? false) ? _rowStyle!.fg : (color ?? _rowStyle?.fg ?? Colors.black87)),
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -504,16 +532,16 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text("Trend by Date (${widget.timePeriod == 'Weekly status' ? 'Weeks 1-5' : 'Months 1-4'})", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87)),
+            Expanded(child: Text("Trend by Date (${widget.timePeriod == 'Weekly status' ? 'Weeks 1-5' : 'Months 1-4'})", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)), maxLines: 2, overflow: TextOverflow.ellipsis)),
             Container(
               height: 30,
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(color: const Color(0xFFF3E5F5), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.purple.shade200)),
+              decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF3E5F5)), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppPalette.line(Colors.purple.shade200))),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _selectedTrendMetric,
                   icon: const Icon(Icons.tune, size: 14),
-                  style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple),
+                  style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
                   items: ["Overall Attendance", "Sunday Education", "Wednesday Education"].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                   onChanged: (v) {
                     if (v != null) setState(() => _selectedTrendMetric = v);
@@ -530,7 +558,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
         padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
         child: LineChart(LineChartData(
           maxY: dynamicMaxY,
-          borderData: FlBorderData(show: true, border: const Border(left: BorderSide(color: Colors.black, width: 1.0), bottom: BorderSide(color: Colors.black, width: 1.0))),
+          borderData: FlBorderData(show: true, border: Border(left: BorderSide(color: AppPalette.line(Colors.black), width: 1.0), bottom: BorderSide(color: AppPalette.line(Colors.black), width: 1.0))),
           gridData: const FlGridData(show: true, drawVerticalLine: false),
           titlesData: FlTitlesData(
             bottomTitles: AxisTitles(
@@ -588,7 +616,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
 
   Widget _barChart(String xN, List<String> ks, Map<String, List<dynamic>> gsLogs, Map<String, List<dynamic>> gsMembers, double maxY) => BarChart(BarChartData(
     maxY: maxY,
-    borderData: FlBorderData(show: true, border: const Border(left: BorderSide(color: Colors.black, width: 1.0), bottom: BorderSide(color: Colors.black, width: 1.0))),
+    borderData: FlBorderData(show: true, border: Border(left: BorderSide(color: AppPalette.line(Colors.black), width: 1.0), bottom: BorderSide(color: AppPalette.line(Colors.black), width: 1.0))),
     titlesData: FlTitlesData(
       bottomTitles: AxisTitles(
         axisNameWidget: Padding(
@@ -608,7 +636,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
               alignment: Alignment.topRight,
               child: Padding(
                 padding: const EdgeInsets.only(right: 4),
-                child: Text(ks[index], style: GoogleFonts.merriweather(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black87), overflow: TextOverflow.ellipsis),
+                child: Text(ks[index], style: GoogleFonts.merriweather(fontSize: 9, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)), overflow: TextOverflow.ellipsis),
               ),
             );
           },
@@ -652,9 +680,9 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   Widget _lgItem(String t, Color c) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Container(width: 9, height: 9, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(2))),
+      Container(width: 9, height: 9, decoration: BoxDecoration(color: AppPalette.bg(c), borderRadius: BorderRadius.circular(2))),
       const SizedBox(width: 5),
-      Text(t, style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black87)),
+      Text(t, style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
     ],
   );
 
@@ -667,15 +695,15 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   Widget _section(String title, Widget content, BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 6),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
     ),
     child: Column(children: [
       ListTile(
         dense: true,
-        title: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14.5, color: pPurple)),
+        title: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14.5, color: AppPalette.fg(pPurple))),
         trailing: IconButton(
           icon: const Icon(Icons.fullscreen, size: 18),
           onPressed: () => Navigator.push(context, MaterialPageRoute(
@@ -686,7 +714,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
           )),
         ),
       ),
-      const Divider(height: 1, color: Colors.black26),
+      Divider(height: 1, color: AppPalette.bg(Colors.black26)),
       content,
     ]),
   );

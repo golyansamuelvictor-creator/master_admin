@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../core/hierarchy_comparison_logic.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class HierarchyLeaderboardScreen extends StatefulWidget {
   final String role, loc, sub, dept, team, duty;
@@ -278,9 +279,9 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.black, width: 1.0), // Dark border
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), // Dark border
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -291,11 +292,11 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
       ),
       child: Row(
         children: [
-          Icon(Icons.tune_rounded, size: 18, color: pPurple),
+          Icon(Icons.tune_rounded, size: 18, color: AppPalette.fg(pPurple)),
           const SizedBox(width: 10),
           Text(
             "Level to Compare:",
-            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple),
+            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -337,14 +338,14 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
       scrollDirection: Axis.horizontal,
       child: Container(
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.black, width: 1.0), // Dark border
+          border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), // Dark border
           borderRadius: BorderRadius.circular(6),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              color: const Color(0xFF1E293B),
+              color: AppPalette.bg(const Color(0xFF1E293B)),
               child: Row(
                 children: headers.asMap().entries.map((entry) {
                   int i = entry.key;
@@ -380,9 +381,9 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black, width: 1.0), // Dark border
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), // Dark border
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -399,19 +400,19 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
             children: [
               Text(
                 "Performance Overview",
-                style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple),
+                style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: _data.isNotEmpty ? Colors.green.shade50 : Colors.grey.shade100,
+                  color: AppPalette.bg(_data.isNotEmpty ? Colors.green.shade50 : Colors.grey.shade100),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   _data.isNotEmpty ? "Top $displayLimit Units" : "No Data",
                   style: TextStyle(
                     fontSize: 10,
-                    color: _data.isNotEmpty ? Colors.green.shade800 : Colors.grey.shade700,
+                    color: AppPalette.fg(_data.isNotEmpty ? Colors.green.shade800 : Colors.grey.shade700),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -432,14 +433,14 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
                     borderData: FlBorderData(
                       show: true,
                       border: Border(
-                        bottom: BorderSide(color: Colors.black54, width: 1),
-                        left: BorderSide(color: Colors.black54, width: 1),
+                        bottom: BorderSide(color: AppPalette.line(Colors.black54), width: 1),
+                        left: BorderSide(color: AppPalette.line(Colors.black54), width: 1),
                       ),
                     ),
                     gridData: FlGridData(
                       show: true,
                       drawVerticalLine: false,
-                      getDrawingHorizontalLine: (val) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+                      getDrawingHorizontalLine: (val) => FlLine(color: AppPalette.line(Colors.grey.shade200), strokeWidth: 1),
                     ),
                     titlesData: FlTitlesData(
                       topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -451,7 +452,7 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
                           interval: 25,
                           getTitlesWidget: (v, m) => Text(
                             "${v.toInt()}%",
-                            style: TextStyle(fontSize: 8.5, color: Colors.grey.shade700, fontWeight: FontWeight.w600),
+                            style: TextStyle(fontSize: 8.5, color: AppPalette.fg(Colors.grey.shade700), fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
@@ -464,7 +465,7 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
                             if (_data.isEmpty) {
                               return Padding(
                                 padding: const EdgeInsets.only(top: 4),
-                                child: Text("Unit ${i + 1}", style: const TextStyle(fontSize: 8.5, color: Colors.grey)),
+                                child: Text("Unit ${i + 1}", style: TextStyle(fontSize: 8.5, color: AppPalette.fg(Colors.grey))),
                               );
                             }
                             if (i < 0 || i >= topUnits.length) return const SizedBox.shrink();
@@ -503,13 +504,13 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.9),
+                        color: AppPalette.bg(Colors.white.withValues(alpha: 0.9)),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
                       ),
                       child: Text(
                         "No ranking data currently",
-                        style: TextStyle(fontSize: 10, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
+                        style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey.shade700), fontStyle: FontStyle.italic),
                       ),
                     ),
                   ),
@@ -526,13 +527,13 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
     height: h,
     alignment: a,
     padding: const EdgeInsets.symmetric(horizontal: 6),
-    decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300, width: 0.5)),
+    decoration: BoxDecoration(border: Border.all(color: AppPalette.line(Colors.grey.shade300), width: 0.5)),
     child: Text(
       t,
       style: TextStyle(
         fontSize: 11,
         fontWeight: b ? FontWeight.bold : FontWeight.normal,
-        color: textColor ?? color ?? Colors.black87,
+        color: AppPalette.fg(textColor ?? color ?? Colors.black87),
       ),
       overflow: TextOverflow.ellipsis,
     ),
@@ -543,9 +544,9 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.black, width: 1.0), // Dark border
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), // Dark border
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -559,9 +560,9 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
         children: [
           Padding(
             padding: const EdgeInsets.all(14),
-            child: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14, color: pPurple)),
+            child: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14, color: AppPalette.fg(pPurple))),
           ),
-          const Divider(height: 1, color: Colors.black12),
+          Divider(height: 1, color: AppPalette.bg(Colors.black12)),
           Padding(padding: const EdgeInsets.all(10), child: content),
         ],
       ),

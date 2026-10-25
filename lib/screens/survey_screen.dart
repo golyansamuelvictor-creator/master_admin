@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class SurveyScreen extends StatefulWidget {
   final double s;
@@ -124,13 +125,13 @@ class _SurveyScreenState extends State<SurveyScreen> {
     // If it's a standalone full page (like from a Navigator push)
     if (widget.isFullPage) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: AppPalette.bg(Colors.white),
           elevation: 0.5,
           centerTitle: true,
           title: Text("Take a survey", 
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 16)),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 16)),
         ),
         body: content,
       );
@@ -138,7 +139,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
 
     // If it's inside the HomeScreen Hub, return it as a transparent container
     return Container(
-      color: Colors.transparent, // Important to keep the pink home background
+      color: AppPalette.bg(Colors.transparent), // Important to keep the pink home background
       child: content,
     );
   }
@@ -148,18 +149,18 @@ class _SurveyScreenState extends State<SurveyScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: pPurple.withValues(alpha: 0.05),
+        color: AppPalette.bg(pPurple.withValues(alpha: 0.05)),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: pPurple.withValues(alpha: 0.1)),
+        border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.1))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text("Administrative feedback form", 
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: pPurple)),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: AppPalette.fg(pPurple))),
           const SizedBox(height: 5),
-          const Text("Your insights help us improve the church management system.",
-            style: TextStyle(fontSize: 12, color: Colors.blueGrey, fontWeight: FontWeight.w600)),
+          Text("Your insights help us improve the church management system.",
+            style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.blueGrey), fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -172,7 +173,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(q['question_text'], 
-            style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+            style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
           const SizedBox(height: 10),
           TextField(
             controller: _controllers[q['id'].toString()],
@@ -181,9 +182,9 @@ class _SurveyScreenState extends State<SurveyScreen> {
               hintText: "Type your response here...",
               hintStyle: const TextStyle(fontSize: 13),
               filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.2))),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: pPurple, width: 1.5)),
+              fillColor: AppPalette.bg(Colors.white),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2)))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppPalette.line(pPurple), width: 1.5)),
             ),
           ),
         ],
@@ -197,15 +198,15 @@ class _SurveyScreenState extends State<SurveyScreen> {
       height: 55,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: pPurple,
+          backgroundColor: AppPalette.bg(pPurple),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           elevation: 4,
         ),
         onPressed: _isSubmitting ? null : _submitSurvey,
         child: _isSubmitting 
           ? const CircularProgressIndicator(color: Colors.white)
-          : const Text("Submit survey", 
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          : Text("Submit survey", 
+              style: TextStyle(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 16)),
       ),
     );
   }

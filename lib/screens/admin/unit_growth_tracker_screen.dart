@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class UnitGrowthTrackerScreen extends StatefulWidget {
   final String userRole;
@@ -170,19 +171,19 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFBFBFE),
+      backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF4A148C), size: 20),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: AppPalette.fg(Color(0xFF4A148C)), size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           "Unit Growth Tracking",
           style: GoogleFonts.merriweather(
-            color: pPurple,
+            color: AppPalette.fg(pPurple),
             fontWeight: FontWeight.bold,
             fontSize: 17,
           ),
@@ -212,13 +213,13 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
       ),
       child: Row(
         children: [
-          Icon(Icons.shield_outlined, size: 16, color: pPurple),
+          Icon(Icons.shield_outlined, size: 16, color: AppPalette.fg(pPurple)),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -226,7 +227,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey.shade800,
+                color: AppPalette.fg(Colors.grey.shade800),
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -241,9 +242,9 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
       ),
       child: Row(
         children: [
@@ -254,7 +255,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
               isExpanded: true,
               decoration: InputDecoration(
                 labelText: "Level to Compare",
-                labelStyle: TextStyle(fontSize: 11, color: pPurple, fontWeight: FontWeight.bold),
+                labelStyle: TextStyle(fontSize: 11, color: AppPalette.fg(pPurple), fontWeight: FontWeight.bold),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
@@ -285,7 +286,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
               isExpanded: true,
               decoration: InputDecoration(
                 labelText: "Period",
-                labelStyle: TextStyle(fontSize: 11, color: pPurple, fontWeight: FontWeight.bold),
+                labelStyle: TextStyle(fontSize: 11, color: AppPalette.fg(pPurple), fontWeight: FontWeight.bold),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
@@ -342,7 +343,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
                 style: GoogleFonts.merriweather(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
-                  color: pPurple,
+                  color: AppPalette.fg(pPurple),
                 ),
               ),
             ),
@@ -351,7 +352,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
 
               return Container(
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade400, width: 0.8),
+                  border: Border.all(color: AppPalette.line(Colors.grey.shade400), width: 0.8),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: SingleChildScrollView(
@@ -367,8 +368,8 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
                       horizontalMargin: 6,
                       columnSpacing: 4,
                       border: TableBorder(
-                        horizontalInside: BorderSide(color: Colors.grey.shade300, width: 0.8),
-                        verticalInside: BorderSide(color: Colors.grey.shade300, width: 0.8),
+                        horizontalInside: BorderSide(color: AppPalette.line(Colors.grey.shade300), width: 0.8),
+                        verticalInside: BorderSide(color: AppPalette.line(Colors.grey.shade300), width: 0.8),
                       ),
                       headingRowColor: WidgetStateProperty.all(const Color(0xFF1E293B)),
                       columns: headers.map((h) => DataColumn(
@@ -378,8 +379,8 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
                             child: Text(
                               h,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: AppPalette.fg(Colors.white),
                                 fontSize: 12, // Increased header font size
                                 fontWeight: FontWeight.bold,
                               ),
@@ -394,12 +395,12 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
                                 DataCell(
                                   SizedBox(
                                     width: cellW * 2,
-                                    child: const Center(
+                                    child: Center(
                                       child: Text(
                                         "No records found for this unit/period",
                                         style: TextStyle(
                                           fontSize: 11,
-                                          color: Colors.grey,
+                                          color: AppPalette.fg(Colors.grey),
                                           fontStyle: FontStyle.italic,
                                         ),
                                       ),
@@ -468,7 +469,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
           children: [
             Text(
               "Active Attendance vs New Converts",
-              style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: pPurple),
+              style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
             ),
             const SizedBox(height: 12),
             SizedBox(

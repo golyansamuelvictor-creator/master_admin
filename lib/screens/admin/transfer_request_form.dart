@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 enum TransferMode { individual, bulk }
 
@@ -494,10 +495,10 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
 
   BoxDecoration _cardDecoration({Color? borderColor}) {
     return BoxDecoration(
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(16),
       border: Border.all(
-        color: borderColor ?? const Color(0xFFE2E8F0),
+        color: AppPalette.line(borderColor ?? const Color(0xFFE2E8F0)),
         width: 2.0,
       ),
       boxShadow: [
@@ -518,15 +519,15 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppPalette.bg(_backgroundColor),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         title: Text(
           "Member Transfer Request",
           style: GoogleFonts.merriweather(
             fontWeight: FontWeight.w900,
-            color: _primaryPurple,
+            color: AppPalette.fg(_primaryPurple),
             fontSize: 23,
           ),
         ),
@@ -588,7 +589,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected ? _primaryPurple : Colors.transparent,
+          color: AppPalette.bg(isSelected ? _primaryPurple : Colors.transparent),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -597,7 +598,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             Icon(
               icon,
               size: 22,
-              color: isSelected ? Colors.white : Colors.grey.shade700,
+              color: AppPalette.fg(isSelected ? Colors.white : Colors.grey.shade700),
             ),
             const SizedBox(width: 10),
             Text(
@@ -605,7 +606,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
               style: GoogleFonts.merriweather(
                 fontWeight: FontWeight.w900,
                 fontSize: 16,
-                color: isSelected ? Colors.white : Colors.grey.shade700,
+                color: AppPalette.fg(isSelected ? Colors.white : Colors.grey.shade700),
               ),
             ),
           ],
@@ -666,7 +667,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             style: GoogleFonts.merriweather(fontSize: 16),
             decoration: InputDecoration(
               hintText: "Type member name or SCJ ID to search...",
-              hintStyle: GoogleFonts.merriweather(fontSize: 15, color: Colors.grey.shade500),
+              hintStyle: GoogleFonts.merriweather(fontSize: 15, color: AppPalette.fg(Colors.grey.shade500)),
               prefixIcon: const Icon(Icons.search, size: 24),
               suffixIcon: _isLoadingSearch
                   ? const Padding(
@@ -682,9 +683,9 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             const SizedBox(height: 12),
             Container(
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: AppPalette.bg(Colors.grey.shade50),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
+                border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
               ),
               child: ListView.separated(
                 shrinkWrap: true,
@@ -700,7 +701,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                     ),
                     subtitle: Text(
                       "SCJ ID: ${m['scj_id']} • Dept: ${m['department'] ?? '-'} • Team: ${m['team'] ?? '-'}",
-                      style: GoogleFonts.merriweather(fontSize: 13.5, color: Colors.grey.shade600),
+                      style: GoogleFonts.merriweather(fontSize: 13.5, color: AppPalette.fg(Colors.grey.shade600)),
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => setState(() {
@@ -732,7 +733,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             style: GoogleFonts.merriweather(
               fontWeight: FontWeight.w900,
               fontSize: 17.5,
-              color: isEditable ? _primaryPurple : const Color(0xFF1E293B),
+              color: AppPalette.fg(isEditable ? _primaryPurple : const Color(0xFF1E293B)),
             ),
           ),
           const SizedBox(height: 14),
@@ -774,7 +775,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
               style: GoogleFonts.merriweather(
                 fontSize: 14.5,
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
+                color: AppPalette.fg(Colors.grey.shade700),
               ),
             ),
           ),
@@ -784,9 +785,9 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                     height: 38,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: AppPalette.bg(Colors.white),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade300),
+                      border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
@@ -803,7 +804,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                   )
                 : Text(
                     value ?? "—",
-                    style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)),
+                    style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.w700, color: AppPalette.fg(const Color(0xFF1E293B))),
                   ),
           ),
         ],
@@ -846,8 +847,8 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
-                child: Icon(Icons.filter_alt_outlined, color: Colors.blue.shade700, size: 22),
+                decoration: BoxDecoration(color: AppPalette.bg(Colors.blue.shade50), borderRadius: BorderRadius.circular(10)),
+                child: Icon(Icons.filter_alt_outlined, color: AppPalette.fg(Colors.blue.shade700), size: 22),
               ),
               const SizedBox(width: 14),
               Column(
@@ -859,7 +860,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                   ),
                   Text(
                     "Select authorized unit levels in cascading order to retrieve members",
-                    style: GoogleFonts.merriweather(fontSize: 13.5, color: Colors.grey.shade600),
+                    style: GoogleFonts.merriweather(fontSize: 13.5, color: AppPalette.fg(Colors.grey.shade600)),
                   ),
                 ],
               ),
@@ -928,8 +929,8 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: Colors.purple.shade50, borderRadius: BorderRadius.circular(10)),
-                child: Icon(Icons.input_rounded, color: _primaryPurple, size: 22),
+                decoration: BoxDecoration(color: AppPalette.bg(Colors.purple.shade50), borderRadius: BorderRadius.circular(10)),
+                child: Icon(Icons.input_rounded, color: AppPalette.fg(_primaryPurple), size: 22),
               ),
               const SizedBox(width: 14),
               Column(
@@ -937,11 +938,11 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                 children: [
                   Text(
                     "Proposed Destination Unit",
-                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17.5, color: _primaryPurple),
+                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17.5, color: AppPalette.fg(_primaryPurple)),
                   ),
                   Text(
                     "Define the new target unit for the selected members",
-                    style: GoogleFonts.merriweather(fontSize: 13.5, color: Colors.grey.shade600),
+                    style: GoogleFonts.merriweather(fontSize: 13.5, color: AppPalette.fg(Colors.grey.shade600)),
                   ),
                 ],
               ),
@@ -1016,16 +1017,16 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
         children: [
           Text(
             label,
-            style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.grey.shade800),
+            style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w700, color: AppPalette.fg(Colors.grey.shade800)),
           ),
           const SizedBox(height: 6),
           Container(
             height: 42,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppPalette.bg(Colors.white),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade300),
+              border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
@@ -1065,7 +1066,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                   ),
                   Text(
                     "${_selectedMemberIds.length} members selected for transfer",
-                    style: GoogleFonts.merriweather(fontSize: 13.5, color: Colors.grey.shade600),
+                    style: GoogleFonts.merriweather(fontSize: 13.5, color: AppPalette.fg(Colors.grey.shade600)),
                   ),
                 ],
               ),
@@ -1086,11 +1087,11 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                   icon: Icon(
                     _selectedMemberIds.length == _bulkMembers.length ? Icons.deselect : Icons.select_all,
                     size: 20,
-                    color: _primaryPurple,
+                    color: AppPalette.fg(_primaryPurple),
                   ),
                   label: Text(
                     _selectedMemberIds.length == _bulkMembers.length ? "Deselect All" : "Select All",
-                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: _primaryPurple),
+                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: AppPalette.fg(_primaryPurple)),
                   ),
                 ),
             ],
@@ -1110,7 +1111,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                   _sourceDept == null
                       ? "Select Location, Sub-Location, and Department above to load members."
                       : "No active members found in this unit.",
-                  style: GoogleFonts.merriweather(fontSize: 14, color: Colors.grey.shade600),
+                  style: GoogleFonts.merriweather(fontSize: 14, color: AppPalette.fg(Colors.grey.shade600)),
                 ),
               ),
             ),
@@ -1176,24 +1177,24 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                           flex: 2,
                           child: Text(
                             "SCJ ID: ${m['scj_id']}",
-                            style: GoogleFonts.robotoMono(fontSize: 13, color: Colors.grey.shade700),
+                            style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade700)),
                           ),
                         ),
                         Expanded(
                           flex: 3,
                           child: Text(
                             "Team: $currentTeam • Cell Group: $currentCell",
-                            style: GoogleFonts.merriweather(fontSize: 13, color: Colors.grey.shade600),
+                            style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade600)),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                           decoration: BoxDecoration(
-                            color: isChecked ? Colors.purple.shade50 : Colors.grey.shade100,
+                            color: AppPalette.bg(isChecked ? Colors.purple.shade50 : Colors.grey.shade100),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                              color: isChecked ? Colors.purple.shade200 : Colors.grey.shade300,
+                              color: AppPalette.line(isChecked ? Colors.purple.shade200 : Colors.grey.shade300),
                             ),
                           ),
                           child: Text(
@@ -1201,7 +1202,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                             style: GoogleFonts.merriweather(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
-                              color: isChecked ? _primaryPurple : Colors.grey.shade600,
+                              color: AppPalette.fg(isChecked ? _primaryPurple : Colors.grey.shade600),
                             ),
                           ),
                         ),
@@ -1235,7 +1236,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             style: GoogleFonts.merriweather(fontSize: 15),
             decoration: InputDecoration(
               hintText: "Provide context for the internal affairs department...",
-              hintStyle: GoogleFonts.merriweather(fontSize: 14, color: Colors.grey.shade500),
+              hintStyle: GoogleFonts.merriweather(fontSize: 14, color: AppPalette.fg(Colors.grey.shade500)),
               contentPadding: const EdgeInsets.all(16),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
@@ -1248,8 +1249,8 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
   Widget _buildSubmitButton({required String title, required VoidCallback? onPressed}) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: _primaryPurple,
-        foregroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(_primaryPurple),
+        foregroundColor: AppPalette.fg(Colors.white),
         disabledBackgroundColor: Colors.grey.shade300,
         minimumSize: const Size(double.infinity, 62),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

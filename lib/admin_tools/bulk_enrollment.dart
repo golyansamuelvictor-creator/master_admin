@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class BulkEnrollmentScreen extends StatefulWidget {
   final String loc, sub, dept, team; // Passed from selection screen
@@ -66,10 +67,10 @@ class _BulkEnrollmentScreenState extends State<BulkEnrollmentScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
-        title: Text("BATCH ENROLLMENT", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple)),
-        centerTitle: true, backgroundColor: Colors.white, elevation: 0.5,
+        title: Text("BATCH ENROLLMENT", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
+        centerTitle: true, backgroundColor: AppPalette.bg(Colors.white), elevation: 0.5,
       ),
       body: Column(
         children: [
@@ -88,9 +89,9 @@ class _BulkEnrollmentScreenState extends State<BulkEnrollmentScreen> {
   }
 
   Widget _buildInfoBanner() => Container(
-    width: double.infinity, color: pPurple.withValues(alpha: 0.05), padding: const EdgeInsets.all(15),
+    width: double.infinity, color: AppPalette.bg(pPurple.withValues(alpha: 0.05)), padding: const EdgeInsets.all(15),
     child: Text("Enrolling into: ${widget.loc} > ${widget.dept} > Team ${widget.team}", 
-      textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+      textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey))),
   );
 
   Widget _memberRow(int index) {
@@ -101,7 +102,7 @@ class _BulkEnrollmentScreenState extends State<BulkEnrollmentScreen> {
         padding: const EdgeInsets.all(15),
         child: Row(
           children: [
-            CircleAvatar(backgroundColor: pPurple, child: Text("${index + 1}", style: const TextStyle(color: Colors.white))),
+            CircleAvatar(backgroundColor: AppPalette.bg(pPurple), child: Text("${index + 1}", style: TextStyle(color: AppPalette.fg(Colors.white)))),
             const SizedBox(width: 15),
             Expanded(flex: 3, child: TextField(decoration: const InputDecoration(labelText: "Full Name"), 
               onChanged: (v) => _memberList[index]['name'] = v)),
@@ -111,7 +112,7 @@ class _BulkEnrollmentScreenState extends State<BulkEnrollmentScreen> {
             const SizedBox(width: 10),
             Expanded(flex: 1, child: TextField(decoration: const InputDecoration(labelText: "Cell #"), 
               onChanged: (v) => _memberList[index]['cell'] = v)),
-            IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => _removeRow(index)),
+            IconButton(icon: Icon(Icons.delete_outline, color: AppPalette.fg(Colors.red)), onPressed: () => _removeRow(index)),
           ],
         ),
       ),
@@ -120,15 +121,15 @@ class _BulkEnrollmentScreenState extends State<BulkEnrollmentScreen> {
 
   Widget _buildFooterActions() {
     return Container(
-      padding: const EdgeInsets.all(25), color: Colors.white,
+      padding: const EdgeInsets.all(25), color: AppPalette.bg(Colors.white),
       child: Row(
         children: [
           OutlinedButton.icon(onPressed: _addRow, icon: const Icon(Icons.add), label: const Text("ADD ANOTHER ROW")),
           const Spacer(),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: pPurple, minimumSize: const Size(200, 50)),
+            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple), minimumSize: const Size(200, 50)),
             onPressed: _isSaving ? null : _saveAll,
-            child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text("ENROLL ALL NOW", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : Text("ENROLL ALL NOW", style: TextStyle(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold)),
           ),
         ],
       ),

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:master_admin/entry_modules/bb_attendance_sheet_entry.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class BbFileEntry extends StatefulWidget {
   final List<dynamic> students;
@@ -449,7 +450,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
             ),
             actions: [
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: widget.pPurple, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(widget.pPurple), foregroundColor: AppPalette.fg(Colors.white)),
                 onPressed: () {
                   setState(() {});
                   Navigator.pop(ctx);
@@ -496,14 +497,14 @@ class _BbFileEntryState extends State<BbFileEntry> {
       position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
       elevation: 6,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      items: const [
-        PopupMenuItem(value: 'copy', height: 32, child: Row(children: [Icon(Icons.copy, size: 14), SizedBox(width: 8), Text("Copy", style: TextStyle(fontSize: 12)), Spacer(), Text("Ctrl+C", style: TextStyle(fontSize: 10, color: Colors.grey))])),
-        PopupMenuItem(value: 'paste', height: 32, child: Row(children: [Icon(Icons.paste, size: 14), SizedBox(width: 8), Text("Paste", style: TextStyle(fontSize: 12)), Spacer(), Text("Ctrl+V", style: TextStyle(fontSize: 10, color: Colors.grey))])),
-        PopupMenuItem(value: 'clear', height: 32, child: Row(children: [Icon(Icons.backspace_outlined, size: 14, color: Colors.red), SizedBox(width: 8), Text("Clear Selection", style: TextStyle(fontSize: 12, color: Colors.red)), Spacer(), Text("Del", style: TextStyle(fontSize: 10, color: Colors.grey))])),
+      items: [
+        PopupMenuItem(value: 'copy', height: 32, child: Row(children: [Icon(Icons.copy, size: 14), SizedBox(width: 8), Text("Copy", style: TextStyle(fontSize: 12)), Spacer(), Text("Ctrl+C", style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey)))])),
+        PopupMenuItem(value: 'paste', height: 32, child: Row(children: [Icon(Icons.paste, size: 14), SizedBox(width: 8), Text("Paste", style: TextStyle(fontSize: 12)), Spacer(), Text("Ctrl+V", style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey)))])),
+        PopupMenuItem(value: 'clear', height: 32, child: Row(children: [Icon(Icons.backspace_outlined, size: 14, color: AppPalette.fg(Colors.red)), SizedBox(width: 8), Text("Clear Selection", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.red))), Spacer(), Text("Del", style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey)))])),
         PopupMenuDivider(height: 1),
         PopupMenuItem(value: 'row', height: 32, child: Row(children: [Icon(Icons.table_rows_outlined, size: 14), SizedBox(width: 8), Text("Select Entire Row", style: TextStyle(fontSize: 12))])),
         PopupMenuItem(value: 'col', height: 32, child: Row(children: [Icon(Icons.view_column_outlined, size: 14), SizedBox(width: 8), Text("Select Entire Column", style: TextStyle(fontSize: 12))])),
-        PopupMenuItem(value: 'all', height: 32, child: Row(children: [Icon(Icons.select_all, size: 14), SizedBox(width: 8), Text("Select All", style: TextStyle(fontSize: 12)), Spacer(), Text("Ctrl+A", style: TextStyle(fontSize: 10, color: Colors.grey))])),
+        PopupMenuItem(value: 'all', height: 32, child: Row(children: [Icon(Icons.select_all, size: 14), SizedBox(width: 8), Text("Select All", style: TextStyle(fontSize: 12)), Spacer(), Text("Ctrl+A", style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey)))])),
       ],
     ).then((val) {
       if (val == 'copy') _copySelection();
@@ -547,7 +548,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
                   Row(children: [
                     TextButton(onPressed: () => setDialogState(() => temp.addAll(distinct)), child: const Text("Select All", style: TextStyle(fontSize: 11))),
                     const Spacer(),
-                    TextButton(onPressed: () => setDialogState(() => temp.clear()), child: const Text("Clear All", style: TextStyle(fontSize: 11, color: Colors.red))),
+                    TextButton(onPressed: () => setDialogState(() => temp.clear()), child: Text("Clear All", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.red)))),
                   ]),
                   const Divider(height: 1),
                   Expanded(
@@ -570,7 +571,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
             actions: [
               TextButton(onPressed: () { setState(() => _activeFilters.remove(colIdx)); Navigator.pop(ctx); }, child: const Text("Reset")),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: widget.pPurple, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(widget.pPurple), foregroundColor: AppPalette.fg(Colors.white)),
                 onPressed: () {
                   setState(() {
                     if (temp.containsAll(distinct)) _activeFilters.remove(colIdx);
@@ -625,15 +626,15 @@ class _BbFileEntryState extends State<BbFileEntry> {
                 Container(
                   height: 36,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  color: Colors.grey.shade50,
+                  color: AppPalette.bg(Colors.grey.shade50),
                   child: Row(
                     children: [
                       ElevatedButton.icon(
                       icon: const Icon(Icons.how_to_reg_rounded, size: 14),
                       label: const Text("Take Daily Attendance", style: TextStyle(fontSize: 11)),
                       style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.green[700],
-    foregroundColor: Colors.white,
+    backgroundColor: AppPalette.bg(Colors.green[700]),
+    foregroundColor: AppPalette.fg(Colors.white),
     visualDensity: VisualDensity.compact,
     padding: const EdgeInsets.symmetric(horizontal: 10),
   ),
@@ -663,7 +664,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
                         onPressed: _exportCsv,
                       ),
                       const Spacer(),
-                      Text("Total: ${filtered.length} students", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                      Text("Total: ${filtered.length} students", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey))),
                     ],
                   ),
                 ),
@@ -684,11 +685,11 @@ class _BbFileEntryState extends State<BbFileEntry> {
                               child: Container(
                                 height: _totalHeaderHeight,
                                 width: _rowNumColWidth,
-                                color: const Color(0xFFE2E8F0),
-                                child: const Column(
+                                color: AppPalette.bg(const Color(0xFFE2E8F0)),
+                                child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.select_all, size: 14, color: Colors.black54),
+                                    Icon(Icons.select_all, size: 14, color: AppPalette.fg(Colors.black54)),
                                     Text("#", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                                   ],
                                 ),
@@ -714,10 +715,10 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                       height: _rowHeight,
                                       width: _rowNumColWidth,
                                       decoration: BoxDecoration(
-                                        color: isRowSel ? widget.pPurple.withValues(alpha: 0.15) : const Color(0xFFF1F5F9),
+                                        color: AppPalette.bg(isRowSel ? widget.pPurple.withValues(alpha: 0.15) : const Color(0xFFF1F5F9)),
                                         border: Border(
-                                          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.3), width: 0.8),
-                                          right: BorderSide(color: Colors.grey.withValues(alpha: 0.4), width: 1.2),
+                                          bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.3)), width: 0.8),
+                                          right: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.4)), width: 1.2),
                                         ),
                                       ),
                                       child: Center(
@@ -726,7 +727,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                           style: TextStyle(
                                             fontSize: 10.5,
                                             fontWeight: FontWeight.bold,
-                                            color: isRowSel ? widget.pPurple : Colors.grey[700],
+                                            color: AppPalette.fg(isRowSel ? widget.pPurple : Colors.grey[700]),
                                           ),
                                         ),
                                       ),
@@ -752,7 +753,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                 // FROZEN TOP HEADER ROW
                                 Container(
                                   height: _totalHeaderHeight,
-                                  color: const Color(0xFF1E293B),
+                                  color: AppPalette.bg(const Color(0xFF1E293B)),
                                   child: Column(
                                     children: [
                                       SizedBox(
@@ -769,9 +770,9 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                               onTap: () => _selectColumn(i),
                                               child: Container(
                                                 width: widths[i],
-                                                color: isColSel ? widget.pPurple.withValues(alpha: 0.25) : const Color(0xFFF1F5F9),
+                                                color: AppPalette.bg(isColSel ? widget.pPurple.withValues(alpha: 0.25) : const Color(0xFFF1F5F9)),
                                                 alignment: Alignment.center,
-                                                child: Text(_colLetters[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isColSel ? widget.pPurple : Colors.grey[700])),
+                                                child: Text(_colLetters[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(isColSel ? widget.pPurple : Colors.grey[700]))),
                                               ),
                                             );
                                           }),
@@ -785,18 +786,18 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                             return Container(
                                               width: widths[i],
                                               padding: const EdgeInsets.symmetric(horizontal: 6),
-                                              decoration: BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.withValues(alpha: 0.3), width: 0.8))),
+                                              decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.3)), width: 0.8))),
                                               child: Row(
                                                 children: [
                                                   Expanded(
                                                     child: GestureDetector(
                                                       onTap: () => _selectColumn(i),
-                                                      child: Text(_colTitles[i], softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                                                      child: Text(_colTitles[i], softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 11, fontWeight: FontWeight.bold)),
                                                     ),
                                                   ),
                                                   InkWell(
                                                     onTap: () => _openFilterDialog(i),
-                                                    child: Icon(isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: isFiltered ? const Color(0xFFF59E0B) : Colors.white70),
+                                                    child: Icon(isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: AppPalette.fg(isFiltered ? const Color(0xFFF59E0B) : Colors.white70)),
                                                   ),
                                                 ],
                                               ),
@@ -881,9 +882,9 @@ class _BbFileEntryState extends State<BbFileEntry> {
         child: DropdownButton<String>(
           value: widget.statusOptions.contains(cur) ? cur : null,
           isDense: true, isExpanded: true, iconSize: 14,
-          style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w600),
+          style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.w600),
           items: [
-            const DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11)))),
+            DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: AppPalette.fg(Colors.grey), fontSize: 11)))),
             ...widget.statusOptions.map((o) => DropdownMenuItem(value: o, child: Center(child: Text(o, softWrap: false, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))))),
           ],
           onChanged: (v) {
@@ -899,9 +900,9 @@ class _BbFileEntryState extends State<BbFileEntry> {
         child: DropdownButton<String>(
           value: widget.monthOptions.contains(cur) ? cur : null,
           isDense: true, isExpanded: true, iconSize: 14,
-          style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w600),
+          style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.w600),
           items: [
-            const DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11)))),
+            DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: AppPalette.fg(Colors.grey), fontSize: 11)))),
             ...widget.monthOptions.map((o) => DropdownMenuItem(value: o, child: Center(child: Text(o, softWrap: false, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))))),
           ],
           onChanged: (v) {
@@ -917,9 +918,9 @@ class _BbFileEntryState extends State<BbFileEntry> {
         child: DropdownButton<String>(
           value: widget.methodOptions.contains(cur) ? cur : null,
           isDense: true, isExpanded: true, iconSize: 14,
-          style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w600),
+          style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.w600),
           items: [
-            const DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: Colors.grey, fontSize: 11)))),
+            DropdownMenuItem(value: null, child: Center(child: Text("-", style: TextStyle(color: AppPalette.fg(Colors.grey), fontSize: 11)))),
             ...widget.methodOptions.map((o) => DropdownMenuItem(value: o, child: Center(child: Text(o, softWrap: false, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11))))),
           ],
           onChanged: (v) {
@@ -939,7 +940,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
           val.isEmpty ? "-" : val,
           softWrap: false,
           overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.merriweather(fontSize: 10, color: Colors.blueGrey[800], fontWeight: FontWeight.w500),
+          style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(Colors.blueGrey[800]), fontWeight: FontWeight.w500),
         ),
       );
     } else if (key == 'center_place') {
@@ -1002,12 +1003,12 @@ class _BbFileEntryState extends State<BbFileEntry> {
         width: width,
         height: _rowHeight,
         decoration: BoxDecoration(
-          color: isSel
+          color: AppPalette.bg(isSel
               ? widget.pPurple.withValues(alpha: 0.12)
-              : (isStaffAutoCol ? const Color(0xFFF1F5F9) : (isEven ? Colors.white : const Color(0xFFF8FAFC))),
+              : (isStaffAutoCol ? const Color(0xFFF1F5F9) : (isEven ? Colors.white : const Color(0xFFF8FAFC)))),
           border: isAnc
-              ? Border.all(color: widget.pPurple, width: 1.8)
-              : Border.all(color: Colors.grey.withValues(alpha: 0.25), width: 0.6),
+              ? Border.all(color: AppPalette.line(widget.pPurple), width: 1.8)
+              : Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.25)), width: 0.6),
         ),
         child: content,
       ),

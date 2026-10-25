@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class MemberDetailScreen extends StatefulWidget {
   final Map<String, dynamic> member;
@@ -142,10 +143,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     ];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
         title: Text("Member Profile", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold)),
-        backgroundColor: sapphire, foregroundColor: Colors.white, elevation: 0, centerTitle: true,
+        backgroundColor: AppPalette.bg(sapphire), foregroundColor: AppPalette.fg(Colors.white), elevation: 0, centerTitle: true,
       ),
       body: _isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
         child: Column(children: [
@@ -164,30 +165,30 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   Widget _buildHeroHeader(Color sapphire, bool isDesktop) {
     return Container(
-      width: double.infinity, color: sapphire, padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+      width: double.infinity, color: AppPalette.bg(sapphire), padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
       child: Column(children: [
-        const CircleAvatar(radius: 40, backgroundColor: Colors.white24, child: Icon(Icons.person, size: 40, color: Colors.white)),
+        CircleAvatar(radius: 40, backgroundColor: AppPalette.bg(Colors.white24), child: Icon(Icons.person, size: 40, color: AppPalette.fg(Colors.white))),
         const SizedBox(height: 15),
-        Text(_fullMemberData['english_name'] ?? "No Name", style: GoogleFonts.merriweather(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        Text(_fullMemberData['english_name'] ?? "No Name", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 24, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         // PERFORMANCE BADGE
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(color: _healthColor, borderRadius: BorderRadius.circular(20)),
-          child: Text(_attendanceHealth, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+          decoration: BoxDecoration(color: AppPalette.bg(_healthColor), borderRadius: BorderRadius.circular(20)),
+          child: Text(_attendanceHealth, style: TextStyle(color: AppPalette.fg(Colors.white), fontSize: 10, fontWeight: FontWeight.bold)),
         ),
         const SizedBox(height: 10),
-        Text("SCJ ID: ${_fullMemberData['scj_id'] ?? 'N/A'}", style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        Text("SCJ ID: ${_fullMemberData['scj_id'] ?? 'N/A'}", style: TextStyle(color: AppPalette.fg(Colors.white70), fontSize: 12)),
       ]),
     );
   }
 
   Widget _buildHistorySection(String title, IconData icon, List<Map<String, dynamic>> items) {
     return _buildSection(title, items.isEmpty 
-      ? [const Padding(padding: EdgeInsets.all(10), child: Text("No records found.", style: TextStyle(color: Colors.grey, fontSize: 12)))]
+      ? [Padding(padding: EdgeInsets.all(10), child: Text("No records found.", style: TextStyle(color: AppPalette.fg(Colors.grey), fontSize: 12)))]
       : items.map((item) => ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(icon, color: item['color'], size: 20),
+          leading: Icon(icon, color: AppPalette.fg(item['color']), size: 20),
           title: Text(item['title'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
           subtitle: Text(item['subtitle'], style: const TextStyle(fontSize: 12)),
         )).toList(),
@@ -198,11 +199,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     return Container(
       margin: const EdgeInsets.all(10), padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white, borderRadius: BorderRadius.circular(25),
+        color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(25),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: const Color(0xFF0D47A1))),
+        Text(title, style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: AppPalette.fg(const Color(0xFF0D47A1)))),
         const Divider(height: 25),
         ...children,
       ]),
@@ -213,8 +214,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Expanded(flex: 2, child: Text(label, style: GoogleFonts.merriweather(color: Colors.blueGrey[600], fontSize: 13))),
-        Expanded(flex: 3, child: Text("${value ?? '-'}", textAlign: TextAlign.right, style: GoogleFonts.merriweather(color: Colors.black, fontSize: 13, fontWeight: FontWeight.bold))),
+        Expanded(flex: 2, child: Text(label, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.blueGrey[600]), fontSize: 13))),
+        Expanded(flex: 3, child: Text("${value ?? '-'}", textAlign: TextAlign.right, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.black), fontSize: 13, fontWeight: FontWeight.bold))),
       ]),
     );
   }

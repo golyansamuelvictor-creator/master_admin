@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String userEmail, userRole;
@@ -29,12 +30,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     bool isDesktop = width > 900;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFBFBFE),
+      backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
       appBar: AppBar(
         title: Text(selectedCategory ?? "System Settings",
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: isDesktop ? 26 : 22, color: pPurple)),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: isDesktop ? 26 : 22, color: AppPalette.fg(pPurple))),
         centerTitle: true,
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, size: 20),
@@ -89,9 +90,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     bool isLogout = title == "signout/logout";
     return Container(
       decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppPalette.bg(Colors.white),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isLogout ? Colors.red.withValues(alpha: 0.3) : Colors.purple.withValues(alpha: 0.1), width: 1.2),
+          border: Border.all(color: AppPalette.line(isLogout ? Colors.red.withValues(alpha: 0.3) : Colors.purple.withValues(alpha: 0.1)), width: 1.2),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))]),
       child: InkWell(
         onTap: onTap,
@@ -102,9 +103,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title, style: GoogleFonts.merriweather(fontSize: isDesktop ? 15 : 14, fontWeight: FontWeight.w700, color: isLogout ? Colors.red : Colors.black87)),
+                Text(title, style: GoogleFonts.merriweather(fontSize: isDesktop ? 15 : 14, fontWeight: FontWeight.w700, color: AppPalette.fg(isLogout ? Colors.red : Colors.black87))),
                 const SizedBox(width: 8),
-                Icon(Icons.arrow_forward_ios, size: 12, color: isLogout ? Colors.red : Colors.grey.withValues(alpha: 0.5)),
+                Icon(Icons.arrow_forward_ios, size: 12, color: AppPalette.fg(isLogout ? Colors.red : Colors.grey.withValues(alpha: 0.5))),
               ],
             ),
           ),
@@ -117,14 +118,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String initials = widget.userEmail.isNotEmpty ? widget.userEmail[0].toUpperCase() : "?";
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: pPurple.withValues(alpha: 0.1))),
+      decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(15), border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.1)))),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircleAvatar(radius: 25, backgroundColor: pPurple.withValues(alpha: 0.1), child: Text(initials, style: TextStyle(fontWeight: FontWeight.bold, color: pPurple, fontSize: 20))),
+          CircleAvatar(radius: 25, backgroundColor: AppPalette.bg(pPurple.withValues(alpha: 0.1)), child: Text(initials, style: TextStyle(fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple), fontSize: 20))),
           const SizedBox(height: 12),
           Text(widget.userEmail, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: isDesktop ? 18 : 15)),
-          Text("Official Role: ${_formatRoleToTitleCase(widget.userRole)}", textAlign: TextAlign.center, style: const TextStyle(color: Colors.blueGrey, fontSize: 11, fontWeight: FontWeight.bold)),
+          Text("Official Role: ${_formatRoleToTitleCase(widget.userRole)}", textAlign: TextAlign.center, style: TextStyle(color: AppPalette.fg(Colors.blueGrey), fontSize: 11, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -176,13 +177,13 @@ class _SubItemDetailScreenState extends State<SubItemDetailScreen> {
     bool isDesktop = screenWidth > 900;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9), // Subtly darker to emphasize floating cards
+      backgroundColor: AppPalette.bg(const Color(0xFFF4F6F9)), // Subtly darker to emphasize floating cards
       appBar: AppBar(
-        title: Text(widget.title, style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.bold, color: widget.pPurple)),
+        title: Text(widget.title, style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.bold, color: AppPalette.fg(widget.pPurple))),
         leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
         elevation: 0.5,
         centerTitle: true,
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -196,7 +197,7 @@ class _SubItemDetailScreenState extends State<SubItemDetailScreen> {
                 width: isDesktop ? 750 : screenWidth * 0.95,
                 padding: const EdgeInsets.symmetric(vertical: 20), // Tighter padding
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppPalette.bg(Colors.white),
                   borderRadius: BorderRadius.circular(25),
                   boxShadow: [
                     BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 25, offset: const Offset(0, 10))
@@ -211,15 +212,15 @@ class _SubItemDetailScreenState extends State<SubItemDetailScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(10), // Tighter internal padding
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: AppPalette.bg(Colors.white),
                           borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: widget.pPurple.withValues(alpha: 0.05)),
+                          border: Border.all(color: AppPalette.line(widget.pPurple.withValues(alpha: 0.05))),
                         ),
                         child: _buildBody(),
                       ),
                     ),
                     const SizedBox(height: 10),
-                    Text("System Settings v1.0", style: TextStyle(color: Colors.grey.shade400, fontSize: 9)),
+                    Text("System Settings v1.0", style: TextStyle(color: AppPalette.fg(Colors.grey.shade400), fontSize: 9)),
                   ],
                 ),
               ),
@@ -278,7 +279,7 @@ class _SubItemDetailScreenState extends State<SubItemDetailScreen> {
           TextField(controller: _confPw, decoration: const InputDecoration(labelText: "Confirm Password", isDense: true)),
           const SizedBox(height: 20),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: widget.pPurple, minimumSize: const Size(double.infinity, 45), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(widget.pPurple), minimumSize: const Size(double.infinity, 45), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             onPressed: () async {
               if (_newPw.text == _confPw.text) {
                 await widget.supabase.auth.updateUser(UserAttributes(password: _newPw.text));
@@ -286,7 +287,7 @@ class _SubItemDetailScreenState extends State<SubItemDetailScreen> {
                 Navigator.pop(context);
               }
             },
-            child: const Text("Update Password", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: Text("Update Password", style: TextStyle(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold)),
           )
         ],
       ),
@@ -308,7 +309,7 @@ class _SubItemDetailScreenState extends State<SubItemDetailScreen> {
     return Column(
       children: [
         const SizedBox(height: 10),
-        Icon(isVer ? Icons.verified : Icons.error_outline, size: 50, color: isVer ? Colors.green : Colors.orange),
+        Icon(isVer ? Icons.verified : Icons.error_outline, size: 50, color: AppPalette.fg(isVer ? Colors.green : Colors.orange)),
         const SizedBox(height: 8),
         Text(isVer ? "Verified" : "Pending", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18)),
         const SizedBox(height: 10),
@@ -380,15 +381,15 @@ class _SubItemDetailScreenState extends State<SubItemDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 12), // Reduced height from 12 to 7
       decoration: BoxDecoration(
-        border: isLast ? null : Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1)),
+        border: isLast ? null : Border(bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.1)), width: 1)),
       ),
       child: Row(
         children: [
-          Text("$label: ", style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+          Text("$label: ", style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey))),
           Expanded(
             child: Text(value ?? "N/A", 
               textAlign: TextAlign.right,
-              style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.black)),
+              style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.w800, color: AppPalette.fg(Colors.black))),
           ),
         ],
       ),
@@ -396,17 +397,17 @@ class _SubItemDetailScreenState extends State<SubItemDetailScreen> {
   }
 
   Widget _compactRow(IconData icon, String title, String subtitle, {bool isLast = false}) => Container(
-    decoration: BoxDecoration(border: isLast ? null : Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1)))),
+    decoration: BoxDecoration(border: isLast ? null : Border(bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.1))))),
     child: ListTile(
       dense: true,
-      leading: Icon(icon, color: widget.pPurple, size: 20),
+      leading: Icon(icon, color: AppPalette.fg(widget.pPurple), size: 20),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-      trailing: Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      trailing: Text(subtitle, style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
     ),
   );
 
   Widget _compactPref(String? id, String label, bool val, String key, {bool isLast = false}) => Container(
-    decoration: BoxDecoration(border: isLast ? null : Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1)))),
+    decoration: BoxDecoration(border: isLast ? null : Border(bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.1))))),
     child: CheckboxListTile(
       dense: true,
       title: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),

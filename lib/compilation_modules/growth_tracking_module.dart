@@ -7,6 +7,8 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/compilation_style.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class _GrowthUnitStat {
   final String unitName;
@@ -271,7 +273,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
       return Container(
         padding: const EdgeInsets.all(20),
         alignment: Alignment.center,
-        child: const Text("No records found for this unit", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+        child: Text("No records found for this unit", style: TextStyle(fontStyle: FontStyle.italic, color: AppPalette.fg(Colors.grey))),
       );
     }
 
@@ -285,7 +287,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
         children: [
           // Header Row
           TableRow(
-            decoration: const BoxDecoration(color: Color(0xFF1E293B)),
+            decoration: BoxDecoration(color: AppPalette.bg(CompStyle.headerBg)),
             children: headers.map((title) {
               return SizedBox(
                 height: hh,
@@ -295,8 +297,8 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                     child: Text(
                       title,
                       style: GoogleFonts.merriweather(
-                        color: Colors.white,
-                        fontSize: 9.5,
+                        color: AppPalette.fg(CompStyle.headerFg),
+                        fontSize: CompStyle.headerFont,
                         fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.center,
@@ -310,7 +312,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
 
           // General Total Summary Row
           TableRow(
-            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
+            decoration: BoxDecoration(color: AppPalette.bg(CompStyle.totalBg)),
             children: [
               _cellText("General total", 26.0, isBold: true, color: pPurple, align: TextAlign.left, padLeft: 6),
               _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
@@ -335,7 +337,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
             final growthColor = isPositive ? Colors.green[800]! : Colors.red[800]!;
 
             return TableRow(
-              decoration: BoxDecoration(color: rowColor),
+              decoration: BoxDecoration(color: AppPalette.bg(rowColor)),
               children: [
                 _cellText(u.unitName, rh, isBold: true, align: TextAlign.left, padLeft: 6),
                 _cellText("${u.totalSaints}", rh),
@@ -372,12 +374,12 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                   style: GoogleFonts.merriweather(
                     fontSize: 11,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    color: isSelected ? Colors.white : Colors.black87,
+                    color: AppPalette.fg(isSelected ? Colors.white : Colors.black87),
                   ),
                 ),
                 selected: isSelected,
-                selectedColor: pPurple,
-                backgroundColor: const Color(0xFFF1F5F9),
+                selectedColor: AppPalette.bg(pPurple),
+                backgroundColor: AppPalette.bg(const Color(0xFFF1F5F9)),
                 visualDensity: VisualDensity.compact,
                 onSelected: (selected) {
                   if (selected) {
@@ -420,10 +422,9 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              Expanded(child: Text(
                 "Displaying: $_selectedChartUnit",
-                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
-              ),
+                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])), maxLines: 2, overflow: TextOverflow.ellipsis)),
               Row(
                 children: [
                   _legItem("New Enrollment", Colors.blue[700]!),
@@ -446,15 +447,15 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                 drawVerticalLine: false,
                 horizontalInterval: math.max(1.0, (maxY / 5).ceilToDouble()),
                 getDrawingHorizontalLine: (val) => FlLine(
-                  color: Colors.grey.withValues(alpha: 0.18),
+                  color: AppPalette.line(Colors.grey.withValues(alpha: 0.18)),
                   strokeWidth: 1,
                 ),
               ),
               borderData: FlBorderData(
                 show: true,
-                border: const Border(
-                  bottom: BorderSide(color: Colors.black45, width: 1),
-                  left: BorderSide(color: Colors.black45, width: 1),
+                border: Border(
+                  bottom: BorderSide(color: AppPalette.line(Colors.black45), width: 1),
+                  left: BorderSide(color: AppPalette.line(Colors.black45), width: 1),
                 ),
               ),
               titlesData: FlTitlesData(
@@ -464,7 +465,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                     reservedSize: 28,
                     getTitlesWidget: (v, m) => Text(
                       "${v.toInt()}",
-                      style: GoogleFonts.merriweather(fontSize: 9, color: Colors.blueGrey),
+                      style: GoogleFonts.merriweather(fontSize: 9, color: AppPalette.fg(Colors.blueGrey)),
                     ),
                   ),
                 ),
@@ -481,7 +482,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                         padding: const EdgeInsets.only(top: 8.0),
                         child: Text(
                           displayUnits[idx].unitName,
-                          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+                          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
                           overflow: TextOverflow.ellipsis,
                         ),
                       );
@@ -497,7 +498,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                     final count = rod.toY.toInt();
                     return BarTooltipItem(
                       "${unit.unitName}\n$type: $count",
-                      const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                      TextStyle(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 11),
                     );
                   },
                 ),
@@ -533,10 +534,10 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
   // --- UI: RANKING LIST ---
   Widget _buildRankingList(List<_GrowthUnitStat> stats, bool isTop) {
     if (stats.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(20),
-          child: Text("No ranking data found", style: TextStyle(color: Colors.grey)),
+          child: Text("No ranking data found", style: TextStyle(color: AppPalette.fg(Colors.grey))),
         ),
       );
     }
@@ -554,11 +555,11 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
         return ListTile(
           dense: true,
           leading: CircleAvatar(
-            backgroundColor: isTop ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12),
+            backgroundColor: AppPalette.bg(isTop ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12)),
             radius: 16,
             child: Text(
               "#$rank",
-              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(color)),
             ),
           ),
           title: Text(
@@ -567,11 +568,11 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
           ),
           subtitle: Text(
             "Saints: ${item.totalSaints} | New: +${item.newEnrollment} | Grads: -${item.graduation}",
-            style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+            style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.blueGrey)),
           ),
           trailing: Text(
             item.growthPct >= 0 ? "+${item.growthPct.toStringAsFixed(1)}%" : "${item.growthPct.toStringAsFixed(1)}%",
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: color),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(color)),
           ),
         );
       }).toList(),
@@ -675,7 +676,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
           text,
           style: GoogleFonts.merriweather(
             fontSize: 9.5,
-            color: color ?? Colors.black87,
+            color: AppPalette.fg(color ?? Colors.black87),
             fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
           ),
           overflow: TextOverflow.ellipsis,
@@ -694,7 +695,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
           "$sign${pct.toStringAsFixed(1)}%",
           style: GoogleFonts.merriweather(
             fontSize: 9.0,
-            color: color,
+            color: AppPalette.fg(color),
             fontWeight: isBold ? FontWeight.w900 : FontWeight.bold,
           ),
         ),
@@ -706,11 +707,11 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: AppPalette.bg(color), shape: BoxShape.circle)),
         const SizedBox(width: 4),
         Text(
           label,
-          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
         ),
       ],
     );
@@ -720,9 +721,9 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.black, width: 1.0),
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -736,8 +737,8 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.black12, width: 1.0)),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black12), width: 1.0)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -748,18 +749,18 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                     style: GoogleFonts.merriweather(
                       fontWeight: FontWeight.w900,
                       fontSize: 13,
-                      color: pPurple,
+                      color: AppPalette.fg(pPurple),
                     ),
                   ),
                 ),
                 if (onPdf != null)
                   IconButton(
-                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 20, color: pPurple),
+                    icon: Icon(Icons.picture_as_pdf_outlined, size: 20, color: AppPalette.fg(pPurple)),
                     tooltip: 'Export PDF Report',
                     onPressed: onPdf,
                   ),
                 IconButton(
-                  icon: const Icon(Icons.open_in_full_rounded, size: 19, color: Colors.blueGrey),
+                  icon: Icon(Icons.open_in_full_rounded, size: 19, color: AppPalette.fg(Colors.blueGrey)),
                   tooltip: 'Fullscreen View',
                   onPressed: () => _showFull(context, title, content),
                 ),
@@ -778,10 +779,10 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (context) => Scaffold(
-          backgroundColor: const Color(0xFFF8FAFC),
+          backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
           appBar: AppBar(
-            backgroundColor: pPurple,
-            foregroundColor: Colors.white,
+            backgroundColor: AppPalette.bg(pPurple),
+            foregroundColor: AppPalette.fg(Colors.white),
             title: Text(title, style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold)),
             centerTitle: true,
           ),

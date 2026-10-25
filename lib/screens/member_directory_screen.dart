@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'member_detail_screen.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class MemberDirectoryScreen extends StatefulWidget {
   final String userRole, userLoc, userSub, userDept, userTeam, userCell;
@@ -254,14 +255,14 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFBFBFE),
+      backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
       appBar: AppBar(
         title: Text(
           "Member Directory",
           style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 18),
         ),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: AppPalette.bg(Colors.white),
+        foregroundColor: AppPalette.fg(Colors.black),
         elevation: 0.5,
       ),
       body: Column(
@@ -273,9 +274,9 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.purple.shade50,
+                  color: AppPalette.bg(Colors.purple.shade50),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.purple.shade200),
+                  border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -287,7 +288,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                       style: GoogleFonts.merriweather(
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
-                        color: const Color(0xFF4A148C),
+                        color: AppPalette.fg(const Color(0xFF4A148C)),
                       ),
                     ),
                     Switch(
@@ -309,9 +310,9 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
               onChanged: (v) => setState(() => _searchQuery = v),
               decoration: InputDecoration(
                 hintText: "Search by name or SCJ ID...",
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF4A148C)),
+                prefixIcon: Icon(Icons.search, color: AppPalette.fg(Color(0xFF4A148C))),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: AppPalette.bg(Colors.white),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -337,7 +338,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                   return Center(
                     child: Text(
                       "No members found in your authorized unit",
-                      style: GoogleFonts.merriweather(color: Colors.grey),
+                      style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey)),
                     ),
                   );
                 }
@@ -352,12 +353,12 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: const Color(0xFF4A148C),
+                          backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
                           child: Text(
                             (member['english_name'] != null && member['english_name'].isNotEmpty)
                                 ? member['english_name'][0]
                                 : "?",
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(color: AppPalette.fg(Colors.white)),
                           ),
                         ),
                         title: Text(

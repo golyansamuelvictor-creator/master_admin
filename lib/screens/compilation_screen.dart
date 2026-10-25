@@ -2,11 +2,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:fl_chart/fl_chart.dart';
+import 'dart:convert';
+import '../core/compilation_style.dart';
 
 import '../compilation_modules/service_attendance_module.dart';
 import '../compilation_modules/cell_service_module.dart';
@@ -21,6 +23,7 @@ import '../compilation_modules/visitations_module.dart';
 import '../compilation_modules/growth_tracking_module.dart';
 import 'compilation_results_list.dart';
 import '../core/compilation_rules.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class CompilationEngine extends StatefulWidget {
   final String role, userUnit, selectedDuty, loc, sub, dept, team; 
@@ -63,6 +66,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
   DateTime? _periodStart;
   DateTime? _periodEnd;
   bool _savingFindings = false;
+
+  // Ranking view state (its own unit level and period)
+  String? _rankLevel;
+  String _rankPeriod = 'Monthly';
+  List<dynamic>? _rankRows;
+  bool _rankLoading = false;
+  String? _rankError;
+  int _rankSeq = 0;
 
   List<dynamic> _logs = [];
   List<Map<String, dynamic>> _masterMembers = [];
@@ -921,6 +932,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         _masterMembers = members;
         _isLoading = false;
       });
+      if (_analyticsMode.contains('Ranking')) _loadRanking();
     } catch (e) {
       debugPrint("Compilation Query Error: $e");
       if (!mounted || seq != _fetchSeq) return;
@@ -1113,17 +1125,17 @@ class _CompilationEngineState extends State<CompilationEngine> {
     bool isMobile = screenWidth < 900;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
         centerTitle: true,
-        backgroundColor: Colors.white, 
+        backgroundColor: AppPalette.bg(Colors.white), 
         elevation: 0, 
-        iconTheme: IconThemeData(color: pPurple),
+        iconTheme: IconThemeData(color: AppPalette.fg(pPurple)),
         title: Text(
           widget.selectedDuty, 
-          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 17.5, letterSpacing: 0.4),
+          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 17.5, letterSpacing: 0.4),
         ),
-        bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: Colors.black, height: 1.0)),
+        bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: AppPalette.bg(Colors.black), height: 1.0)),
         actions: [
           IconButton(
             tooltip: "Refresh data",
@@ -1260,7 +1272,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         "Trend analysis",
         Icons.show_chart_rounded,
         Text("${widget.selectedDuty} has no dated weekly reports, so there is no trend over time to analyse. Use Summary or Ranking.",
-            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.black87)),
+            style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.black87))),
       );
     }
 
@@ -1285,7 +1297,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         "Trend analysis",
         Icons.show_chart_rounded,
         Text("No reports in this period yet, so there is no trend to analyse.",
-            style: GoogleFonts.merriweather(fontSize: 12, color: Colors.black87)),
+            style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.black87))),
       );
     }
 
@@ -1337,16 +1349,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: trendColor.withValues(alpha: 0.06),
+            color: AppPalette.bg(trendColor.withValues(alpha: 0.06)),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: trendColor.withValues(alpha: 0.3)),
+            border: Border.all(color: AppPalette.line(trendColor.withValues(alpha: 0.3))),
           ),
-          child: Text(headline, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.black87, height: 1.45)),
+          child: Text(headline, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87), height: 1.45)),
         ),
         if (missing.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text("No reports yet for: ${missing.join(', ')}.",
-              style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.orange.shade900, fontStyle: FontStyle.italic)),
+              style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(Colors.orange.shade900), fontStyle: FontStyle.italic)),
         ],
         const SizedBox(height: 14),
         // Period by period with change from the previous one
@@ -1368,7 +1380,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         const SizedBox(height: 6),
         Text(
           "Rate = reports marked done ÷ (sessions × $unitWord in scope). Units compare their first and last ${_timePeriod == 'Monthly status' ? 'month' : 'week'} with reports.",
-          style: GoogleFonts.merriweather(fontSize: 9.5, color: Colors.black54, fontStyle: FontStyle.italic),
+          style: GoogleFonts.merriweather(fontSize: 9.5, color: AppPalette.fg(Colors.black54), fontStyle: FontStyle.italic),
         ),
       ]),
     );
@@ -1381,17 +1393,17 @@ class _CompilationEngineState extends State<CompilationEngine> {
       width: 132,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: r.hasData ? Colors.white : const Color(0xFFF8FAFC),
+        color: AppPalette.bg(r.hasData ? Colors.white : const Color(0xFFF8FAFC)),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.black26),
+        border: Border.all(color: AppPalette.line(Colors.black26)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(r.label, style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: pPurple), maxLines: 2),
+        Text(r.label, style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)), maxLines: 2),
         const SizedBox(height: 4),
         Text(r.hasData ? "${r.rate.toStringAsFixed(1)}%" : "—", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900)),
         Text(
           !r.hasData ? "no reports" : (delta == null ? "${r.done} done" : "${delta >= 0 ? '▲' : '▼'} ${_fmtPts(delta)}"),
-          style: GoogleFonts.merriweather(fontSize: 9.5, color: c, fontWeight: FontWeight.bold),
+          style: GoogleFonts.merriweather(fontSize: 9.5, color: AppPalette.fg(c), fontWeight: FontWeight.bold),
         ),
       ]),
     );
@@ -1408,7 +1420,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       minX: 0,
       maxX: (values.length - 1).clamp(1, 1000).toDouble(),
       gridData: const FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 25),
-      borderData: FlBorderData(show: true, border: const Border(left: BorderSide(color: Colors.black26), bottom: BorderSide(color: Colors.black26))),
+      borderData: FlBorderData(show: true, border: Border(left: BorderSide(color: AppPalette.line(Colors.black26)), bottom: BorderSide(color: AppPalette.line(Colors.black26)))),
       titlesData: FlTitlesData(
         topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -1452,21 +1464,21 @@ class _CompilationEngineState extends State<CompilationEngine> {
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.04),
+        color: AppPalette.bg(color.withValues(alpha: 0.04)),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
+        border: Border.all(color: AppPalette.line(color.withValues(alpha: 0.25))),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w900, color: color)),
+        Text(title, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w900, color: AppPalette.fg(color))),
         const SizedBox(height: 6),
         if (items.isEmpty)
-          Text("None this period", style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.black54))
+          Text("None this period", style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(Colors.black54)))
         else
           ...items.map((m) => Padding(
                 padding: const EdgeInsets.only(bottom: 3),
                 child: Text(
                   "${m.unit}: ${m.from.toStringAsFixed(1)}% → ${m.to.toStringAsFixed(1)}% (${_fmtPts(m.to - m.from)})",
-                  style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.black87),
+                  style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(Colors.black87)),
                 ),
               )),
       ]),
@@ -1477,16 +1489,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
         width: double.infinity,
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppPalette.bg(Colors.white),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.black, width: 1.0),
+          border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Icon(icon, color: pPurple, size: 20),
+            Icon(icon, color: AppPalette.fg(pPurple), size: 20),
             const SizedBox(width: 8),
-            Expanded(child: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pPurple))),
+            Expanded(child: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(pPurple)))),
           ]),
           const SizedBox(height: 12),
           child,
@@ -1509,137 +1521,401 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return parts.join(' › ');
   }
 
-  Widget _buildRankingView() {
-    final int idx = _hierarchy.indexOf(_currentLevel);
-    final List<String> below = idx >= 0 && idx < _hierarchy.length - 1 ? _hierarchy.sublist(idx + 1) : <String>[];
-    // Path used to name units: the levels under the one viewed (Group/Book of Life is not part of a unit's address)
-    final List<String> path = below.where((l) => CompLevel.of(l) != CompLevel.group).toList();
+  // =====================================================================
+  // RANKING — pick the unit level to compare and the period to rank over.
+  // Totals come from the database (compile_unit_stats, see 04_ranking.sql),
+  // so even a whole year loads quickly. Shown as a 3D bar chart + table.
+  // =====================================================================
+  static const List<String> _rankPeriods = ['Weekly', 'Monthly', 'Quarterly', 'Half-year', 'Yearly'];
 
-    if (below.isEmpty) {
-      return _analyticsCard(
-        "Ranking",
-        Icons.leaderboard_rounded,
-        Text("There is no level below ${_currentLevel.toLowerCase()} to rank. Choose a higher level in Unit navigation.",
-            style: GoogleFonts.merriweather(fontSize: 12)),
-      );
+  /// Weekly = last 7 days, Monthly = last month, Quarterly = last 3 months,
+  /// Half-year = last 6 months, Yearly = last 12 months (all up to today).
+  (DateTime, DateTime) _rankRange(String period) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (period) {
+      case 'Weekly':
+        return (today.subtract(const Duration(days: 6)), today);
+      case 'Quarterly':
+        return (DateTime(today.year, today.month - 3, today.day + 1), today);
+      case 'Half-year':
+        return (DateTime(today.year, today.month - 6, today.day + 1), today);
+      case 'Yearly':
+        return (DateTime(today.year - 1, today.month, today.day + 1), today);
+      case 'Monthly':
+      default:
+        return (DateTime(today.year, today.month - 1, today.day + 1), today);
     }
-
-    final members = _headcountMembers;
-    final String metric = _hasDatedReports ? "rate" : "records";
-    return Column(children: [
-      for (int i = 0; i < below.length; i++) ...[
-        _rankingSection(below[i], path, members, metric, initiallyExpanded: i == 0),
-        const SizedBox(height: 10),
-      ],
-    ]);
   }
 
-  Widget _rankingSection(String levelName, List<String> path, List<Map<String, dynamic>> members, String metric, {bool initiallyExpanded = false}) {
+  /// Levels that can be compared: every level below the one being viewed.
+  List<String> get _rankLevels {
+    final int idx = _hierarchy.indexOf(_currentLevel);
+    return idx >= 0 && idx < _hierarchy.length - 1 ? _hierarchy.sublist(idx + 1) : <String>[];
+  }
+
+  /// The viewer's member scope as filters for compile_unit_stats
+  /// (same rules as the report query and the headcount).
+  List<Map<String, dynamic>> _memberScopeFilters() {
+    final f = <Map<String, dynamic>>[];
+    void eq(String c, String v) => f.add({'col': c, 'op': 'eq', 'val': v});
+    void neq(String c, String v) => f.add({'col': c, 'op': 'neq', 'val': v});
+    bool ok(String v) => v.isNotEmpty && v != 'N/A' && v != 'Church';
+
+    if (_isGroupLeader) {
+      final t = _groupLeaderCleanDept;
+      eq('department', t);
+      if (t != 'MOU') neq('location', 'MOU');
+      if (t != '새신자') neq('location', 'New Saints');
+      neq('location', 'Church Workers');
+      neq('location', 'Church Main');
+      neq('location', 'Church');
+    } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+      f.add({'col': 'location', 'op': 'in_or_null', 'vals': ['Church', 'Church Workers', 'Church Main']});
+      final od = _roleMetadata?['official_dept_id'];
+      if (od != null) {
+        eq('official_dept_id', od.toString());
+      } else if (ok(widget.dept)) {
+        eq('department', widget.dept);
+      }
+    } else if (!_isChurchWideCompiler) {
+      if (ok(widget.loc)) eq('location', widget.loc);
+      if ((_isSubLocationLeader || _isDeptLeader || _isTeamLeader) && ok(widget.sub)) eq('sub_location', widget.sub);
+      if ((_isDeptLeader || _isTeamLeader) && ok(widget.dept)) eq('department', widget.dept);
+      if (_isTeamLeader && ok(widget.team)) eq('team', widget.team);
+      if (_isCellLeader && widget.userUnit.isNotEmpty) eq('cell_group', widget.userUnit);
+    }
+
+    final loc = _sel('loc');
+    if (loc.isNotEmpty) loc == CompLevel.mou ? eq('department', CompLevel.mou) : eq('location', loc);
+    if (_sel('sub').isNotEmpty) eq('sub_location', _sel('sub'));
+    if (_sel('dept').isNotEmpty) eq('department', _sel('dept'));
+    if (_sel('team').isNotEmpty) eq('team', _sel('team'));
+    return f;
+  }
+
+  Future<void> _loadRanking() async {
+    if (!_hasDatedReports) return; // BB results / growth rank the loaded rows
+    final int seq = ++_rankSeq;
+    setState(() {
+      _rankLoading = true;
+      _rankError = null;
+    });
+    final (from, to) = _rankRange(_rankPeriod);
+    final df = DateFormat('yyyy-MM-dd');
+    final filters = _memberScopeFilters();
+    final String table = _getTargetTable();
+    final String key = 'rank|$table|${df.format(from)}|${df.format(to)}|$_includePending|${jsonEncode(filters)}';
+    try {
+      final rows = await _cached<dynamic>(key, () async {
+        final res = await _supabase.rpc('compile_unit_stats', params: {
+          'p_table': table,
+          'p_from': df.format(from),
+          'p_to': df.format(to),
+          'p_include_pending': _includePending,
+          'p_filters': filters,
+        });
+        return List<dynamic>.from(res as List);
+      });
+      if (!mounted || seq != _rankSeq) return;
+      setState(() {
+        _rankRows = rows;
+        _rankLoading = false;
+      });
+    } catch (e) {
+      debugPrint("Ranking load error: $e");
+      if (!mounted || seq != _rankSeq) return;
+      setState(() {
+        _rankRows = null;
+        _rankLoading = false;
+        _rankError = (e is PostgrestException && (e.code == 'PGRST202' || e.code == '42883'))
+            ? "Ranking needs the database function from 04_ranking.sql. Run that file in the Supabase SQL Editor, then refresh."
+            : "Couldn't load the ranking. ${e is PostgrestException ? e.message : 'Check your connection and try again.'}";
+      });
+    }
+  }
+
+  /// Ranked units for [levelName], from the database totals (or the loaded
+  /// rows for BB results / growth tracking, which have no weekly sessions).
+  List<({String unit, double rate, int done, int reports, int heads, bool reported})> _rankedUnits(String levelName) {
+    final List<String> path = _rankLevels.where((l) => CompLevel.of(l) != CompLevel.group).toList();
     final bool isGroup = CompLevel.of(levelName) == CompLevel.group;
     String keyOf(dynamic r) => isGroup ? CompLevel.unitKey(r, levelName) : _rankKey(r, levelName, path);
 
-    final Map<String, List<dynamic>> logsBy = {};
-    for (final l in _logs) {
-      logsBy.putIfAbsent(keyOf(l), () => []).add(l);
-    }
-    final Map<String, int> headsBy = {};
-    for (final m in members) {
+    final Map<String, int> heads = {};
+    for (final m in _headcountMembers) {
       final k = keyOf(m);
-      headsBy[k] = (headsBy[k] ?? 0) + 1;
+      heads[k] = (heads[k] ?? 0) + 1;
     }
-    final Set<String> units = {...logsBy.keys, ...headsBy.keys}..removeWhere((k) => k.split(' › ').last == 'Other');
 
-    final ranked = units.map((u) {
-      final r = _rateFor(logsBy[u] ?? const [], headsBy[u] ?? 0);
-      return (unit: u, rate: r.rate, done: r.done, heads: headsBy[u] ?? 0, reported: (logsBy[u] ?? const []).isNotEmpty);
+    final Map<String, int> done = {};
+    final Map<String, int> reports = {};
+    int sessions = 0;
+    if (_hasDatedReports) {
+      for (final r in _rankRows ?? const []) {
+        final k = keyOf(r);
+        done[k] = (done[k] ?? 0) + ((r['done'] as num?)?.toInt() ?? 0);
+        reports[k] = (reports[k] ?? 0) + ((r['reports'] as num?)?.toInt() ?? 0);
+        final s = (r['sessions'] as num?)?.toInt() ?? 0;
+        if (s > sessions) sessions = s; // sessions in the period (every unit is expected at each)
+      }
+    } else {
+      for (final l in _logs) {
+        final k = keyOf(l);
+        done[k] = (done[k] ?? 0) + 1;
+        reports[k] = (reports[k] ?? 0) + 1;
+      }
+    }
+
+    final Set<String> units = {...heads.keys, ...done.keys}..removeWhere((k) => k.split(' › ').last == 'Other');
+    final list = units.map((u) {
+      final int d = done[u] ?? 0, rep = reports[u] ?? 0, h = heads[u] ?? 0;
+      double rate;
+      if (!_hasDatedReports) {
+        rate = d.toDouble();
+      } else if (h > 0 && sessions > 0) {
+        rate = (d / (sessions * h) * 100).clamp(0, 100).toDouble();
+      } else {
+        rate = rep > 0 ? d / rep * 100 : 0.0;
+      }
+      return (unit: u, rate: rate, done: d, reports: rep, heads: h, reported: rep > 0);
     }).toList()
       ..sort((a, b) {
-        if (a.reported != b.reported) return a.reported ? -1 : 1; // units without reports go last
+        if (a.reported != b.reported) return a.reported ? -1 : 1; // units without reports last
         return b.rate.compareTo(a.rate);
       });
+    return list;
+  }
 
-    final double maxVal = ranked.fold<double>(1, (m, r) => r.rate > m ? r.rate : m);
+  Widget _buildRankingView() {
+    final levels = _rankLevels;
+    if (levels.isEmpty) {
+      return _analyticsCard(
+        "Ranking",
+        Icons.leaderboard_rounded,
+        Text("There is no level below ${_currentLevel.toLowerCase()} to compare. Choose a higher level in Unit navigation.",
+            style: GoogleFonts.merriweather(fontSize: 12)),
+      );
+    }
+    final String level = levels.contains(_rankLevel) ? _rankLevel! : levels.first;
+    final (from, to) = _rankRange(_rankPeriod);
+    final bool usesRate = _hasDatedReports;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black, width: 1.0),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: initiallyExpanded,
-          leading: Icon(Icons.leaderboard_rounded, color: pPurple),
-          title: Text("${CompLevel.unitTitle(levelName)} ranking",
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: pPurple)),
-          subtitle: Text(
-            ranked.isEmpty
-                ? "No units"
-                : "${ranked.length} units · top: ${ranked.first.unit.split(' › ').last} (${metric == 'rate' ? '${ranked.first.rate.toStringAsFixed(1)}%' : ranked.first.done})",
-            style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.black54),
-          ),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+    Widget picker<T>(String label, T value, List<T> items, String Function(T) text, ValueChanged<T> onChanged) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (ranked.isEmpty)
-              Text("No units at this level in your scope.", style: GoogleFonts.merriweather(fontSize: 11, color: Colors.black54))
-            else
-              ...ranked.asMap().entries.map((e) => _rankRow(e.key + 1, e.value, maxVal, metric)),
+            Text(label, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
+            const SizedBox(height: 4),
+            Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: AppPalette.bg(Colors.white),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<T>(
+                  value: value,
+                  isDense: true,
+                  borderRadius: BorderRadius.circular(10),
+                  items: items
+                      .map((i) => DropdownMenuItem<T>(
+                            value: i,
+                            child: Text(text(i), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) onChanged(v);
+                  },
+                ),
+              ),
+            ),
           ],
+        );
+
+    final controls = Wrap(spacing: 14, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.end, children: [
+      picker<String>("Compare", level, levels, (l) => CompLevel.unitTitle(l), (v) => setState(() => _rankLevel = v)),
+      if (usesRate)
+        picker<String>("Period", _rankPeriod, _rankPeriods, (p) => p, (v) {
+          setState(() => _rankPeriod = v);
+          _loadRanking();
+        }),
+      if (usesRate)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 9),
+          child: Text("${DateFormat('d MMM yyyy').format(from)} – ${DateFormat('d MMM yyyy').format(to)}",
+              style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.black54), fontWeight: FontWeight.w600)),
         ),
-      ),
+    ]);
+
+    Widget body;
+    if (usesRate && _rankLoading && _rankRows == null) {
+      body = const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()));
+    } else if (usesRate && _rankError != null) {
+      body = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Row(children: [
+          Icon(Icons.error_outline, color: AppPalette.fg(Colors.red.shade700)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(_rankError!, style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.red.shade900)))),
+          TextButton(onPressed: _loadRanking, child: const Text("Retry")),
+        ]),
+      );
+    } else {
+      final ranked = _rankedUnits(level);
+      if (ranked.isEmpty) {
+        body = Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Text("No ${CompLevel.unitTitle(level).toLowerCase()} with members or reports in your scope for this period.",
+              style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.black54))),
+        );
+      } else {
+        body = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (_rankLoading) const LinearProgressIndicator(minHeight: 2),
+          const SizedBox(height: 8),
+          _rankBarChart(ranked, usesRate),
+          const SizedBox(height: 16),
+          _rankTable(ranked, usesRate),
+          const SizedBox(height: 8),
+          Text(
+            usesRate
+                ? "Rate = reports marked done ÷ (sessions in the period × ${_isWorkerDuty ? 'workers' : 'members'} in the unit). Units without reports are listed last."
+                : "Ranked by number of records.",
+            style: GoogleFonts.merriweather(fontSize: 9.5, color: AppPalette.fg(Colors.black54), fontStyle: FontStyle.italic),
+          ),
+        ]);
+      }
+    }
+
+    return _analyticsCard(
+      "Ranking — ${CompLevel.unitTitle(level)}${usesRate ? ' · $_rankPeriod' : ''}",
+      Icons.leaderboard_rounded,
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [controls, const SizedBox(height: 14), body]),
     );
   }
 
-  Widget _rankRow(int rank, ({String unit, double rate, int done, int heads, bool reported}) r, double maxVal, String metric) {
-    final parts = r.unit.split(' › ');
-    final String name = parts.last;
-    final String parent = parts.length > 1 ? parts.sublist(0, parts.length - 1).join(' › ') : '';
-    final Color medal = rank == 1
-        ? const Color(0xFFB78103)
-        : rank == 2
-            ? Colors.blueGrey
-            : rank == 3
-                ? Colors.brown.shade400
-                : Colors.black38;
-    final double frac = metric == 'rate' ? r.rate / 100 : (r.rate / maxVal);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(children: [
-        SizedBox(
-          width: 30,
-          child: Text("#$rank", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: medal)),
-        ),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 11.5), overflow: TextOverflow.ellipsis),
-            if (parent.isNotEmpty)
-              Text(parent, style: GoogleFonts.merriweather(fontSize: 9.5, color: Colors.black54), overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 3),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: frac.clamp(0, 1).toDouble(),
-                minHeight: 6,
-                backgroundColor: const Color(0xFFF1F5F9),
-                color: r.reported ? pPurple : Colors.black26,
-              ),
+  Widget _rankBarChart(List<({String unit, double rate, int done, int reports, int heads, bool reported})> ranked, bool usesRate) {
+    final shown = ranked.where((r) => r.reported).take(15).toList();
+    if (shown.isEmpty) {
+      return Text("No reports in this period yet.", style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.black54)));
+    }
+    final double maxValue = usesRate ? 100 : shown.map((r) => r.rate).fold<double>(1, (m, v) => v > m ? v : m);
+    return LayoutBuilder(builder: (context, c) {
+      const double slot = 64; // width per bar incl. gap
+      final double needed = shown.length * slot + 60;
+      final double width = needed > c.maxWidth ? needed : c.maxWidth;
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: width,
+          height: 280,
+          child: CustomPaint(
+            painter: _Bar3DPainter(
+              values: shown.map((r) => r.rate).toList(),
+              labels: shown.map((r) => r.unit.split(' › ').last).toList(),
+              maxValue: maxValue,
+              isPercent: usesRate,
+              baseColor: pPurple,
             ),
-          ]),
+          ),
         ),
-        const SizedBox(width: 10),
-        SizedBox(
-          width: 86,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(
-              !r.reported ? "no reports" : (metric == 'rate' ? "${r.rate.toStringAsFixed(1)}%" : "${r.done}"),
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: r.reported ? Colors.black87 : Colors.black38),
-            ),
-            Text("${r.heads} ${_isWorkerDuty ? 'workers' : 'members'}", style: GoogleFonts.merriweather(fontSize: 9, color: Colors.black54)),
-          ]),
+      );
+    });
+  }
+
+  Widget _rankTable(List<({String unit, double rate, int done, int reports, int heads, bool reported})> ranked, bool usesRate) {
+    TextStyle head = GoogleFonts.merriweather(fontSize: CompStyle.headerFont, fontWeight: FontWeight.w900, color: AppPalette.fg(CompStyle.headerFg));
+    TextStyle cell = GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.black87));
+    Widget hc(String t, {TextAlign a = TextAlign.center}) =>
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9), child: Text(t, style: head, textAlign: a));
+    Widget dc(Widget w) => Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7), child: w);
+
+    final rows = <TableRow>[
+      TableRow(
+        decoration: BoxDecoration(color: AppPalette.bg(CompStyle.headerBg)),
+        children: [
+          hc("Rank"),
+          hc("Unit", a: TextAlign.left),
+          hc(_isWorkerDuty ? "Workers" : "Members"),
+          hc("Reports"),
+          hc(usesRate ? "Done" : "Records"),
+          hc(usesRate ? "Rate" : "Count"),
+        ],
+      ),
+      for (int i = 0; i < ranked.length; i++)
+        TableRow(
+          decoration: BoxDecoration(color: AppPalette.bg(i.isEven ? Colors.white : const Color(0xFFFAF7FF))),
+          children: [
+            dc(Text(ranked[i].reported ? "#${i + 1}" : "–",
+                textAlign: TextAlign.center,
+                style: cell.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.fg(i == 0
+                        ? const Color(0xFFB78103)
+                        : i == 1
+                            ? Colors.blueGrey
+                            : i == 2
+                                ? Colors.brown.shade400
+                                : Colors.black54)))),
+            dc(Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text(ranked[i].unit.split(' › ').last,
+                  style: cell.copyWith(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis, maxLines: 2),
+              if (ranked[i].unit.contains(' › '))
+                Text(ranked[i].unit.split(' › ').sublist(0, ranked[i].unit.split(' › ').length - 1).join(' › '),
+                    style: cell.copyWith(fontSize: 9.5, color: AppPalette.fg(Colors.black54)), overflow: TextOverflow.ellipsis, maxLines: 2),
+            ])),
+            dc(Text("${ranked[i].heads}", textAlign: TextAlign.center, style: cell)),
+            dc(Text("${ranked[i].reports}", textAlign: TextAlign.center, style: cell)),
+            dc(Text("${ranked[i].done}", textAlign: TextAlign.center, style: cell)),
+            dc(Center(
+              child: !ranked[i].reported
+                  ? Text("no reports", style: cell.copyWith(color: AppPalette.fg(Colors.black38), fontSize: 10))
+                  : Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppPalette.bg((usesRate ? CompStyle.rateColor(ranked[i].rate) : pPurple).withValues(alpha: 0.1)),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        usesRate ? "${ranked[i].rate.toStringAsFixed(1)}%" : "${ranked[i].done}",
+                        style: cell.copyWith(fontWeight: FontWeight.w900, color: AppPalette.fg(usesRate ? CompStyle.rateColor(ranked[i].rate) : pPurple)),
+                      ),
+                    ),
+            )),
+          ],
         ),
-      ]),
-    );
+    ];
+
+    return LayoutBuilder(builder: (context, c) {
+      const double minWidth = 560;
+      final table = Table(
+        columnWidths: const {
+          0: FixedColumnWidth(56),
+          1: FlexColumnWidth(3),
+          2: FlexColumnWidth(1.1),
+          3: FlexColumnWidth(1.1),
+          4: FlexColumnWidth(1.1),
+          5: FlexColumnWidth(1.4),
+        },
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        border: TableBorder(
+          horizontalInside: BorderSide(color: AppPalette.line(Colors.black.withValues(alpha: 0.06))),
+          bottom: BorderSide(color: AppPalette.line(Colors.black.withValues(alpha: 0.12))),
+        ),
+        children: rows,
+      );
+      final boxed = ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(border: Border.all(color: AppPalette.line(Colors.black26)), borderRadius: BorderRadius.circular(12)),
+          child: table,
+        ),
+      );
+      if (c.maxWidth >= minWidth) return boxed;
+      return SingleChildScrollView(scrollDirection: Axis.horizontal, child: SizedBox(width: minWidth, child: boxed));
+    });
   }
 
   // ON-PAGE STRATEGIC DASHBOARD (Option B from Supabase compilation_ui_config)
@@ -1685,9 +1961,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black, width: 1.0),
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -1707,30 +1983,30 @@ class _CompilationEngineState extends State<CompilationEngine> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: pPurple.withValues(alpha: 0.1),
+                      color: AppPalette.bg(pPurple.withValues(alpha: 0.1)),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(Icons.analytics_rounded, color: pPurple, size: 22),
+                    child: Icon(Icons.analytics_rounded, color: AppPalette.fg(pPurple), size: 22),
                   ),
                   const SizedBox(width: 10),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("Strategic Performance & Trend Evaluation",
-                          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: pPurple)),
+                          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(pPurple))),
                       Text("$duty • $period Analysis",
-                          style: GoogleFonts.merriweather(fontSize: 11, color: Colors.grey.shade600)),
+                          style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
                     ],
                   ),
                 ],
               ),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: pPurple,
-                  foregroundColor: Colors.white,
+                  backgroundColor: AppPalette.bg(pPurple),
+                  foregroundColor: AppPalette.fg(Colors.white),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  side: const BorderSide(color: Colors.black, width: 1.0),
+                  side: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
                 ),
                 icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
                 label: Text("Download PDF Report", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 11.5)),
@@ -1739,7 +2015,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
             ],
           ),
           const SizedBox(height: 14),
-          const Divider(height: 1, color: Colors.black26),
+          Divider(height: 1, color: AppPalette.bg(Colors.black26)),
           const SizedBox(height: 14),
 
           _reportSection(
@@ -2094,14 +2370,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
     width: double.infinity,
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: Colors.red.shade50,
+      color: AppPalette.bg(Colors.red.shade50),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.red.shade300),
+      border: Border.all(color: AppPalette.line(Colors.red.shade300)),
     ),
     child: Row(children: [
-      Icon(Icons.error_outline, color: Colors.red.shade800),
+      Icon(Icons.error_outline, color: AppPalette.fg(Colors.red.shade800)),
       const SizedBox(width: 10),
-      Expanded(child: Text(_loadError ?? '', style: GoogleFonts.merriweather(fontSize: 12, color: Colors.red.shade900))),
+      Expanded(child: Text(_loadError ?? '', style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.red.shade900)))),
       TextButton(onPressed: _fetchData, child: const Text("Retry")),
     ]),
   );
@@ -2115,15 +2391,15 @@ class _CompilationEngineState extends State<CompilationEngine> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E1),
+        color: AppPalette.bg(const Color(0xFFFFF8E1)),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.amber.shade300),
+        border: Border.all(color: AppPalette.line(Colors.amber.shade300)),
       ),
       child: Text(
         _usesApproval && !_includePending
             ? "No $which for $range in this unit. Reports appear here after their final approval — switch on \"Include pending reports\" to see submitted ones."
             : "No $which for $range in this unit.",
-        style: GoogleFonts.merriweather(fontSize: 12, color: Colors.brown.shade800),
+        style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.brown.shade800)),
       ),
     );
   }
@@ -2133,16 +2409,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.black, width: 1.0),
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       ),
       child: SwitchListTile(
         dense: true,
         title: Text("Include pending reports", style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900)),
         subtitle: Text(
           _includePending ? "Counting approved + pending" : "Counting approved reports only",
-          style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.black54),
+          style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(Colors.black54)),
         ),
         value: _includePending,
         onChanged: (v) {
@@ -2199,9 +2475,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white, 
+        color: AppPalette.bg(Colors.white), 
         borderRadius: BorderRadius.circular(16), 
-        border: Border.all(color: Colors.black, width: 1.0), 
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), 
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))]
       ),
       child: Column(
@@ -2213,30 +2489,30 @@ class _CompilationEngineState extends State<CompilationEngine> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Growth Performance Metrics", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.black87)),
+                  Text("Growth Performance Metrics", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),
                   const SizedBox(height: 2),
-                  Text(_timePeriod, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)),
+                  Text(_timePeriod, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
                 ],
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: pPurple.withValues(alpha: 0.08),
+                  color: AppPalette.bg(pPurple.withValues(alpha: 0.08)),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: pPurple.withValues(alpha: 0.3)),
+                  border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.3))),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.tune_rounded, color: pPurple, size: 14),
+                    Icon(Icons.tune_rounded, color: AppPalette.fg(pPurple), size: 14),
                     const SizedBox(width: 4),
-                    Text(_analyticsMode, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: pPurple)),
+                    Text(_analyticsMode, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          const Divider(height: 1, color: Colors.black12),
+          Divider(height: 1, color: AppPalette.bg(Colors.black12)),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -2265,16 +2541,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.06),
+          color: AppPalette.bg(color.withValues(alpha: 0.06)),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.25), width: 1.0),
+          border: Border.all(color: AppPalette.line(color.withValues(alpha: 0.25)), width: 1.0),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: GoogleFonts.merriweather(fontSize: 10, color: Colors.black87, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(title, style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 2),
-            Text(display, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: color)),
+            Text(display, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(color))),
           ],
         ),
       ),
@@ -2286,22 +2562,22 @@ class _CompilationEngineState extends State<CompilationEngine> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: (color ?? pPurple).withValues(alpha: 0.04),
+        color: AppPalette.bg((color ?? pPurple).withValues(alpha: 0.04)),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: (color ?? pPurple).withValues(alpha: 0.2)),
+        border: Border.all(color: AppPalette.line((color ?? pPurple).withValues(alpha: 0.2))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 16, color: color ?? pPurple),
+              Icon(icon, size: 16, color: AppPalette.fg(color ?? pPurple)),
               const SizedBox(width: 8),
-              Text(title, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: color ?? Colors.black87)),
+              Text(title, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: AppPalette.fg(color ?? Colors.black87))),
             ],
           ),
           const SizedBox(height: 6),
-          Text(body, style: GoogleFonts.merriweather(fontSize: 11.5, color: Colors.black87, height: 1.4)),
+          Text(body, style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.black87), height: 1.4)),
         ],
       ),
     );
@@ -2369,29 +2645,29 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return Container(
       width: isMobile ? null : 310,
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: isMobile ? null : const Border(right: BorderSide(color: Colors.black, width: 1.0)),
+        color: AppPalette.bg(Colors.white),
+        border: isMobile ? null : Border(right: BorderSide(color: AppPalette.line(Colors.black), width: 1.0)),
       ),
       child: Column(children: [
         if (isMobile)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: Colors.black26, width: 1.0)),
+            decoration: BoxDecoration(
+              color: AppPalette.bg(Colors.white),
+              border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black26), width: 1.0)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.tune_rounded, color: pPurple, size: 20),
+                    Icon(Icons.tune_rounded, color: AppPalette.fg(pPurple), size: 20),
                     const SizedBox(width: 8),
-                    Text("Analytics filters", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 16)),
+                    Text("Analytics filters", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 16)),
                   ],
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 22, color: Colors.black87),
+                  icon: Icon(Icons.close_rounded, size: 22, color: AppPalette.fg(Colors.black87)),
                   onPressed: () => Navigator.pop(context),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -2408,14 +2684,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.purple.shade50,
+                    color: AppPalette.bg(Colors.purple.shade50),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.purple.shade200),
+                    border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_getDualModeTitle(), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple)),
+                      Text(_getDualModeTitle(), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
                       const SizedBox(height: 6),
                       Row(
                         children: [
@@ -2431,11 +2707,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: _dualModeIsChurch ? pPurple : Colors.white,
+                                  color: AppPalette.bg(_dualModeIsChurch ? pPurple : Colors.white),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text("Church Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _dualModeIsChurch ? Colors.white : Colors.black87)),
+                                child: Text("Church Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_dualModeIsChurch ? Colors.white : Colors.black87))),
                               ),
                             ),
                           ),
@@ -2452,11 +2728,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: !_dualModeIsChurch ? pPurple : Colors.white,
+                                  color: AppPalette.bg(!_dualModeIsChurch ? pPurple : Colors.white),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text("Dept Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: !_dualModeIsChurch ? Colors.white : Colors.black87)),
+                                child: Text("Dept Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(!_dualModeIsChurch ? Colors.white : Colors.black87))),
                               ),
                             ),
                           ),
@@ -2481,6 +2757,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
               _bentoNavCard("Analytics mode", _modeOptions, _analyticsMode, (v) { 
                 setState(() => _analyticsMode = v);
+                if (v.contains('Ranking')) _loadRanking();
                 if (isMobile) Navigator.pop(context);
               }),
               const SizedBox(height: 10),
@@ -2495,10 +2772,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
             width: double.infinity,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF3E5F5), 
-                foregroundColor: pPurple, 
+                backgroundColor: AppPalette.bg(const Color(0xFFF3E5F5)), 
+                foregroundColor: AppPalette.fg(pPurple), 
                 elevation: 0, 
-                side: const BorderSide(color: Colors.black, width: 1.0),
+                side: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
                 padding: const EdgeInsets.symmetric(vertical: 16), 
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
               ),
@@ -2517,9 +2794,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
       margin: const EdgeInsets.only(bottom: 2),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white, 
+        color: AppPalette.bg(Colors.white), 
         borderRadius: BorderRadius.circular(15), 
-        border: Border.all(color: Colors.black, width: 1.0),
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))]
       ),
       child: Column(
@@ -2528,11 +2805,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Unit navigation", style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.black87)),
-              Icon(Icons.tune_rounded, size: 16, color: pPurple),
+              Text("Unit navigation", style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),
+              Icon(Icons.tune_rounded, size: 16, color: AppPalette.fg(pPurple)),
             ],
           ),
-          const Divider(height: 16, color: Colors.black26),
+          Divider(height: 16, color: AppPalette.bg(Colors.black26)),
           ..._hierarchy.map((levelName) {
             bool isSelected = _currentLevel == levelName;
             return Column(
@@ -2550,15 +2827,15 @@ class _CompilationEngineState extends State<CompilationEngine> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isSelected ? pPurple : const Color(0xFFFBFBFE),
+                        color: AppPalette.bg(isSelected ? pPurple : const Color(0xFFFBFBFE)),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
                         children: [
-                          Icon(isSelected ? Icons.check_circle : Icons.circle_outlined, color: isSelected ? Colors.white : Colors.grey, size: 14),
+                          Icon(isSelected ? Icons.check_circle : Icons.circle_outlined, color: AppPalette.fg(isSelected ? Colors.white : Colors.grey), size: 14),
                           const SizedBox(width: 8),
-                          Expanded(child: Text(levelName, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: isSelected ? Colors.white : Colors.black87))),
-                          if (isSelected) const Icon(Icons.arrow_drop_down, color: Colors.white, size: 16),
+                          Expanded(child: Text(levelName, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(isSelected ? Colors.white : Colors.black87)))),
+                          if (isSelected) Icon(Icons.arrow_drop_down, color: AppPalette.fg(Colors.white), size: 16),
                         ],
                       ),
                     ),
@@ -2581,7 +2858,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: pPurple)),
+          Text(label, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
           const SizedBox(height: 3),
           _unitDropdown(pickList, current, onSelect),
           const SizedBox(height: 6),
@@ -2652,13 +2929,13 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   Widget _infoText(String text) => Padding(
     padding: const EdgeInsets.only(left: 14, bottom: 8, top: 2),
-    child: Text(text, style: GoogleFonts.merriweather(fontSize: 10, color: pPurple, fontStyle: FontStyle.italic)),
+    child: Text(text, style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(pPurple), fontStyle: FontStyle.italic)),
   );
 
   Widget _pickerContainer(List<Widget> children) => Container(
     margin: const EdgeInsets.only(left: 14, right: 4, bottom: 8),
     padding: const EdgeInsets.all(8),
-    decoration: BoxDecoration(color: const Color(0xFFF3E5F5), borderRadius: BorderRadius.circular(8)),
+    decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF3E5F5)), borderRadius: BorderRadius.circular(8)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
   );
 
@@ -2666,20 +2943,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
     // Duplicate names (e.g. the same team name in two departments) crash a DropdownButton
     final List<String> items = rawItems.toSet().toList();
     if (items.isEmpty) {
-      return Text("No units available in this scope", style: GoogleFonts.merriweather(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic));
+      return Text("No units available in this scope", style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(Colors.grey), fontStyle: FontStyle.italic));
     }
     String val = (selected != null && items.contains(selected)) ? selected : items.first;
     return Container(
       height: 32,
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.purple.shade200)),
+      decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppPalette.line(Colors.purple.shade200))),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           isDense: true,
           isExpanded: true,
           value: val,
-          items: items.map((u) => DropdownMenuItem(value: u, child: Text(u, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87)))).toList(),
+          items: items.map((u) => DropdownMenuItem(value: u, child: Text(u, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))))).toList(),
           onChanged: (v) { if (v != null) onChanged(v); },
         ),
       ),
@@ -2731,7 +3008,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
               rangePickerHeaderBackgroundColor: pPurple,
               rangePickerHeaderForegroundColor: Colors.white,
               rangeSelectionBackgroundColor: pPurple.withValues(alpha: 0.12),
-              todayBorder: BorderSide(color: pPurple, width: 1.2),
+              todayBorder: BorderSide(color: AppPalette.line(pPurple), width: 1.2),
               dayShape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
               rangePickerShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -2739,7 +3016,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
             textTheme: GoogleFonts.merriweatherTextTheme(base.textTheme),
             textButtonTheme: TextButtonThemeData(
               style: TextButton.styleFrom(
-                foregroundColor: pPurple,
+                foregroundColor: AppPalette.fg(pPurple),
                 textStyle: GoogleFonts.merriweather(fontWeight: FontWeight.bold),
               ),
             ),
@@ -2767,21 +3044,21 @@ class _CompilationEngineState extends State<CompilationEngine> {
     margin: const EdgeInsets.only(bottom: 2),
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: Colors.white, 
+      color: AppPalette.bg(Colors.white), 
       borderRadius: BorderRadius.circular(15), 
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))]
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(t, style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.black87)),
-      const Divider(height: 16, color: Colors.black26),
+      Text(t, style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),
+      Divider(height: 16, color: AppPalette.bg(Colors.black26)),
       ...items.map((i) => Padding(padding: const EdgeInsets.only(bottom: 3), child: InkWell(onTap: () => onS(i), child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: cur == i ? pPurple : const Color(0xFFFBFBFE), borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(color: AppPalette.bg(cur == i ? pPurple : const Color(0xFFFBFBFE)), borderRadius: BorderRadius.circular(10)),
         child: Row(children: [
-          Icon(cur == i ? Icons.check_circle : Icons.circle_outlined, color: cur == i ? Colors.white : Colors.grey, size: 14),
+          Icon(cur == i ? Icons.check_circle : Icons.circle_outlined, color: AppPalette.fg(cur == i ? Colors.white : Colors.grey), size: 14),
           const SizedBox(width: 8),
-          Expanded(child: Text(_navLabel(i), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: cur == i ? Colors.white : Colors.black87))),
+          Expanded(child: Text(_navLabel(i), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(cur == i ? Colors.white : Colors.black87)))),
         ]),
       ))))
     ]),
@@ -2790,9 +3067,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
   Widget _buildAnalysisBox() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), 
     decoration: BoxDecoration(
-      color: Colors.white, 
+      color: AppPalette.bg(Colors.white), 
       borderRadius: BorderRadius.circular(16), 
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))]
     ),
     child: Column(
@@ -2801,11 +3078,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
+            Expanded(child: Text(
               _getFindingsTitle(), 
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: Colors.black87, fontSize: 14)
-            ),
-            Icon(Icons.rate_review_outlined, color: pPurple, size: 18),
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87), fontSize: 14), maxLines: 2, overflow: TextOverflow.ellipsis)),
+            Icon(Icons.rate_review_outlined, color: AppPalette.fg(pPurple), size: 18),
           ],
         ),
         const SizedBox(height: 10),
@@ -2816,21 +3092,21 @@ class _CompilationEngineState extends State<CompilationEngine> {
           style: GoogleFonts.merriweather(fontSize: 13), 
           decoration: InputDecoration(
             hintText: "Enter analysis, unit status observations, or remarks here...", 
-            hintStyle: GoogleFonts.merriweather(fontSize: 12, color: Colors.black38),
+            hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.black38)),
             filled: true, 
-            fillColor: const Color(0xFFFBFBFE), 
+            fillColor: AppPalette.bg(const Color(0xFFFBFBFE)), 
             contentPadding: const EdgeInsets.all(12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10), 
-              borderSide: const BorderSide(color: Colors.black38, width: 1.0),
+              borderSide: BorderSide(color: AppPalette.line(Colors.black38), width: 1.0),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10), 
-              borderSide: const BorderSide(color: Colors.black26, width: 1.0),
+              borderSide: BorderSide(color: AppPalette.line(Colors.black26), width: 1.0),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10), 
-              borderSide: BorderSide(color: pPurple, width: 1.5),
+              borderSide: BorderSide(color: AppPalette.line(pPurple), width: 1.5),
             ),
           ),
         ),
@@ -2839,10 +3115,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
           alignment: Alignment.centerRight, 
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: pPurple, 
-              foregroundColor: Colors.white, 
+              backgroundColor: AppPalette.bg(pPurple), 
+              foregroundColor: AppPalette.fg(Colors.white), 
               elevation: 0,
-              side: const BorderSide(color: Colors.black, width: 1.0),
+              side: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ), 
@@ -2856,4 +3132,104 @@ class _CompilationEngineState extends State<CompilationEngine> {
       ],
     ),
   );
+}
+
+
+/// 3D bar chart for the Ranking view: each bar has a front face, a lighter
+/// top and a darker side. Gold, silver and bronze for the top three.
+class _Bar3DPainter extends CustomPainter {
+  final List<double> values;
+  final List<String> labels;
+  final double maxValue;
+  final bool isPercent;
+  final Color baseColor;
+
+  _Bar3DPainter({
+    required this.values,
+    required this.labels,
+    required this.maxValue,
+    required this.isPercent,
+    required this.baseColor,
+  });
+
+  static const List<Color> _medals = [Color(0xFFD4A017), Color(0xFF90A4AE), Color(0xFFB0764A)];
+
+  void _text(Canvas canvas, String s, Offset at, double size, Color color,
+      {bool bold = false, bool center = false, bool alignRight = false, bool vCenter = false, bool above = false, double maxWidth = 120, int maxLines = 1}) {
+    final tp = TextPainter(
+      text: TextSpan(text: s, style: GoogleFonts.merriweather(fontSize: size, color: AppPalette.fg(color), fontWeight: bold ? FontWeight.w900 : FontWeight.w600)),
+      textDirection: TextDirection.ltr,
+      textAlign: center ? TextAlign.center : (alignRight ? TextAlign.right : TextAlign.left),
+      maxLines: maxLines,
+      ellipsis: '…',
+    )..layout(maxWidth: maxWidth);
+    double dx = at.dx, dy = at.dy;
+    if (center) dx -= tp.width / 2;
+    if (alignRight) dx -= tp.width;
+    if (vCenter) dy -= tp.height / 2;
+    if (above) dy -= tp.height;
+    tp.paint(canvas, Offset(dx, dy));
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const double left = 46, bottom = 46, top = 30, right = 18;
+    final double chartH = size.height - bottom - top;
+    final double chartW = size.width - left - right;
+    final int n = values.length;
+    if (n == 0 || chartH <= 0 || chartW <= 0) return;
+    final double slot = chartW / n;
+    final double barW = (slot * 0.5).clamp(14.0, 44.0).toDouble();
+    final double depth = barW * 0.32;
+    final double baseY = top + chartH;
+
+    // Grid lines and value axis
+    final grid = Paint()
+      ..color = const Color(0x14000000)
+      ..strokeWidth = 1;
+    for (int i = 0; i <= 4; i++) {
+      final y = baseY - chartH * i / 4;
+      canvas.drawLine(Offset(left, y), Offset(size.width - right, y), grid);
+      final v = maxValue * i / 4;
+      _text(canvas, isPercent ? "${v.round()}%" : "${v.round()}", Offset(left - 6, y), 9, const Color(0x99000000),
+          alignRight: true, vCenter: true, maxWidth: 40);
+    }
+    canvas.drawLine(Offset(left, baseY), Offset(size.width - right, baseY), Paint()..color = const Color(0x55000000)..strokeWidth = 1.2);
+
+    for (int i = 0; i < n; i++) {
+      final double v = values[i].clamp(0.0, maxValue).toDouble();
+      final double h = maxValue > 0 ? chartH * v / maxValue : 0;
+      final double x = left + slot * i + (slot - barW - depth) / 2;
+      final double yTop = baseY - h;
+      final Color c = i < 3 ? _medals[i] : Color.lerp(baseColor, Colors.white, (i / n) * 0.45)!;
+
+      // Shadow on the floor
+      canvas.drawRect(Rect.fromLTWH(x + depth * 0.6, baseY - 2, barW, 4), Paint()..color = const Color(0x18000000));
+      // Front, top and side faces
+      canvas.drawRect(Rect.fromLTWH(x, yTop, barW, h), Paint()..color = c);
+      final topFace = Path()
+        ..moveTo(x, yTop)
+        ..lineTo(x + depth, yTop - depth)
+        ..lineTo(x + barW + depth, yTop - depth)
+        ..lineTo(x + barW, yTop)
+        ..close();
+      canvas.drawPath(topFace, Paint()..color = Color.lerp(c, Colors.white, 0.38)!);
+      final sideFace = Path()
+        ..moveTo(x + barW, yTop)
+        ..lineTo(x + barW + depth, yTop - depth)
+        ..lineTo(x + barW + depth, baseY - depth)
+        ..lineTo(x + barW, baseY)
+        ..close();
+      canvas.drawPath(sideFace, Paint()..color = Color.lerp(c, Colors.black, 0.28)!);
+
+      final double cx = x + (barW + depth) / 2;
+      _text(canvas, isPercent ? "${values[i].toStringAsFixed(1)}%" : values[i].round().toString(), Offset(cx, yTop - depth - 3), 9.5,
+          const Color(0xDD000000), bold: true, center: true, above: true, maxWidth: slot + 10);
+      _text(canvas, labels[i], Offset(cx, baseY + 6), 9, const Color(0xDD000000), center: true, maxWidth: slot - 4, maxLines: 2);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _Bar3DPainter old) =>
+      old.values != values || old.labels != labels || old.maxValue != maxValue || old.isPercent != isPercent;
 }

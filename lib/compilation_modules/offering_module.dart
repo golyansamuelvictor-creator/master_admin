@@ -8,6 +8,8 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/compilation_style.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class _OfferingUnitStat {
   final String unitName;
@@ -332,24 +334,43 @@ class _OfferingModuleState extends State<OfferingModule> {
         ),
       );
 
+  // Fills the card width, keeping about 1 cm free on each side (columns grow
+  // in proportion); on narrow screens the table scrolls sideways instead.
+  Widget _fitTable(Map<int, double> widths, Widget Function(Map<int, TableColumnWidth> cols) build) => LayoutBuilder(
+        builder: (context, constraints) {
+          final double natural = widths.values.fold<double>(0, (a, b) => a + b);
+          final double avail = constraints.maxWidth.isFinite ? constraints.maxWidth - 2 * CompStyle.tableSideMargin : natural;
+          final double scale = avail > natural ? avail / natural : 1.0;
+          final Map<int, TableColumnWidth> cols = widths.map((k, v) => MapEntry(k, FixedColumnWidth(v * scale)));
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: scale > 1.0 ? CompStyle.tableSideMargin : 0),
+              child: build(cols),
+            ),
+          );
+        },
+      );
+
   Widget _buildOfferingTable(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) {
     const double rh = 24.0;
     const double hh = 28.0;
 
-    final Map<int, TableColumnWidth> colWidths = {
-      0: const FixedColumnWidth(130),
-      1: const FixedColumnWidth(65),
-      2: const FixedColumnWidth(65),
-      3: const FixedColumnWidth(55),
-      4: const FixedColumnWidth(50),
-      5: const FixedColumnWidth(55),
-      6: const FixedColumnWidth(50),
-      7: const FixedColumnWidth(55),
-      8: const FixedColumnWidth(50),
-      9: const FixedColumnWidth(55),
-      10: const FixedColumnWidth(50),
-      11: const FixedColumnWidth(55),
-      12: const FixedColumnWidth(50),
+    final Map<int, double> colWidths = {
+      0: 130,
+      1: 65,
+      2: 65,
+      3: 55,
+      4: 50,
+      5: 55,
+      6: 50,
+      7: 55,
+      8: 50,
+      9: 55,
+      10: 50,
+      11: 55,
+      12: 50,
     };
 
     List<String> headers = [
@@ -357,15 +378,14 @@ class _OfferingModuleState extends State<OfferingModule> {
       "Saints", "Givers", "Tithe", "%", "Wkly", "%", "Thks", "%", "Const", "%", "Donat", "%"
     ];
 
-    return _centeredScroll(
-      child: Table(
+    return _fitTable(colWidths, (cols) => Table(
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-        columnWidths: colWidths,
+        columnWidths: cols,
         border: TableBorder.all(color: Colors.black87, width: 1.0),
         children: [
           // Header Row
           TableRow(
-            decoration: const BoxDecoration(color: Color(0xFFF3E5F5)),
+            decoration: BoxDecoration(color: AppPalette.bg(CompStyle.headerBg)),
             children: headers.map((title) {
               return SizedBox(
                 height: hh,
@@ -375,8 +395,8 @@ class _OfferingModuleState extends State<OfferingModule> {
                     child: Text(
                       title,
                       style: GoogleFonts.merriweather(
-                        color: pPurple,
-                        fontSize: 9.5,
+                        color: AppPalette.fg(CompStyle.headerFg),
+                        fontSize: CompStyle.headerFont,
                         fontWeight: FontWeight.bold,
                       ),
                       textAlign: TextAlign.center,
@@ -390,7 +410,7 @@ class _OfferingModuleState extends State<OfferingModule> {
 
           // General Total Summary Row
           TableRow(
-            decoration: const BoxDecoration(color: Color(0xFFEDE7F6)),
+            decoration: BoxDecoration(color: AppPalette.bg(CompStyle.totalBg)),
             children: [
               _cellText("General total", 26.0, isBold: true, color: pPurple),
               _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
@@ -417,7 +437,7 @@ class _OfferingModuleState extends State<OfferingModule> {
             final rowColor = isEven ? Colors.white : const Color(0xFFF8FAFC);
 
             return TableRow(
-              decoration: BoxDecoration(color: rowColor),
+              decoration: BoxDecoration(color: AppPalette.bg(rowColor)),
               children: [
                 _cellText(u.unitName, rh, isBold: true),
                 _cellText("${u.totalSaints}", rh),
@@ -460,12 +480,12 @@ class _OfferingModuleState extends State<OfferingModule> {
                   style: GoogleFonts.merriweather(
                     fontSize: 11,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    color: isSelected ? Colors.white : Colors.black87,
+                    color: AppPalette.fg(isSelected ? Colors.white : Colors.black87),
                   ),
                 ),
                 selected: isSelected,
-                selectedColor: pPurple,
-                backgroundColor: const Color(0xFFF1F5F9),
+                selectedColor: AppPalette.bg(pPurple),
+                backgroundColor: AppPalette.bg(const Color(0xFFF1F5F9)),
                 visualDensity: VisualDensity.compact,
                 onSelected: (selected) {
                   if (selected) {
@@ -540,10 +560,9 @@ class _OfferingModuleState extends State<OfferingModule> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
+              Expanded(child: Text(
                 "Displaying: $_selectedChartUnit",
-                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
-              ),
+                style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])), maxLines: 2, overflow: TextOverflow.ellipsis)),
               Wrap(
                 spacing: 10,
                 runSpacing: 4,
@@ -570,15 +589,15 @@ class _OfferingModuleState extends State<OfferingModule> {
                 drawVerticalLine: false,
                 horizontalInterval: 20,
                 getDrawingHorizontalLine: (val) => FlLine(
-                  color: Colors.grey.withValues(alpha: 0.18),
+                  color: AppPalette.line(Colors.grey.withValues(alpha: 0.18)),
                   strokeWidth: 1,
                 ),
               ),
               borderData: FlBorderData(
                 show: true,
-                border: const Border(
-                  bottom: BorderSide(color: Colors.black45, width: 1),
-                  left: BorderSide(color: Colors.black45, width: 1),
+                border: Border(
+                  bottom: BorderSide(color: AppPalette.line(Colors.black45), width: 1),
+                  left: BorderSide(color: AppPalette.line(Colors.black45), width: 1),
                 ),
               ),
               titlesData: FlTitlesData(
@@ -589,7 +608,7 @@ class _OfferingModuleState extends State<OfferingModule> {
                     interval: 20,
                     getTitlesWidget: (v, m) => Text(
                       "${v.toInt()}%",
-                      style: GoogleFonts.merriweather(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                      style: GoogleFonts.merriweather(fontSize: 9, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey)),
                     ),
                   ),
                 ),
@@ -606,7 +625,7 @@ class _OfferingModuleState extends State<OfferingModule> {
                         child: Text(
                           periodLabels[idx],
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+                          style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
                         ),
                       );
                     },
@@ -632,10 +651,10 @@ class _OfferingModuleState extends State<OfferingModule> {
   // --- UI: RANKING LIST ---
   Widget _buildRankingList(List<_OfferingUnitStat> stats, bool isTop) {
     if (stats.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(20),
-          child: Text("No ranking data found", style: TextStyle(color: Colors.grey)),
+          child: Text("No ranking data found", style: TextStyle(color: AppPalette.fg(Colors.grey))),
         ),
       );
     }
@@ -653,16 +672,16 @@ class _OfferingModuleState extends State<OfferingModule> {
         return ListTile(
           dense: true,
           leading: CircleAvatar(
-            backgroundColor: isTop ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12),
+            backgroundColor: AppPalette.bg(isTop ? Colors.green.withValues(alpha: 0.12) : Colors.red.withValues(alpha: 0.12)),
             radius: 16,
             child: Text(
               "#$rank",
-              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+              style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(color)),
             ),
           ),
           title: Row(
             children: [
-              Icon(isTop ? Icons.payments_rounded : Icons.money_off_rounded, size: 14, color: color),
+              Icon(isTop ? Icons.payments_rounded : Icons.money_off_rounded, size: 14, color: AppPalette.fg(color)),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(item.unitName, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
@@ -671,11 +690,11 @@ class _OfferingModuleState extends State<OfferingModule> {
           ),
           subtitle: Text(
             "Saints: ${item.totalSaints} | Givers: ${item.givers} (Tithe: ${item.tithe}, Wkly: ${item.weekly})",
-            style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+            style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.blueGrey)),
           ),
           trailing: Text(
             "${item.giversPct.toStringAsFixed(1)}%",
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: color),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(color)),
           ),
         );
       }).toList(),
@@ -797,7 +816,7 @@ class _OfferingModuleState extends State<OfferingModule> {
           text,
           style: GoogleFonts.merriweather(
             fontSize: 9.5,
-            color: color ?? Colors.black87,
+            color: AppPalette.fg(color ?? Colors.black87),
             fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
           ),
           overflow: TextOverflow.ellipsis,
@@ -815,7 +834,7 @@ class _OfferingModuleState extends State<OfferingModule> {
           "${pct.toStringAsFixed(0)}%",
           style: GoogleFonts.merriweather(
             fontSize: 9.0,
-            color: color,
+            color: AppPalette.fg(color),
             fontWeight: isBold ? FontWeight.w900 : FontWeight.bold,
           ),
         ),
@@ -842,11 +861,11 @@ class _OfferingModuleState extends State<OfferingModule> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: AppPalette.bg(color), shape: BoxShape.circle)),
         const SizedBox(width: 4),
         Text(
           label,
-          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.blueGrey[800]),
+          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
         ),
       ],
     );
@@ -856,9 +875,9 @@ class _OfferingModuleState extends State<OfferingModule> {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.black, width: 1.0),
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -872,8 +891,8 @@ class _OfferingModuleState extends State<OfferingModule> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.black12, width: 1.0)),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black12), width: 1.0)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -884,18 +903,18 @@ class _OfferingModuleState extends State<OfferingModule> {
                     style: GoogleFonts.merriweather(
                       fontWeight: FontWeight.w900,
                       fontSize: 13,
-                      color: pPurple,
+                      color: AppPalette.fg(pPurple),
                     ),
                   ),
                 ),
                 if (onPdf != null)
                   IconButton(
-                    icon: const Icon(Icons.picture_as_pdf_outlined, size: 20, color: pPurple),
+                    icon: Icon(Icons.picture_as_pdf_outlined, size: 20, color: AppPalette.fg(pPurple)),
                     tooltip: 'Export PDF Report',
                     onPressed: onPdf,
                   ),
                 IconButton(
-                  icon: const Icon(Icons.open_in_full_rounded, size: 19, color: Colors.blueGrey),
+                  icon: Icon(Icons.open_in_full_rounded, size: 19, color: AppPalette.fg(Colors.blueGrey)),
                   tooltip: 'Fullscreen View',
                   onPressed: () => _showFull(context, title, content),
                 ),
@@ -914,10 +933,10 @@ class _OfferingModuleState extends State<OfferingModule> {
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (context) => Scaffold(
-          backgroundColor: const Color(0xFFF8FAFC),
+          backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
           appBar: AppBar(
-            backgroundColor: pPurple,
-            foregroundColor: Colors.white,
+            backgroundColor: AppPalette.bg(pPurple),
+            foregroundColor: AppPalette.fg(Colors.white),
             title: Text(title, style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold)),
             centerTitle: true,
           ),

@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class CommunicationScreen extends StatefulWidget {
   final String userEmail;
@@ -61,7 +62,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
       bool isChatSelected = selectedChat != null;
 
       return Scaffold(
-        backgroundColor: tgBackground,
+        backgroundColor: AppPalette.bg(tgBackground),
         body: Row(
           children: [
             if (!isMobile) _buildOutstandingSidebar(),
@@ -101,7 +102,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     return Container(
       width: 90,
       padding: const EdgeInsets.symmetric(vertical: 20),
-      color: const Color(0xFF1D2733),
+      color: AppPalette.bg(const Color(0xFF1D2733)),
       child: FutureBuilder(
         future: supabase.from('chat_folders').select().order('sort_order'),
         builder: (context, snapshot) {
@@ -109,7 +110,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
           final folders = snapshot.data!;
           return Column(
             children: [
-              IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white54, size: 20), onPressed: () => Navigator.pop(context)),
+              IconButton(icon: Icon(Icons.arrow_back_ios_new, color: AppPalette.fg(Colors.white54), size: 20), onPressed: () => Navigator.pop(context)),
               const SizedBox(height: 30),
               ...folders.map((f) => _sidebarCard(_getIcon(f['icon_name']), f['name'], f['name'])),
               const Spacer(),
@@ -130,16 +131,16 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
         margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
         height: 65, width: 65,
         decoration: BoxDecoration(
-          color: isSel ? pPurple : Colors.white.withValues(alpha: 0.05),
+          color: AppPalette.bg(isSel ? pPurple : Colors.white.withValues(alpha: 0.05)),
           borderRadius: BorderRadius.circular(18),
           boxShadow: isSel ? [BoxShadow(color: pPurple.withValues(alpha: 0.3), blurRadius: 10)] : null,
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: isSel ? Colors.white : Colors.white60, size: 26),
+            Icon(icon, color: AppPalette.fg(isSel ? Colors.white : Colors.white60), size: 26),
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(color: isSel ? Colors.white : Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
+            Text(label, style: TextStyle(color: AppPalette.fg(isSel ? Colors.white : Colors.white54), fontSize: 9, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
@@ -172,12 +173,12 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
                       padding: const EdgeInsets.all(3),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: isAddButton ? Colors.grey : Colors.greenAccent, width: 2.5),
+                        border: Border.all(color: AppPalette.line(isAddButton ? Colors.grey : Colors.greenAccent), width: 2.5),
                       ),
                       child: CircleAvatar(
                         radius: 28,
-                        backgroundColor: Colors.white,
-                        child: Icon(isAddButton ? Icons.add : Icons.person, color: Colors.grey),
+                        backgroundColor: AppPalette.bg(Colors.white),
+                        child: Icon(isAddButton ? Icons.add : Icons.person, color: AppPalette.fg(Colors.grey)),
                       ),
                     ),
                     const SizedBox(height: 5),
@@ -208,17 +209,17 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
               decoration: BoxDecoration(
-                color: isSel ? pPurple : Colors.white,
+                color: AppPalette.bg(isSel ? pPurple : Colors.white),
                 borderRadius: BorderRadius.circular(15),
                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 4))],
               ),
               child: ListTile(
                 onTap: () => setState(() => selectedChat = rooms[index]),
-                leading: CircleAvatar(backgroundColor: isSel ? Colors.white24 : tgBlue.withValues(alpha: 0.1), 
-                  child: Icon(Icons.groups_rounded, color: isSel ? Colors.white : tgBlue)),
-                title: Text(rooms[index]['name'], style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: isSel ? Colors.white : Colors.black87, fontSize: 14)),
-                subtitle: Text(rooms[index]['last_message'] ?? "No messages", style: TextStyle(color: isSel ? Colors.white70 : Colors.grey, fontSize: 11)),
-                trailing: const Text("12:45", style: TextStyle(color: Colors.grey, fontSize: 10)),
+                leading: CircleAvatar(backgroundColor: AppPalette.bg(isSel ? Colors.white24 : tgBlue.withValues(alpha: 0.1)), 
+                  child: Icon(Icons.groups_rounded, color: AppPalette.fg(isSel ? Colors.white : tgBlue))),
+                title: Text(rooms[index]['name'], style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(isSel ? Colors.white : Colors.black87), fontSize: 14)),
+                subtitle: Text(rooms[index]['last_message'] ?? "No messages", style: TextStyle(color: AppPalette.fg(isSel ? Colors.white70 : Colors.grey), fontSize: 11)),
+                trailing: Text("12:45", style: TextStyle(color: AppPalette.fg(Colors.grey), fontSize: 10)),
               ),
             );
           },
@@ -230,7 +231,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   // --- 4. CHAT AREA (RESTORED HEADER ICONS) ---
   Widget _buildChatArea(bool isMobile) {
     return Container(
-      color: const Color(0xFFE7EBF0),
+      color: AppPalette.bg(const Color(0xFFE7EBF0)),
       child: Column(
         children: [
           _buildChatHeader(isMobile),
@@ -257,17 +258,17 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   Widget _buildChatHeader(bool isMobile) {
     return Container(
       padding: const EdgeInsets.fromLTRB(15, 45, 15, 15),
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       child: Row(
         children: [
           if (isMobile) IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => setState(() => selectedChat = null)),
-          const CircleAvatar(backgroundColor: tgBlue, child: Icon(Icons.person, color: Colors.white)),
+          CircleAvatar(backgroundColor: AppPalette.bg(tgBlue), child: Icon(Icons.person, color: AppPalette.fg(Colors.white))),
           const SizedBox(width: 15),
           Text(selectedChat!['name'], style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16)),
           const Spacer(),
-          const Icon(Icons.videocam_outlined, color: Colors.grey), // RESTORED
+          Icon(Icons.videocam_outlined, color: AppPalette.fg(Colors.grey)), // RESTORED
           const SizedBox(width: 15),
-          const Icon(Icons.search, color: Colors.grey), // RESTORED
+          Icon(Icons.search, color: AppPalette.fg(Colors.grey)), // RESTORED
         ],
       ),
     );
@@ -279,7 +280,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: me ? const Color(0xFFEFFDDE) : Colors.white, 
+        color: AppPalette.bg(me ? const Color(0xFFEFFDDE) : Colors.white), 
         borderRadius: BorderRadius.circular(15),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2)],
       ),
@@ -291,13 +292,13 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   Widget _buildInputArea() {
     return Container(
       padding: const EdgeInsets.all(15),
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       child: Row(
         children: [
-          const Icon(Icons.sentiment_satisfied_alt_rounded, color: Colors.grey),
+          Icon(Icons.sentiment_satisfied_alt_rounded, color: AppPalette.fg(Colors.grey)),
           const SizedBox(width: 15),
           Expanded(child: TextField(controller: _msgController, onSubmitted: (_) => _sendMessage(), decoration: InputDecoration(hintText: "Message", border: InputBorder.none, hintStyle: GoogleFonts.merriweather(fontSize: 14)))),
-          const Icon(Icons.attach_file_rounded, color: Colors.grey), // RESTORED
+          Icon(Icons.attach_file_rounded, color: AppPalette.fg(Colors.grey)), // RESTORED
           const SizedBox(width: 15),
           GestureDetector( // RESTORED: Audio/Video Mode circle toggle
             onTap: () {
@@ -305,8 +306,8 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
               else setState(() => isAudioMode = !isAudioMode);
             },
             child: CircleAvatar(
-              backgroundColor: tgBlue,
-              child: Icon(_msgController.text.isNotEmpty ? Icons.send_rounded : (isAudioMode ? Icons.mic : Icons.videocam), color: Colors.white, size: 20),
+              backgroundColor: AppPalette.bg(tgBlue),
+              child: Icon(_msgController.text.isNotEmpty ? Icons.send_rounded : (isAudioMode ? Icons.mic : Icons.videocam), color: AppPalette.fg(Colors.white), size: 20),
             ),
           ),
         ],
@@ -318,13 +319,13 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   Widget _buildRightBentoProfile() {
     return Container(
       padding: const EdgeInsets.all(25),
-      decoration: const BoxDecoration(color: Colors.white, border: Border(left: BorderSide(color: Colors.black12))),
+      decoration: BoxDecoration(color: AppPalette.bg(Colors.white), border: Border(left: BorderSide(color: AppPalette.line(Colors.black12)))),
       child: Column(
         children: [
-          const CircleAvatar(radius: 60, backgroundColor: lightPurple, child: Icon(Icons.person, size: 60, color: Colors.grey)),
+          CircleAvatar(radius: 60, backgroundColor: AppPalette.bg(lightPurple), child: Icon(Icons.person, size: 60, color: AppPalette.fg(Colors.grey))),
           const SizedBox(height: 20),
           Text(selectedChat!['name'], style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 20)),
-          Text(selectedChat!['description'] ?? widget.userEmail, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          Text(selectedChat!['description'] ?? widget.userEmail, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey))),
           const Divider(height: 50),
           _bentoItem("Privacy & Security", [
             _pItem(Icons.visibility_off, "Last Seen", "My Contacts"),
@@ -341,15 +342,15 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     );
   }
 
-  Widget _mBox(Color c) => Container(width: 60, height: 60, decoration: BoxDecoration(color: c.withValues(alpha: 0.2), borderRadius: const BorderRadius.all(Radius.circular(10))));
+  Widget _mBox(Color c) => Container(width: 60, height: 60, decoration: BoxDecoration(color: AppPalette.bg(c.withValues(alpha: 0.2)), borderRadius: const BorderRadius.all(Radius.circular(10))));
 
-  Widget _bentoItem(String t, List<Widget> c) => Container(padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: const Color(0xFFFBFBFE), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.black.withValues(alpha: 0.05))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blueGrey)), const SizedBox(height: 10), ...c]));
-  Widget _pItem(IconData i, String t, String v) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Icon(i, size: 14, color: tgBlue), const SizedBox(width: 10), Expanded(child: Text(t, style: const TextStyle(fontSize: 12))), Text(v, style: const TextStyle(color: tgBlue, fontWeight: FontWeight.bold, fontSize: 11))]));
+  Widget _bentoItem(String t, List<Widget> c) => Container(padding: const EdgeInsets.all(15), decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFFBFBFE)), borderRadius: BorderRadius.circular(20), border: Border.all(color: AppPalette.line(Colors.black.withValues(alpha: 0.05)))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(t, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppPalette.fg(Colors.blueGrey))), const SizedBox(height: 10), ...c]));
+  Widget _pItem(IconData i, String t, String v) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Icon(i, size: 14, color: AppPalette.fg(tgBlue)), const SizedBox(width: 10), Expanded(child: Text(t, style: const TextStyle(fontSize: 12))), Text(v, style: TextStyle(color: AppPalette.fg(tgBlue), fontWeight: FontWeight.bold, fontSize: 11))]));
 
-  Widget _buildHubHeader() => Container(padding: const EdgeInsets.fromLTRB(25, 40, 20, 10), child: Row(children: [Text(selectedFolder, style: GoogleFonts.merriweather(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87)), const Spacer(), const Icon(Icons.edit_note_rounded, color: pPurple, size: 28)]));
-  Widget _buildSearchBar() => Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), child: TextField(decoration: InputDecoration(hintText: "Search as ${widget.userRole}...", prefixIcon: const Icon(Icons.search), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none), contentPadding: EdgeInsets.zero)));
+  Widget _buildHubHeader() => Container(padding: const EdgeInsets.fromLTRB(25, 40, 20, 10), child: Row(children: [Text(selectedFolder, style: GoogleFonts.merriweather(fontSize: 22, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))), const Spacer(), Icon(Icons.edit_note_rounded, color: AppPalette.fg(pPurple), size: 28)]));
+  Widget _buildSearchBar() => Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), child: TextField(decoration: InputDecoration(hintText: "Search as ${widget.userRole}...", prefixIcon: const Icon(Icons.search), filled: true, fillColor: AppPalette.bg(Colors.white), border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none), contentPadding: EdgeInsets.zero)));
   void _showSettingsModal() {
     showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))), builder: (c) => Container(padding: const EdgeInsets.all(25), child: Column(mainAxisSize: MainAxisSize.min, children: [Text("Communication Settings", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 18)), const Divider(height: 40), ListTile(leading: const Icon(Icons.palette), title: const Text("Chat Themes")), ListTile(leading: const Icon(Icons.language), title: const Text("Translation"))])));
   }
-  Widget _buildEmptyState() => Center(child: Text("Select a unit conversation", style: GoogleFonts.merriweather(color: Colors.grey, fontSize: 16)));
+  Widget _buildEmptyState() => Center(child: Text("Select a unit conversation", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontSize: 16)));
 }

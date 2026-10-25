@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
+import '../services/device_accounts.dart';
 
 /// An error whose message is safe to show to the user as-is.
 class _FriendlyException implements Exception {
@@ -126,11 +128,26 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     return 'No roles available';
   }
 
+  // The account already signed in on this device (if any). Creating the new
+  // account signs Supabase in as it, so we switch back to this one afterwards
+  // instead of leaving the device signed out.
+  String? _previousUserId;
+
   @override
   void initState() {
     super.initState();
+    if (widget.signUpMethod != 'google') _previousUserId = _supabase.auth.currentUser?.id;
     _prefillInitialData();
     _fetchInitialData();
+  }
+
+  /// Puts the device back on the account that was signed in before. Returns
+  /// true when that account is active again.
+  Future<bool> _returnToPreviousAccount() async {
+    final prev = _previousUserId;
+    if (prev == null) return false;
+    if (_supabase.auth.currentUser?.id == prev) return true;
+    return DeviceAccounts.restore(prev);
   }
 
   @override
@@ -844,6 +861,8 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     }
 
     setState(() => _isSubmitting = true);
+    // Keep the current user's screens in place while the new account is created
+    if (_previousUserId != null) RegistrationGuard.hold();
     try {
       final uid = await _createAuthUser(name: name, email: email, phone: phone, password: password);
       await _ensureNoExistingProfile(uid);
@@ -946,7 +965,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         }
       }
 
-      await _supabase.auth.signOut();
+      // Back to the account that was using this device, or signed out if none
+      final backToPrevious = await _returnToPreviousAccount();
+      RegistrationGuard.release();
+      if (!backToPrevious) await _supabase.auth.signOut();
 
       if (!mounted) return;
       await showDialog(
@@ -956,21 +978,22 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
-              const Icon(Icons.hourglass_top_rounded, color: Colors.orange, size: 28),
+              Icon(Icons.hourglass_top_rounded, color: AppPalette.fg(Colors.orange), size: 28),
               const SizedBox(width: 8),
               Text("Pending Approval", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 16)),
             ],
           ),
           content: Text(
             "Your registration has been submitted successfully.\n\nYour account is now pending review and approval by Church Administration. Once approved, you will be notified via email ($email)."
+            "${backToPrevious ? '\n\nThis device is still signed in with the account you were using. Once the new account is approved, switch to it from the account menu.' : ''}"
             "${portfolioSaved ? '' : '\n\nNote: your overseeing departments could not be saved. Please let Church Administration know.'}",
             style: GoogleFonts.merriweather(fontSize: 13, height: 1.5),
           ),
           actions: [
             ElevatedButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C)),
-              child: Text("OK", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(const Color(0xFF4A148C))),
+              child: Text("OK", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -978,8 +1001,12 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
     } catch (e) {
+      // If sign-up already switched the device to the new account, switch back
+      await _returnToPreviousAccount();
+      RegistrationGuard.release();
       _showSnack(_friendlyError(e));
     } finally {
+      RegistrationGuard.release();
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
@@ -1007,16 +1034,16 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
       // Don't allow backing out mid-submit (that left half-created accounts).
       canPop: !_isSubmitting,
       child: Scaffold(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: AppPalette.bg(Colors.white),
           elevation: 0.5,
           centerTitle: true,
           title: Text(
             "Complete Registration Details",
             style: GoogleFonts.merriweather(
               fontWeight: FontWeight.w900,
-              color: pPurple,
+              color: AppPalette.fg(pPurple),
               fontSize: isDesktop ? 20 : 17,
             ),
           ),
@@ -1161,14 +1188,14 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               if (!_isChurchWorker && _isTeamLeaderRole && selectedSecondaryRole == null)
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 4),
-                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.15)))),
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.15))))),
                   child: Row(
                     children: [
                       Expanded(
                         flex: 3,
                         child: Text(
                           "Also assign Team Secretary (Dual Role)?",
-                          style: GoogleFonts.merriweather(fontWeight: FontWeight.w700, fontSize: 12, color: Colors.purple[900]),
+                          style: GoogleFonts.merriweather(fontWeight: FontWeight.w700, fontSize: 12, color: AppPalette.fg(Colors.purple[900])),
                         ),
                       ),
                       Switch(
@@ -1183,7 +1210,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               if (_isChurchWorker && _isKoreanWorkerRole)
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 6),
-                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.15)))),
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.15))))),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1204,7 +1231,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                               style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold),
                             ),
                             selected: isChecked,
-                            selectedColor: pPurple.withValues(alpha: 0.2),
+                            selectedColor: AppPalette.bg(pPurple.withValues(alpha: 0.2)),
                             onSelected: (selected) {
                               if (selected && _selectedPortfolioDeptIds.length >= _maxPortfolio) {
                                 _showSnack("You can select at most $_maxPortfolio departments.");
@@ -1243,19 +1270,21 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                 _sideBySideField("WhatsApp Phone *", _phoneController, Icons.phone_android_outlined,
                     type: TextInputType.phone),
               ] else if (isEmailSignUp) ...[
-                _lockedInfoRow(
-                  "Email (Verified)",
-                  _emailController.text,
-                  icon: const Icon(Icons.verified_user_outlined, size: 14, color: Color(0xFF4A148C)),
-                ),
+                // Not verified yet (Supabase sends the confirmation), so it stays editable
+                _sideBySideField("Email Address *", _emailController, Icons.email_outlined,
+                    type: TextInputType.emailAddress),
                 _sideBySideField("WhatsApp Phone *", _phoneController, Icons.phone_android_outlined,
                     type: TextInputType.phone),
               ] else ...[
-                _lockedInfoRow(
-                  "WhatsApp (Verified)",
-                  _phoneController.text,
-                  icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 14, color: Color(0xFF4A148C)),
-                ),
+                if (_phoneController.text.trim().isNotEmpty)
+                  _lockedInfoRow(
+                    "WhatsApp Phone",
+                    _phoneController.text,
+                    icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 14, color: Color(0xFF4A148C)),
+                  )
+                else
+                  _sideBySideField("WhatsApp Phone *", _phoneController, Icons.phone_android_outlined,
+                      type: TextInputType.phone),
                 _sideBySideField("Email Address *", _emailController, Icons.email_outlined,
                     type: TextInputType.emailAddress),
               ],
@@ -1285,7 +1314,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                   onPressed: _isSubmitting ? null : () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 42),
-                    side: const BorderSide(color: Colors.grey, width: 1.5),
+                    side: BorderSide(color: AppPalette.line(Colors.grey), width: 1.5),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   child: FittedBox(
@@ -1300,7 +1329,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                 child: ElevatedButton(
                   onPressed: busy ? null : _saveAccount,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: pPurple,
+                    backgroundColor: AppPalette.bg(pPurple),
                     minimumSize: const Size(0, 42),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
@@ -1310,7 +1339,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                           fit: BoxFit.scaleDown,
                           child: Text(
                             "Submit for Approval",
-                            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 13.5),
+                            style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.white), fontSize: 13.5),
                           ),
                         ),
                 ),
@@ -1331,15 +1360,15 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: pP.withValues(alpha: 0.18), width: 1.2),
+        border: Border.all(color: AppPalette.line(pP.withValues(alpha: 0.18)), width: 1.2),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.025), blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: pP)),
+        Text(title, style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: AppPalette.fg(pP))),
         const Divider(height: 14),
         ...children
       ]),
@@ -1350,7 +1379,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   Widget _formRow({required Widget label, required Widget field}) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 2.5),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.15)))),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.15))))),
       child: Row(children: [
         Expanded(flex: 2, child: label),
         const SizedBox(width: 8),
@@ -1370,9 +1399,9 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         height: 32,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFF3E5F5),
+          color: AppPalette.bg(const Color(0xFFF3E5F5)),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.purple.withValues(alpha: 0.15)),
+          border: Border.all(color: AppPalette.line(Colors.purple.withValues(alpha: 0.15))),
         ),
         child: child,
       );
@@ -1381,7 +1410,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         prefixIcon: prefix,
         suffixIcon: suffix,
         filled: true,
-        fillColor: const Color(0xFFF3E5F5),
+        fillColor: AppPalette.bg(const Color(0xFFF3E5F5)),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         isDense: true,
@@ -1399,14 +1428,14 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         height: 32,
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: Colors.purple.withValues(alpha: 0.08),
+          color: AppPalette.bg(Colors.purple.withValues(alpha: 0.08)),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
+          border: Border.all(color: AppPalette.line(Colors.purple.withValues(alpha: 0.2))),
         ),
         alignment: Alignment.centerLeft,
         child: Text(
           value.isNotEmpty ? value : "Verified during sign-up",
-          style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold, color: const Color(0xFF4A148C)),
+          style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppPalette.fg(const Color(0xFF4A148C))),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1427,7 +1456,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
             alignment: Alignment.centerLeft,
             hint: hint == null
                 ? null
-                : Text(hint, style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey[600])),
+                : Text(hint, style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[600]))),
             key: ValueKey("${label}_$val"),
             value: unique.contains(val) ? val : null,
             isExpanded: true,
@@ -1436,7 +1465,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                       value: e,
                       child: Text(
                         e,
-                        style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                        style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1466,7 +1495,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
             alignment: Alignment.centerLeft,
             hint: Text(
               items.isEmpty ? "Loading..." : (hint ?? "Select Department"),
-              style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey[600]),
+              style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[600])),
             ),
             value: items.any((e) => e['id']?.toString() == val) ? val : null,
             isExpanded: true,
@@ -1476,7 +1505,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                   value: '',
                   child: Text(
                     "None (main department)",
-                    style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black54),
+                    style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black54)),
                   ),
                 ),
               ...items.map((e) => DropdownMenuItem<String>(
@@ -1485,7 +1514,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                       e['name_ko'] != null && e['name_en'] != null
                           ? "${e['name_ko']} (${e['name_en']})"
                           : (e['name']?.toString() ?? ''),
-                      style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                      style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1508,7 +1537,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
           keyboardType: type,
           textAlign: TextAlign.start,
           style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold),
-          decoration: _fieldDecoration(Icon(icon, size: 16, color: Colors.purple)),
+          decoration: _fieldDecoration(Icon(icon, size: 16, color: AppPalette.fg(Colors.purple))),
         ),
       ),
     );
@@ -1530,13 +1559,13 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
           textAlign: TextAlign.start,
           style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold),
           decoration: _fieldDecoration(
-            const Icon(Icons.lock_outline, size: 16, color: Colors.purple),
+            Icon(Icons.lock_outline, size: 16, color: AppPalette.fg(Colors.purple)),
             suffix: IconButton(
               padding: EdgeInsets.zero,
               icon: Icon(
                 obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded,
                 size: 16,
-                color: Colors.grey[700],
+                color: AppPalette.fg(Colors.grey[700]),
               ),
               onPressed: onToggle,
               tooltip: obscure ? 'Show password' : 'Hide password',

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' hide Border, BorderStyle;
+import 'package:master_admin/core/app_palette.dart';
 
 class MilestoneUploadScreen extends StatefulWidget {
   const MilestoneUploadScreen({super.key});
@@ -178,15 +179,15 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppPalette.bg(_backgroundColor),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         title: Text(
           "Milestone Bulk Importer",
           style: GoogleFonts.merriweather(
             fontWeight: FontWeight.w900,
-            color: _primaryPurple,
+            color: AppPalette.fg(_primaryPurple),
             fontSize: 23,
           ),
         ),
@@ -220,9 +221,9 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
   Widget _buildTemplateGuideCard() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
       ),
       child: Column(
         children: [
@@ -236,10 +237,10 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
+                      color: AppPalette.bg(Colors.purple.shade50),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.table_chart_outlined, color: _primaryPurple, size: 22),
+                    child: Icon(Icons.table_chart_outlined, color: AppPalette.fg(_primaryPurple), size: 22),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -251,7 +252,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                           style: GoogleFonts.merriweather(
                             fontWeight: FontWeight.w900,
                             fontSize: 17.5,
-                            color: const Color(0xFF1E293B),
+                            color: AppPalette.fg(const Color(0xFF1E293B)),
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -261,7 +262,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                               : "Click to preview expected 5-column structure (Columns A – E)",
                           style: GoogleFonts.merriweather(
                             fontSize: 13.5,
-                            color: Colors.grey.shade600,
+                            color: AppPalette.fg(Colors.grey.shade600),
                           ),
                         ),
                       ],
@@ -269,7 +270,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                   ),
                   Icon(
                     _showColumnGuide ? Icons.expand_less : Icons.expand_more,
-                    color: _primaryPurple,
+                    color: AppPalette.fg(_primaryPurple),
                     size: 26,
                   ),
                 ],
@@ -310,7 +311,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
               style: GoogleFonts.merriweather(
                 fontWeight: FontWeight.w700,
                 fontSize: 14.5,
-                color: _primaryPurple,
+                color: AppPalette.fg(_primaryPurple),
               ),
             ),
           ),
@@ -323,17 +324,17 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                   style: GoogleFonts.merriweather(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
-                    color: const Color(0xFF1E293B),
+                    color: AppPalette.fg(const Color(0xFF1E293B)),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: isRequired ? Colors.amber.shade50 : Colors.grey.shade100,
+                    color: AppPalette.bg(isRequired ? Colors.amber.shade50 : Colors.grey.shade100),
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
-                      color: isRequired ? Colors.amber.shade300 : Colors.grey.shade300,
+                      color: AppPalette.line(isRequired ? Colors.amber.shade300 : Colors.grey.shade300),
                     ),
                   ),
                   child: Text(
@@ -341,7 +342,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                     style: GoogleFonts.merriweather(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
-                      color: isRequired ? Colors.amber.shade900 : Colors.grey.shade700,
+                      color: AppPalette.fg(isRequired ? Colors.amber.shade900 : Colors.grey.shade700),
                     ),
                   ),
                 ),
@@ -350,7 +351,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                   "— $desc",
                   style: GoogleFonts.merriweather(
                     fontSize: 13.5,
-                    color: Colors.grey.shade600,
+                    color: AppPalette.fg(Colors.grey.shade600),
                   ),
                 ),
               ],
@@ -370,10 +371,10 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
         height: 56,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppPalette.bg(Colors.white),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: _isProcessing ? Colors.grey.shade300 : _primaryPurple.withValues(alpha: 0.4),
+            color: AppPalette.line(_isProcessing ? Colors.grey.shade300 : _primaryPurple.withValues(alpha: 0.4)),
             width: 1.5,
           ),
         ),
@@ -383,10 +384,10 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
             Container(
               padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
-                color: _primaryPurple.withValues(alpha: 0.08),
+                color: AppPalette.bg(_primaryPurple.withValues(alpha: 0.08)),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.cloud_upload_outlined, size: 22, color: _primaryPurple),
+              child: Icon(Icons.cloud_upload_outlined, size: 22, color: AppPalette.fg(_primaryPurple)),
             ),
             const SizedBox(width: 14),
             Column(
@@ -398,7 +399,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                   style: GoogleFonts.merriweather(
                     fontWeight: FontWeight.w900,
                     fontSize: 17.5,
-                    color: _primaryPurple,
+                    color: AppPalette.fg(_primaryPurple),
                   ),
                 ),
                 const SizedBox(height: 1),
@@ -406,7 +407,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                   "Click to browse or drop an Excel (.xlsx or .xls) file",
                   style: GoogleFonts.merriweather(
                     fontSize: 13,
-                    color: Colors.grey.shade600,
+                    color: AppPalette.fg(Colors.grey.shade600),
                   ),
                 ),
               ],
@@ -421,9 +422,9 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -433,7 +434,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
             style: GoogleFonts.merriweather(
               fontWeight: FontWeight.w900,
               fontSize: 17,
-              color: const Color(0xFF1E293B),
+              color: AppPalette.fg(const Color(0xFF1E293B)),
             ),
           ),
           const SizedBox(height: 12),
@@ -455,14 +456,14 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                     style: GoogleFonts.merriweather(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: Colors.red.shade800,
+                      color: AppPalette.fg(Colors.red.shade800),
                     ),
                   ),
                   const SizedBox(width: 4),
                   Icon(
                     _showUnmatchedList ? Icons.expand_less : Icons.expand_more,
                     size: 20,
-                    color: Colors.red.shade800,
+                    color: AppPalette.fg(Colors.red.shade800),
                   ),
                 ],
               ),
@@ -473,13 +474,13 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
+                  color: AppPalette.bg(Colors.red.shade50),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
+                  border: Border.all(color: AppPalette.line(Colors.red.shade200)),
                 ),
                 child: Text(
                   _unmatchedScjIds.join(", "),
-                  style: GoogleFonts.robotoMono(fontSize: 13, color: Colors.red.shade900),
+                  style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.red.shade900)),
                 ),
               ),
             ],
@@ -495,9 +496,9 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.06),
+          color: AppPalette.bg(color.withValues(alpha: 0.06)),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          border: Border.all(color: AppPalette.line(color.withValues(alpha: 0.2))),
         ),
         child: Column(
           children: [
@@ -506,7 +507,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
               style: GoogleFonts.merriweather(
                 fontWeight: FontWeight.w900,
                 fontSize: 22,
-                color: color,
+                color: AppPalette.fg(color),
               ),
             ),
             const SizedBox(height: 3),
@@ -516,7 +517,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
               style: GoogleFonts.merriweather(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
+                color: AppPalette.fg(Colors.grey.shade700),
               ),
             ),
           ],
@@ -530,9 +531,9 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
       ),
       child: Column(
         children: [
@@ -546,9 +547,9 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
             style: GoogleFonts.merriweather(
               fontWeight: FontWeight.w700,
               fontSize: 16,
-              color: _statusMessage.startsWith("Error")
+              color: AppPalette.fg(_statusMessage.startsWith("Error")
                   ? Colors.red.shade700
-                  : const Color(0xFF334155),
+                  : const Color(0xFF334155)),
             ),
           ),
         ],

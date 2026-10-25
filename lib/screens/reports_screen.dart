@@ -18,6 +18,7 @@ import 'admin/universal_intervention_screen.dart';
 import '../admin_tools/member_sync_tool.dart';
 import '../admin_tools/task_manager_screen.dart';
 import 'admin/unit_growth_tracker_screen.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class ReportsScreen extends StatefulWidget {
   final String userEmail, userRole;
@@ -340,11 +341,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
     double hPadding = isDesktop ? width * 0.15 : 20;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFBFBFE),
+      backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
       appBar: AppBar(
-        backgroundColor: Colors.transparent, elevation: 0, centerTitle: true,
-        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF4A148C), size: 22), onPressed: () => Navigator.pop(context)),
-        title: Text("Management reports", style: GoogleFonts.merriweather(color: pPurple, fontWeight: FontWeight.bold, fontSize: 18)),
+        backgroundColor: AppPalette.bg(Colors.transparent), elevation: 0, centerTitle: true,
+        leading: IconButton(icon: Icon(Icons.arrow_back_ios_new_rounded, color: AppPalette.fg(Color(0xFF4A148C)), size: 22), onPressed: () => Navigator.pop(context)),
+        title: Text("Management reports", style: GoogleFonts.merriweather(color: AppPalette.fg(pPurple), fontWeight: FontWeight.bold, fontSize: 18)),
       ),
       body: _isLoading ? const Center(child: CircularProgressIndicator(color: Color(0xFF4A148C))) : Column(children: [
         if (selectedRole == 'admin') _buildAdminSwitcher(hPadding),
@@ -352,13 +353,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
           padding: EdgeInsets.symmetric(horizontal: hPadding, vertical: 10), 
           child: Container(
             width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 12), 
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: pPurple.withValues(alpha: 0.1), width: 1.5), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)]), 
+            decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(20), border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.1)), width: 1.5), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)]), 
             child: Text(
               _secondaryRole != null && _secondaryRole!.isNotEmpty
                 ? "Viewing as: ${_formatRoleToTitleCase(_simulatedRole)} + ${_formatRoleToTitleCase(_secondaryRole)}"
                 : "Viewing as: ${_formatRoleToTitleCase(_simulatedRole)}", 
               textAlign: TextAlign.center, 
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: isDesktop ? 18 : 14, color: pPurple)
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: isDesktop ? 18 : 14, color: AppPalette.fg(pPurple))
             )
           )
         ),
@@ -378,8 +379,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
               String title = allButtons[index];
               bool isPrimary = ["Member Bio", "Strategic Analysis", "Notification Center"].contains(title);
               return Container(
-                decoration: BoxDecoration(color: isPrimary ? pPurple : Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.black.withValues(alpha: 0.08)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 4))]), 
-                child: InkWell(borderRadius: BorderRadius.circular(15), onTap: () => _handleSelection(title), child: Center(child: Text(title, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: isPrimary ? Colors.white : Colors.black87))))
+                decoration: BoxDecoration(color: AppPalette.bg(isPrimary ? pPurple : Colors.white), borderRadius: BorderRadius.circular(15), border: Border.all(color: AppPalette.line(Colors.black.withValues(alpha: 0.08))), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 4))]), 
+                child: InkWell(borderRadius: BorderRadius.circular(15), onTap: () => _handleSelection(title), child: Center(child: Text(title, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: AppPalette.fg(isPrimary ? Colors.white : Colors.black87)))))
               );
             }
           )
@@ -412,7 +413,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         return Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
           elevation: 10,
-          backgroundColor: Colors.white,
+          backgroundColor: AppPalette.bg(Colors.white),
           child: Container(
             width: 360,
             padding: const EdgeInsets.all(20),
@@ -424,10 +425,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4A148C).withValues(alpha: 0.1),
+                        color: AppPalette.bg(const Color(0xFF4A148C).withValues(alpha: 0.1)),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.edit_calendar_rounded, color: Color(0xFF4A148C), size: 22),
+                      child: Icon(Icons.edit_calendar_rounded, color: AppPalette.fg(Color(0xFF4A148C)), size: 22),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -439,13 +440,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             style: GoogleFonts.merriweather(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: const Color(0xFF4A148C),
+                              color: AppPalette.fg(const Color(0xFF4A148C)),
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             "Editable within the last 5 days",
-                            style: GoogleFonts.merriweather(fontSize: 11, color: Colors.grey.shade600),
+                            style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600)),
                           ),
                         ],
                       ),
@@ -486,14 +487,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           decoration: BoxDecoration(
-                            color: diff == 0 
+                            color: AppPalette.bg(diff == 0 
                                 ? const Color(0xFF4A148C).withValues(alpha: 0.06) 
-                                : const Color(0xFFFBFBFE),
+                                : const Color(0xFFFBFBFE)),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: diff == 0 
+                              color: AppPalette.line(diff == 0 
                                   ? const Color(0xFF4A148C).withValues(alpha: 0.3) 
-                                  : Colors.grey.shade200,
+                                  : Colors.grey.shade200),
                               width: 1.1,
                             ),
                           ),
@@ -505,7 +506,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                   Icon(
                                     diff == 0 ? Icons.today_rounded : Icons.history_rounded,
                                     size: 16,
-                                    color: diff == 0 ? const Color(0xFF4A148C) : Colors.grey.shade700,
+                                    color: AppPalette.fg(diff == 0 ? const Color(0xFF4A148C) : Colors.grey.shade700),
                                   ),
                                   const SizedBox(width: 10),
                                   Text(
@@ -513,7 +514,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                     style: GoogleFonts.merriweather(
                                       fontSize: 12.5,
                                       fontWeight: diff == 0 ? FontWeight.bold : FontWeight.w600,
-                                      color: Colors.black87,
+                                      color: AppPalette.fg(Colors.black87),
                                     ),
                                   ),
                                 ],
@@ -521,7 +522,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: badgeColor.withValues(alpha: 0.1),
+                                  color: AppPalette.bg(badgeColor.withValues(alpha: 0.1)),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
@@ -529,7 +530,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
-                                    color: badgeColor,
+                                    color: AppPalette.fg(badgeColor),
                                   ),
                                 ),
                               ),
@@ -550,7 +551,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       "Cancel",
                       style: GoogleFonts.merriweather(
                         fontWeight: FontWeight.bold,
-                        color: Colors.grey.shade700,
+                        color: AppPalette.fg(Colors.grey.shade700),
                         fontSize: 12,
                       ),
                     ),
@@ -589,9 +590,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     showGeneralDialog(context: context, pageBuilder: (context, anim1, anim2) {
       return Scaffold(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         appBar: AppBar(
-          backgroundColor: Colors.white, 
+          backgroundColor: AppPalette.bg(Colors.white), 
           elevation: 0.5, 
           leading: IconButton(icon: const Icon(Icons.close), onPressed: () {
             Navigator.pop(context);
@@ -654,8 +655,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget _compactActionBtn(IconData i, String l, Color c, VoidCallback t) => Container(
     margin: const EdgeInsets.only(bottom: 6),
     height: 38,
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: c.withValues(alpha: 0.15), width: 1.2), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4)]), 
-    child: InkWell(onTap: t, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 15), child: Row(children: [Icon(i, color: c, size: 16), const SizedBox(width: 12), Expanded(child: Text(l, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold))), const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.black26)])))
+    decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppPalette.line(c.withValues(alpha: 0.15)), width: 1.2), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4)]), 
+    child: InkWell(onTap: t, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 15), child: Row(children: [Icon(i, color: AppPalette.fg(c), size: 16), const SizedBox(width: 12), Expanded(child: Text(l, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold))), Icon(Icons.chevron_right_rounded, size: 16, color: AppPalette.fg(Colors.black26))])))
   );
 
   void _handleExcelUpload(String duty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Offering excel upload module initialized..."))); }
@@ -730,7 +731,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
       constraints: const BoxConstraints(minHeight: 32, maxHeight: 35),
       decoration: BoxDecoration(
-        color: switcherBg,
+        color: AppPalette.bg(switcherBg),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -745,10 +746,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
           Container(
             padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
+              color: AppPalette.bg(Colors.white.withValues(alpha: 0.2)),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.admin_panel_settings_rounded, size: 14, color: Colors.white),
+            child: Icon(Icons.admin_panel_settings_rounded, size: 14, color: AppPalette.fg(Colors.white)),
           ),
           const SizedBox(width: 8),
           Text(
@@ -756,14 +757,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
             style: GoogleFonts.merriweather(
               fontSize: 11, // Reduced font size
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: AppPalette.fg(Colors.white),
             ),
           ),
           const SizedBox(width: 8),
           Container(
             height: 14,
             width: 1,
-            color: Colors.white.withValues(alpha: 0.35),
+            color: AppPalette.bg(Colors.white.withValues(alpha: 0.35)),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -772,8 +773,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 value: _simulatedRole,
                 isExpanded: true,
                 isDense: true,
-                dropdownColor: Colors.white,
-                icon: const Icon(Icons.arrow_drop_down_rounded, color: Colors.white, size: 20),
+                dropdownColor: AppPalette.bg(Colors.white),
+                icon: Icon(Icons.arrow_drop_down_rounded, color: AppPalette.fg(Colors.white), size: 20),
                 selectedItemBuilder: (BuildContext context) {
                   final roles = _availableRoles.isNotEmpty
                       ? _availableRoles
@@ -789,7 +790,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         style: GoogleFonts.merriweather(
                           fontSize: 11, // Reduced font size for compact display
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: AppPalette.fg(Colors.white),
                         ),
                       ),
                     );
@@ -806,7 +807,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             style: GoogleFonts.merriweather(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: const Color(0xFF4A148C),
+                              color: AppPalette.fg(const Color(0xFF4A148C)),
                             ),
                           ),
                         );
@@ -820,7 +821,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             style: GoogleFonts.merriweather(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: const Color(0xFF4A148C),
+                              color: AppPalette.fg(const Color(0xFF4A148C)),
                             ),
                           ),
                         )
@@ -856,9 +857,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                          r != 'internal_affairs_dept_sec';
 
       return Scaffold(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         appBar: AppBar(
-          backgroundColor: Colors.white, 
+          backgroundColor: AppPalette.bg(Colors.white), 
           elevation: 0.5, 
           leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)), 
           centerTitle: true, 
@@ -904,9 +905,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
       bool canSetTargets = r == 'admin' || r.contains('internal_affairs');
 
       return Scaffold(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         appBar: AppBar(
-          backgroundColor: Colors.white, 
+          backgroundColor: AppPalette.bg(Colors.white), 
           elevation: 0.5, 
           leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)), 
           centerTitle: true, 
@@ -957,8 +958,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   void _showEvangelismSubMenu() {
     showGeneralDialog(context: context, pageBuilder: (context, anim1, anim2) {
       return Scaffold(
-        backgroundColor: const Color(0xFFFBFBFE),
-        appBar: AppBar(backgroundColor: Colors.white, elevation: 0.5, leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)), centerTitle: true, title: Text("Evangelism management", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold))),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
+        appBar: AppBar(backgroundColor: AppPalette.bg(Colors.white), elevation: 0.5, leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)), centerTitle: true, title: Text("Evangelism management", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold))),
         body: Padding(padding: const EdgeInsets.all(25), child: Column(children: [
           _compactActionBtn(Icons.fact_check_rounded, "Evangelism participation", Colors.blue, () { 
             Navigator.pop(context); 
@@ -984,14 +985,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget _buildCorrectionNotification(double hPad) => Container(
     margin: EdgeInsets.fromLTRB(hPad, 15, hPad, 0), 
     padding: const EdgeInsets.all(18), 
-    decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.red.withValues(alpha: 0.3))), 
+    decoration: BoxDecoration(color: AppPalette.bg(Colors.red[50]), borderRadius: BorderRadius.circular(15), border: Border.all(color: AppPalette.line(Colors.red.withValues(alpha: 0.3)))), 
     child: Row(children: [
-      const Icon(Icons.report_gmailerrorred_rounded, color: Colors.red, size: 30), 
+      Icon(Icons.report_gmailerrorred_rounded, color: AppPalette.fg(Colors.red), size: 30), 
       const SizedBox(width: 15), 
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text("Report flagged", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: Colors.red, fontSize: 13)), 
+        Text("Report flagged", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.red), fontSize: 13)), 
         const SizedBox(height: 2), 
-        Text(_latestCorrectionNote, style: GoogleFonts.merriweather(fontSize: 14, color: Colors.black87))
+        Text(_latestCorrectionNote, style: GoogleFonts.merriweather(fontSize: 14, color: AppPalette.fg(Colors.black87)))
       ]))
     ])
   );

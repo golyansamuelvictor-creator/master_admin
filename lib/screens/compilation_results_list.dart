@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
+import 'package:master_admin/core/app_palette.dart';
 
 class CompilationResultsList extends StatefulWidget {
   final List<dynamic> logs;
@@ -253,22 +254,22 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               title: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: headerBgColor,
+                  color: AppPalette.bg(headerBgColor),
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.filter_alt, color: Colors.white, size: 18),
+                    Icon(Icons.filter_alt, color: AppPalette.fg(Colors.white), size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         "Filter: $displayName",
-                        style: GoogleFonts.merriweather(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 13, fontWeight: FontWeight.bold),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                      icon: Icon(Icons.close, color: AppPalette.fg(Colors.white70), size: 18),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       onPressed: () => Navigator.pop(ctx),
@@ -304,13 +305,13 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                     Container(
                       height: 150,
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
                         borderRadius: BorderRadius.circular(6),
-                        color: Colors.grey.shade50,
+                        color: AppPalette.bg(Colors.grey.shade50),
                       ),
                       child: ListView.separated(
                         itemCount: sortedKeys.length,
-                        separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade200),
+                        separatorBuilder: (context, index) => Divider(height: 1, color: AppPalette.bg(Colors.grey.shade200)),
                         itemBuilder: (context, index) {
                           String valName = sortedKeys[index];
                           int count = uniqueValues[valName] ?? 0;
@@ -329,7 +330,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                                   Icon(
                                     isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
                                     size: 14,
-                                    color: isSelected ? headerBgColor : Colors.grey,
+                                    color: AppPalette.fg(isSelected ? headerBgColor : Colors.grey),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
@@ -338,12 +339,12 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                                       style: GoogleFonts.merriweather(
                                         fontSize: 11.5,
                                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                        color: isSelected ? headerBgColor : Colors.black87,
+                                        color: AppPalette.fg(isSelected ? headerBgColor : Colors.black87),
                                       ),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  Text("($count)", style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.grey.shade600)),
+                                  Text("($count)", style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(Colors.grey.shade600))),
                                 ],
                               ),
                             ),
@@ -363,11 +364,11 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                     });
                     Navigator.pop(ctx);
                   },
-                  child: Text("Clear", style: GoogleFonts.merriweather(color: Colors.red.shade700, fontSize: 12, fontWeight: FontWeight.bold)),
+                  child: Text("Clear", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.red.shade700), fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: headerBgColor,
+                    backgroundColor: AppPalette.bg(headerBgColor),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                   ),
                   onPressed: () {
@@ -381,7 +382,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                     });
                     Navigator.pop(ctx);
                   },
-                  child: Text("Apply", style: GoogleFonts.merriweather(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  child: Text("Apply", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ],
             );
@@ -405,11 +406,11 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           title: Row(
             children: [
-              Icon(Icons.view_column_rounded, color: appBarColor, size: 20),
+              Icon(Icons.view_column_rounded, color: AppPalette.fg(appBarColor), size: 20),
               const SizedBox(width: 8),
               Text(
                 "Show / Hide Columns",
-                style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: appBarColor),
+                style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: AppPalette.fg(appBarColor)),
               ),
             ],
           ),
@@ -477,9 +478,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
           ),
           actions: [
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: headerBgColor),
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(headerBgColor)),
               onPressed: () => Navigator.pop(ctx),
-              child: const Text("Done", style: TextStyle(color: Colors.white, fontSize: 12)),
+              child: Text("Done", style: TextStyle(color: AppPalette.fg(Colors.white), fontSize: 12)),
             ),
           ],
         ),
@@ -518,7 +519,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         title: Row(
           children: [
-            const Icon(Icons.table_chart, color: Color(0xFF107C41), size: 22),
+            Icon(Icons.table_chart, color: AppPalette.fg(Color(0xFF107C41)), size: 22),
             const SizedBox(width: 8),
             const Text("Excel Spreadsheet Ready", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
           ],
@@ -534,10 +535,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
-              child: const Text(
+              decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF1F5F9)), borderRadius: BorderRadius.circular(6)),
+              child: Text(
                 "✓ Data copied to clipboard!\nYou can paste directly into Microsoft Excel, Google Sheets, or save as a .csv file.",
-                style: TextStyle(fontSize: 11.5, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+                style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Color(0xFF334155)), fontWeight: FontWeight.w500),
               ),
             ),
           ],
@@ -558,7 +559,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         title: Row(
           children: [
-            Icon(Icons.print_rounded, color: appBarColor, size: 22),
+            Icon(Icons.print_rounded, color: AppPalette.fg(appBarColor), size: 22),
             const SizedBox(width: 8),
             Text("Print / PDF Document", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold)),
           ],
@@ -571,14 +572,14 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             children: [
               Text(
                 "Document: ${widget.selectedDuty} • ${_filteredData.length} records",
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppPalette.fg(Color(0xFF64748B))),
               ),
               const SizedBox(height: 8),
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: Colors.grey.shade300),
+                    color: AppPalette.bg(Colors.white),
+                    border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: SingleChildScrollView(
@@ -612,9 +613,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 "* Showing printable layout view. For native system printers, the printing package can stream this buffer directly.",
-                style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.grey),
+                style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: AppPalette.fg(Colors.grey)),
               ),
             ],
           ),
@@ -622,9 +623,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close")),
           ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: appBarColor),
-            icon: const Icon(Icons.print, size: 16, color: Colors.white),
-            label: const Text("Print Document", style: TextStyle(color: Colors.white, fontSize: 12)),
+            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(appBarColor)),
+            icon: Icon(Icons.print, size: 16, color: AppPalette.fg(Colors.white)),
+            label: Text("Print Document", style: TextStyle(color: AppPalette.fg(Colors.white), fontSize: 12)),
             onPressed: () {
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
@@ -644,23 +645,23 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
-        backgroundColor: appBarColor,
+        backgroundColor: AppPalette.bg(appBarColor),
         elevation: 0.5,
         centerTitle: true,
         // Highly visible white back button
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 19),
+          icon: Icon(Icons.arrow_back_ios_new, color: AppPalette.fg(Colors.white), size: 19),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: AppPalette.fg(Colors.white)),
         title: Text(
           widget.selectedDuty,
           textAlign: TextAlign.center,
           style: GoogleFonts.merriweather(
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: AppPalette.fg(Colors.white),
             fontSize: 15,
           ),
         ),
@@ -668,43 +669,43 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
           // Columns Show/Hide Button
           IconButton(
             tooltip: "Columns",
-            icon: const Icon(Icons.view_column_outlined, color: Colors.white, size: 20),
+            icon: Icon(Icons.view_column_outlined, color: AppPalette.fg(Colors.white), size: 20),
             onPressed: _showColumnVisibilityDialog,
           ),
           // Export Popup Menu (Excel, PDF, Print)
           PopupMenuButton<String>(
             tooltip: "Download & Print",
-            icon: const Icon(Icons.download_rounded, color: Colors.white, size: 20),
+            icon: Icon(Icons.download_rounded, color: AppPalette.fg(Colors.white), size: 20),
             onSelected: (value) {
               if (value == 'excel') _exportAsExcelCsv();
               if (value == 'pdf' || value == 'print') _showPrintAndPdfDialog();
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'excel',
                 child: Row(
                   children: [
-                    Icon(Icons.table_chart, color: Color(0xFF107C41), size: 18),
+                    Icon(Icons.table_chart, color: AppPalette.fg(Color(0xFF107C41)), size: 18),
                     SizedBox(width: 8),
                     Text("Download as Excel (.csv)", style: TextStyle(fontSize: 12.5)),
                   ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'pdf',
                 child: Row(
                   children: [
-                    Icon(Icons.picture_as_pdf, color: Colors.redAccent, size: 18),
+                    Icon(Icons.picture_as_pdf, color: AppPalette.fg(Colors.redAccent), size: 18),
                     SizedBox(width: 8),
                     Text("Download as PDF", style: TextStyle(fontSize: 12.5)),
                   ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'print',
                 child: Row(
                   children: [
-                    Icon(Icons.print, color: Color(0xFF1E2D4A), size: 18),
+                    Icon(Icons.print, color: AppPalette.fg(Color(0xFF1E2D4A)), size: 18),
                     SizedBox(width: 8),
                     Text("Print Document", style: TextStyle(fontSize: 12.5)),
                   ],
@@ -727,9 +728,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   Widget _buildActiveFilterBar() {
     return Container(
       width: double.infinity,
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: gridLineColor))),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor)))),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -738,8 +739,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: const Color(0xFFEBF3EE),
-                border: Border.all(color: const Color(0xFFBFD8C9)),
+                color: AppPalette.bg(const Color(0xFFEBF3EE)),
+                border: Border.all(color: AppPalette.line(const Color(0xFFBFD8C9))),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Row(
@@ -747,7 +748,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                 children: [
                   Text(
                     "${_getDisplayName(entry.key)}: \"${entry.value}\"",
-                    style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: headerBgColor),
+                    style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(headerBgColor)),
                   ),
                   const SizedBox(width: 4),
                   GestureDetector(
@@ -757,7 +758,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                         _applyFilters();
                       });
                     },
-                    child: const Icon(Icons.close, size: 13, color: Colors.black54),
+                    child: Icon(Icons.close, size: 13, color: AppPalette.fg(Colors.black54)),
                   ),
                 ],
               ),
@@ -783,7 +784,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       double dataTableWidth = max(availableWidth, baseTotalWidth);
 
       return Container(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -805,10 +806,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                           height: dataRowHeight,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: isEven ? const Color(0xFFFBFDFB) : const Color(0xFFEEF3F0),
+                            color: AppPalette.bg(isEven ? const Color(0xFFFBFDFB) : const Color(0xFFEEF3F0)),
                             border: Border(
-                              right: BorderSide(color: gridLineColor),
-                              bottom: BorderSide(color: gridLineColor),
+                              right: BorderSide(color: AppPalette.line(gridLineColor)),
+                              bottom: BorderSide(color: AppPalette.line(gridLineColor)),
                             ),
                           ),
                           child: Text(
@@ -816,7 +817,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                             style: GoogleFonts.merriweather(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: const Color(0xFF475569),
+                              color: AppPalette.fg(const Color(0xFF475569)),
                             ),
                           ),
                         );
@@ -883,10 +884,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       width: rowNumWidth,
       height: letterRowHeight + headerRowHeight,
       decoration: BoxDecoration(
-        color: cornerBg,
+        color: AppPalette.bg(cornerBg),
         border: Border(
-          right: BorderSide(color: gridLineColor),
-          bottom: BorderSide(color: gridLineColor),
+          right: BorderSide(color: AppPalette.line(gridLineColor)),
+          bottom: BorderSide(color: AppPalette.line(gridLineColor)),
         ),
       ),
       child: Column(
@@ -895,9 +896,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             height: letterRowHeight,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: gridLineColor)),
+              border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor))),
             ),
-            child: const Icon(Icons.grid_view_rounded, size: 13, color: Color(0xFF4C6656)),
+            child: Icon(Icons.grid_view_rounded, size: 13, color: AppPalette.fg(Color(0xFF4C6656))),
           ),
           Container(
             height: headerRowHeight - 1,
@@ -907,7 +908,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               style: GoogleFonts.merriweather(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: const Color(0xFF264E3D),
+                color: AppPalette.fg(const Color(0xFF264E3D)),
               ),
             ),
           ),
@@ -920,8 +921,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     return Container(
       height: letterRowHeight,
       decoration: BoxDecoration(
-        color: letterBg,
-        border: Border(bottom: BorderSide(color: gridLineColor)),
+        color: AppPalette.bg(letterBg),
+        border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor))),
       ),
       child: Row(
         children: List.generate(keys.length, (colIndex) {
@@ -933,7 +934,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             height: letterRowHeight,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              border: Border(right: BorderSide(color: gridLineColor)),
+              border: Border(right: BorderSide(color: AppPalette.line(gridLineColor))),
             ),
             child: Text(
               _getExcelColumnLetter(colIndex),
@@ -941,7 +942,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               style: GoogleFonts.merriweather(
                 fontSize: 10.5,
                 fontWeight: FontWeight.w600,
-                color: const Color(0xFF64748B),
+                color: AppPalette.fg(const Color(0xFF64748B)),
               ),
             ),
           );
@@ -953,7 +954,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   Widget _buildHeadersRow(List<String> keys, double factor) {
     return Container(
       height: headerRowHeight,
-      color: headerBgColor,
+      color: AppPalette.bg(headerBgColor),
       child: Row(
         children: keys.map((k) {
           double colWidth = _getColWidth(k) * factor;
@@ -964,7 +965,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             height: headerRowHeight,
             padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
-              border: Border(right: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
+              border: Border(right: BorderSide(color: AppPalette.line(Colors.white.withValues(alpha: 0.18)))),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -974,7 +975,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                     _getDisplayName(k),
                     textAlign: TextAlign.center,
                     style: GoogleFonts.merriweather(
-                      color: Colors.white,
+                      color: AppPalette.fg(Colors.white),
                       fontWeight: FontWeight.bold,
                       fontSize: 11.5,
                     ),
@@ -989,7 +990,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                     child: Icon(
                       isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined,
                       size: 13,
-                      color: isFiltered ? const Color(0xFFFFD54F) : Colors.white70,
+                      color: AppPalette.fg(isFiltered ? const Color(0xFFFFD54F) : Colors.white70),
                     ),
                   ),
                 ),
@@ -1009,8 +1010,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     return Container(
       height: dataRowHeight,
       decoration: BoxDecoration(
-        color: rowBg,
-        border: Border(bottom: BorderSide(color: gridLineColor)),
+        color: AppPalette.bg(rowBg),
+        border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor))),
       ),
       child: Row(
         children: keys.map((k) {
@@ -1023,14 +1024,14 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             padding: const EdgeInsets.symmetric(horizontal: 6),
             alignment: Alignment.center, // Center aligned
             decoration: BoxDecoration(
-              border: Border(right: BorderSide(color: gridLineColor)),
+              border: Border(right: BorderSide(color: AppPalette.line(gridLineColor))),
             ),
             child: Text(
               sVal.isEmpty ? "-" : sVal,
               textAlign: TextAlign.center, // Center aligned text
               style: GoogleFonts.merriweather(
                 fontSize: 11.5,
-                color: k == "english_name" ? Colors.black : const Color(0xFF334155),
+                color: AppPalette.fg(k == "english_name" ? Colors.black : const Color(0xFF334155)),
                 fontWeight: k == "english_name" ? FontWeight.bold : FontWeight.normal,
               ),
               maxLines: 1,
@@ -1047,11 +1048,11 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off, size: 36, color: Colors.grey.shade400),
+          Icon(Icons.search_off, size: 36, color: AppPalette.fg(Colors.grey.shade400)),
           const SizedBox(height: 6),
           Text(
             "No matching records found",
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: Colors.grey.shade700, fontSize: 13),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey.shade700), fontSize: 13),
           ),
           const SizedBox(height: 6),
           TextButton(
@@ -1061,7 +1062,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                 _filteredData = widget.logs;
               });
             },
-            child: Text("Clear Filters", style: GoogleFonts.merriweather(color: headerBgColor, fontWeight: FontWeight.bold, fontSize: 12)),
+            child: Text("Clear Filters", style: GoogleFonts.merriweather(color: AppPalette.fg(headerBgColor), fontWeight: FontWeight.bold, fontSize: 12)),
           ),
         ],
       ),
@@ -1071,14 +1072,14 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   Widget _buildSummaryFooter() {
     return Container(
       width: double.infinity,
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: gridLineColor))),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: AppPalette.line(gridLineColor)))),
       child: Row(
         children: [
           Text(
             "Total Records: ${_filteredData.length} of ${widget.logs.length}",
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: headerBgColor, fontSize: 12),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(headerBgColor), fontSize: 12),
           ),
           const Spacer(),
           if (_hiddenColumns.isNotEmpty)
@@ -1086,13 +1087,13 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               padding: const EdgeInsets.only(right: 8.0),
               child: Text(
                 "${_hiddenColumns.length} hidden column(s)",
-                style: const TextStyle(fontSize: 11, color: Colors.blueGrey, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.blueGrey), fontWeight: FontWeight.w600),
               ),
             ),
           if (_columnFilters.isNotEmpty)
             Text(
               "${_columnFilters.length} filter(s) active",
-              style: GoogleFonts.merriweather(fontSize: 11, color: Colors.amber.shade900, fontWeight: FontWeight.bold),
+              style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.amber.shade900), fontWeight: FontWeight.bold),
             ),
         ],
       ),

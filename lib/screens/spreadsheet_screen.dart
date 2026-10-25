@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pluto_grid/pluto_grid.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class SpreadsheetScreen extends StatefulWidget {
   final String title, userEmail, userRole;
@@ -102,7 +103,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFBFBFE),
+      backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300), 
         child: _isSheetOpen ? _buildEditor() : _buildHub(),
@@ -115,10 +116,10 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     double width = MediaQuery.of(context).size.width;
     bool isDesktop = width > 1000;
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: AppPalette.bg(const Color(0xFFF1F5F9)),
       appBar: AppBar(
-        backgroundColor: Colors.white, elevation: 0.5,
-        title: Text("Cloud Sheets Hub", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple))),
+        backgroundColor: AppPalette.bg(Colors.white), elevation: 0.5,
+        title: Text("Cloud Sheets Hub", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple)))),
       body: Padding(
         padding: const EdgeInsets.all(25),
         child: isDesktop ? Row(children: [
@@ -144,9 +145,9 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
   ]);
 
   Widget _hubCol2() => Container(
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 15)]),
+    decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 15)]),
     child: Column(children: [
-      Padding(padding: const EdgeInsets.all(15), child: TextField(decoration: InputDecoration(hintText: "Search files...", prefixIcon: const Icon(Icons.search), filled: true, fillColor: const Color(0xFFFBFBFE), border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)))),
+      Padding(padding: const EdgeInsets.all(15), child: TextField(decoration: InputDecoration(hintText: "Search files...", prefixIcon: const Icon(Icons.search), filled: true, fillColor: AppPalette.bg(const Color(0xFFFBFBFE)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)))),
       Expanded(
         child: StreamBuilder(
           stream: supabase.from('workbooks').stream(primaryKey: ['id']).eq('owner_email', widget.userEmail),
@@ -156,7 +157,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
             return ListView.builder(
               itemCount: docs.length, 
               itemBuilder: (c, i) => ListTile(
-                leading: const Icon(Icons.table_chart, color: Colors.green), 
+                leading: Icon(Icons.table_chart, color: AppPalette.fg(Colors.green)), 
                 title: Text(docs[i]['title'], style: GoogleFonts.merriweather(fontWeight: FontWeight.bold)), 
                 subtitle: Text("Sync Date: ${docs[i]['last_modified'].toString().substring(0,10)}"),
                 onTap: () {
@@ -170,14 +171,14 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
       )
     ]));
 
-  Widget _hubCol3() => Container(padding: const EdgeInsets.all(25), decoration: BoxDecoration(gradient: LinearGradient(colors: [pPurple, Colors.indigo]), borderRadius: BorderRadius.circular(20)), 
+  Widget _hubCol3() => Container(padding: const EdgeInsets.all(25), decoration: BoxDecoration(gradient: LinearGradient(colors: [AppPalette.solid(pPurple), AppPalette.solid(Colors.indigo)]), borderRadius: BorderRadius.circular(20)), 
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Icon(Icons.help_center_outlined, color: Colors.white, size: 30), const SizedBox(height: 15), 
-      Text("Briefing Guide", style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)), 
-      const Text("\n• Full Excel-style context menu.\n• Scroll arrows for fine control.\n• Row height set to 16.5.", style: TextStyle(color: Colors.white70, height: 1.8))
+      Icon(Icons.help_center_outlined, color: AppPalette.fg(Colors.white), size: 30), const SizedBox(height: 15), 
+      Text("Briefing Guide", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 18)), 
+      Text("\n• Full Excel-style context menu.\n• Scroll arrows for fine control.\n• Row height set to 16.5.", style: TextStyle(color: AppPalette.fg(Colors.white70), height: 1.8))
     ]));
 
-  Widget _hubCard(String t, IconData i, Color c, VoidCallback onTap) => Card(margin: const EdgeInsets.only(bottom: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), child: ListTile(onTap: onTap, leading: Icon(i, color: c, size: 30), title: Text(t, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold))));
+  Widget _hubCard(String t, IconData i, Color c, VoidCallback onTap) => Card(margin: const EdgeInsets.only(bottom: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), child: ListTile(onTap: onTap, leading: Icon(i, color: AppPalette.fg(c), size: 30), title: Text(t, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold))));
 
   // --- 2. THE EDITOR VIEW ---
   Widget _buildEditor() {
@@ -185,22 +186,22 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     String displayTitle = (widget.title.isEmpty || widget.title == "New SpreadSheet") ? "My New Sheet" : widget.title;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppPalette.bg(Colors.white),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(135), 
         child: Column(children: [
             Container(
               width: double.infinity, margin: const EdgeInsets.fromLTRB(10, 10, 10, 5), padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(15),
-                border: Border.all(color: pPurple.withValues(alpha: 0.15), width: 1.5),
+                color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.15)), width: 1.5),
                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
               ),
               child: Stack(children: [
-                  Positioned(left: 10, child: IconButton(icon: const Icon(Icons.close, color: Colors.red, size: 20), onPressed: () => setState(() => _isSheetOpen = false))),
+                  Positioned(left: 10, child: IconButton(icon: Icon(Icons.close, color: AppPalette.fg(Colors.red), size: 20), onPressed: () => setState(() => _isSheetOpen = false))),
                   Center(child: Column(children: [
-                        Text(displayTitle, style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: pPurple)),
-                        Text(widget.userEmail, style: const TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
+                        Text(displayTitle, style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
+                        Text(widget.userEmail, style: TextStyle(fontSize: 9, color: AppPalette.fg(Colors.grey), fontWeight: FontWeight.bold)),
                   ])),
                   Positioned(right: 10, child: TextButton.icon(onPressed: _saveCurrentWork, icon: const Icon(Icons.cloud_upload, size: 16), label: const Text("SAVE", style: TextStyle(fontSize: 10)))),
               ]),
@@ -243,13 +244,13 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
   Widget _buildRibbonTabs() => Container(height: 32, padding: const EdgeInsets.only(left: 15), child: Row(children: [
     ...ribbonData.keys.map((t) => GestureDetector(
       onTap: () => setState(() => activeTab = t), 
-      child: Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 15), decoration: BoxDecoration(color: activeTab == t ? pPurple : const Color(0xFFF3E5F5), borderRadius: BorderRadius.circular(8)), 
-        child: Center(child: Text(t, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: activeTab == t ? Colors.white : pPurple))))
+      child: Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 15), decoration: BoxDecoration(color: AppPalette.bg(activeTab == t ? pPurple : const Color(0xFFF3E5F5)), borderRadius: BorderRadius.circular(8)), 
+        child: Center(child: Text(t, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(activeTab == t ? Colors.white : pPurple)))))
     )),
     GestureDetector(
       onTap: () => setState(() => activeTab = "Functions"), 
-      child: Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 15), decoration: BoxDecoration(color: activeTab == "Functions" ? Colors.green : const Color(0xFFE8F5E9), borderRadius: BorderRadius.circular(8)), 
-        child: Center(child: Text("Functions", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: activeTab == "Functions" ? Colors.white : Colors.green[900]))))
+      child: Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 15), decoration: BoxDecoration(color: AppPalette.bg(activeTab == "Functions" ? Colors.green : const Color(0xFFE8F5E9)), borderRadius: BorderRadius.circular(8)), 
+        child: Center(child: Text("Functions", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(activeTab == "Functions" ? Colors.white : Colors.green[900])))))
     )
   ]));
 
@@ -258,40 +259,40 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     ? functionCategories.keys.map((cat) => _actionCard(cat, onTap: () => _showFunctionList(cat))).toList()
     : (ribbonData[activeTab] ?? []).map((item) => _actionCard(item)).toList()));
 
-  Widget _actionCard(String l, {VoidCallback? onTap}) => InkWell(onTap: onTap, child: Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 12), decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(6)), 
+  Widget _actionCard(String l, {VoidCallback? onTap}) => InkWell(onTap: onTap, child: Container(margin: const EdgeInsets.only(right: 6), padding: const EdgeInsets.symmetric(horizontal: 12), decoration: BoxDecoration(color: AppPalette.bg(Colors.white), border: Border.all(color: AppPalette.line(Colors.grey.shade200)), borderRadius: BorderRadius.circular(6)), 
     child: Center(child: Text(l, style: GoogleFonts.merriweather(fontSize: 9, fontWeight: FontWeight.bold)))));
 
   Widget _buildRoundedFXBar() => Container(
       height: 32, margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(color: const Color(0xFFFBFBFE), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.withValues(alpha: 0.2))),
+      decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFFBFBFE)), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2)))),
       child: Row(children: [
-        const Text("fx", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
+        Text("fx", style: TextStyle(fontStyle: FontStyle.italic, color: AppPalette.fg(Colors.grey), fontWeight: FontWeight.bold, fontSize: 16)),
         const VerticalDivider(indent: 5, endIndent: 5),
         const Expanded(child: TextField(decoration: InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero), style: TextStyle(fontSize: 13))),
       ]),
   );
 
   // --- SCROLL CONTROLS WITH ARROWS (RESTORED FINE CONTROL) ---
-  Widget _buildVerticalScrollWithArrows() => Container(width: 22, color: Colors.grey[100], child: Column(children: [
+  Widget _buildVerticalScrollWithArrows() => Container(width: 22, color: AppPalette.bg(Colors.grey[100]), child: Column(children: [
     IconButton(icon: const Icon(Icons.arrow_drop_up, size: 14), padding: EdgeInsets.zero, onPressed: () => stateManager?.scroll.vertical?.animateTo(stateManager!.scroll.vertical!.offset - 50, duration: const Duration(milliseconds: 50), curve: Curves.linear)),
-    Expanded(child: Container(width: 15, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(5)))),
+    Expanded(child: Container(width: 15, decoration: BoxDecoration(color: AppPalette.bg(Colors.grey[300]), borderRadius: BorderRadius.circular(5)))),
     IconButton(icon: const Icon(Icons.arrow_drop_down, size: 14), padding: EdgeInsets.zero, onPressed: () => stateManager?.scroll.vertical?.animateTo(stateManager!.scroll.vertical!.offset + 50, duration: const Duration(milliseconds: 50), curve: Curves.linear)),
   ]));
 
-  Widget _buildHorizontalScrollWithArrows(double w) => Container(height: 22, color: Colors.grey[100], child: Row(children: [
+  Widget _buildHorizontalScrollWithArrows(double w) => Container(height: 22, color: AppPalette.bg(Colors.grey[100]), child: Row(children: [
     const SizedBox(width: 35),
     IconButton(icon: const Icon(Icons.arrow_left, size: 14), padding: EdgeInsets.zero, onPressed: () => stateManager?.scroll.horizontal?.animateTo(stateManager!.scroll.horizontal!.offset - 100, duration: const Duration(milliseconds: 50), curve: Curves.linear)),
-    Expanded(child: Container(height: 15, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(5)))),
+    Expanded(child: Container(height: 15, decoration: BoxDecoration(color: AppPalette.bg(Colors.grey[300]), borderRadius: BorderRadius.circular(5)))),
     IconButton(icon: const Icon(Icons.arrow_right, size: 14), padding: EdgeInsets.zero, onPressed: () => stateManager?.scroll.horizontal?.animateTo(stateManager!.scroll.horizontal!.offset + 100, duration: const Duration(milliseconds: 50), curve: Curves.linear)),
     const SizedBox(width: 22), 
   ]));
 
-  Widget _buildSheetTabLine() => Container(height: 32, color: Colors.grey[100], child: Row(children: [
+  Widget _buildSheetTabLine() => Container(height: 32, color: AppPalette.bg(Colors.grey[100]), child: Row(children: [
       IconButton(icon: const Icon(Icons.chevron_left, size: 20), onPressed: () {}),
       IconButton(icon: const Icon(Icons.chevron_right, size: 20), onPressed: () {}),
       const VerticalDivider(),
-      Expanded(child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: sheets.length, itemBuilder: (c, i) => GestureDetector(onTap: () => setState(() => activeSheetIndex = i), child: Container(padding: const EdgeInsets.symmetric(horizontal: 15), color: i == activeSheetIndex ? Colors.white : Colors.transparent, child: Center(child: Text(sheets[i], style: TextStyle(fontSize: 11, fontWeight: i == activeSheetIndex ? FontWeight.bold : FontWeight.normal, color: i == activeSheetIndex ? pPurple : Colors.black54))))))),
-      IconButton(icon: const Icon(Icons.add, size: 18, color: Colors.green), onPressed: () => setState(() => sheets.add("Sheet ${sheets.length + 1}"))),
+      Expanded(child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: sheets.length, itemBuilder: (c, i) => GestureDetector(onTap: () => setState(() => activeSheetIndex = i), child: Container(padding: const EdgeInsets.symmetric(horizontal: 15), color: AppPalette.bg(i == activeSheetIndex ? Colors.white : Colors.transparent), child: Center(child: Text(sheets[i], style: TextStyle(fontSize: 11, fontWeight: i == activeSheetIndex ? FontWeight.bold : FontWeight.normal, color: AppPalette.fg(i == activeSheetIndex ? pPurple : Colors.black54)))))))),
+      IconButton(icon: Icon(Icons.add, size: 18, color: AppPalette.fg(Colors.green)), onPressed: () => setState(() => sheets.add("Sheet ${sheets.length + 1}"))),
       const Spacer(),
       Text("${(zoomLevel * 100).toInt()}%", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
       SizedBox(width: 80, child: Slider(value: zoomLevel, min: 0.5, max: 2.0, activeColor: pPurple, onChanged: (v) => setState(() => zoomLevel = v))),
@@ -305,7 +306,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
   void _showContextMenu(Offset pos) {
     showMenu<dynamic>(context: context, position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy), items: <PopupMenuEntry<dynamic>>[
       _ctx(Icons.content_cut, "Cut"), _ctx(Icons.content_copy, "Copy"),
-      const PopupMenuItem<dynamic>(height: 35, child: Row(children: [Icon(Icons.assignment_turned_in, size: 18, color: Colors.orange), SizedBox(width: 12), Text("Paste Options:")])),
+      PopupMenuItem<dynamic>(height: 35, child: Row(children: [Icon(Icons.assignment_turned_in, size: 18, color: AppPalette.fg(Colors.orange)), SizedBox(width: 12), Text("Paste Options:")])),
       _ctx(Icons.paste, "Paste Special..."),
       const PopupMenuDivider(),
       _ctx(Icons.add, "Insert..."), _ctx(Icons.delete_outline, "Delete..."),
@@ -318,5 +319,5 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
       _ctx(Icons.link, "Hyperlink..."),
     ]);
   }
-  PopupMenuItem<dynamic> _ctx(IconData i, String t) => PopupMenuItem<dynamic>(height: 35, child: Row(children: [Icon(i, size: 18, color: Colors.grey[700]), const SizedBox(width: 12), Text(t, style: GoogleFonts.merriweather(fontSize: 12))]));
+  PopupMenuItem<dynamic> _ctx(IconData i, String t) => PopupMenuItem<dynamic>(height: 35, child: Row(children: [Icon(i, size: 18, color: AppPalette.fg(Colors.grey[700])), const SizedBox(width: 12), Text(t, style: GoogleFonts.merriweather(fontSize: 12))]));
 }

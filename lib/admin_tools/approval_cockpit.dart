@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class ApprovalCockpit extends StatefulWidget {
   final String role, unitName, selectedDuty;
@@ -511,14 +512,14 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: AppPalette.bg(Theme.of(context).scaffoldBackgroundColor),
         appBar: AppBar(
           title: Text(
             "QC Approval Cockpit",
-            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: _accent, fontSize: 17),
+            style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(_accent), fontSize: 17),
           ),
           centerTitle: true,
-          backgroundColor: _cs.surface,
+          backgroundColor: AppPalette.bg(_cs.surface),
           elevation: 0.5,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, size: 18),
@@ -591,9 +592,9 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           padding: const EdgeInsets.all(30),
           children: [
             const SizedBox(height: 60),
-            Icon(Icons.lock_outline_rounded, size: 48, color: Colors.grey.shade500),
+            Icon(Icons.lock_outline_rounded, size: 48, color: AppPalette.fg(Colors.grey.shade500)),
             const SizedBox(height: 14),
-            Text(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.5)),
+            Text(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppPalette.fg(Colors.grey.shade600), height: 1.5)),
           ],
         ),
       );
@@ -606,10 +607,10 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      color: _accent.withValues(alpha: 0.08),
+      color: AppPalette.bg(_accent.withValues(alpha: 0.08)),
       child: Text(
         "Level $_level reviewer · ${_scope.replaceAll('_', ' ')} scope${unitPath.isEmpty ? '' : ' · $unitPath'}",
-        style: TextStyle(fontSize: 11, color: _accent, fontWeight: FontWeight.w600),
+        style: TextStyle(fontSize: 11, color: AppPalette.fg(_accent), fontWeight: FontWeight.w600),
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
@@ -628,7 +629,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
               child: Icon(
                 isPendingTab ? Icons.check_circle_outline_rounded : Icons.folder_open_rounded,
                 size: 50,
-                color: Colors.grey.shade400,
+                color: AppPalette.fg(Colors.grey.shade400),
               ),
             ),
             const SizedBox(height: 12),
@@ -637,7 +638,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                 isPendingTab
                     ? "Clear! No reports awaiting your approval."
                     : "No approved reports found for ${widget.selectedDuty}.",
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                style: TextStyle(color: AppPalette.fg(Colors.grey.shade600), fontSize: 13),
               ),
             ),
           ],
@@ -672,9 +673,9 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
-              color: _cs.surface,
+              color: AppPalette.bg(_cs.surface),
               borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: _cardBorder, width: 1.0),
+              border: Border.all(color: AppPalette.line(_cardBorder), width: 1.0),
               boxShadow: [
                 BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3)),
               ],
@@ -693,68 +694,68 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         Expanded(
                           child: Text(
                             b['unit_name'],
-                            style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: _accent),
+                            style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: AppPalette.fg(_accent)),
                           ),
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: tone.withValues(alpha: 0.12),
+                            color: AppPalette.bg(tone.withValues(alpha: 0.12)),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: tone.shade300),
+                            border: Border.all(color: AppPalette.line(tone.shade300)),
                           ),
                           child: Text(
                             chip,
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _isDark ? tone.shade200 : tone.shade800),
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(_isDark ? tone.shade200 : tone.shade800)),
                           ),
                         ),
                       ],
                     ),
                     if ((b['unit_context'] as String).isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text(b['unit_context'], style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600)),
+                      Text(b['unit_context'], style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.grey.shade600))),
                     ],
                     const Divider(height: 18),
                     Row(
                       children: [
-                        const Icon(Icons.event_note_rounded, size: 15, color: Colors.blueGrey),
+                        Icon(Icons.event_note_rounded, size: 15, color: AppPalette.fg(Colors.blueGrey)),
                         const SizedBox(width: 6),
                         Text("Activity Date: ${b['report_date']}",
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                         const Spacer(),
-                        Text("${b['total_members']} Entries", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                        Text("${b['total_members']} Entries", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade600))),
                       ],
                     ),
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Icon(Icons.upload_file_rounded, size: 15, color: Colors.blueGrey),
+                        Icon(Icons.upload_file_rounded, size: 15, color: AppPalette.fg(Colors.blueGrey)),
                         const SizedBox(width: 6),
                         Text("Date of Submission: ${_formatDate(b['submitted_at'])}",
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                            style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
                       ],
                     ),
                     if (isFinal || isForwarded) ...[
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.check_circle_rounded, size: 15, color: Colors.green.shade600),
+                          Icon(Icons.check_circle_rounded, size: 15, color: AppPalette.fg(Colors.green.shade600)),
                           const SizedBox(width: 6),
                           Text("Date of Approval: ${_formatDate(b['approved_at'])}",
-                              style: TextStyle(fontSize: 11, color: Colors.green.shade600, fontWeight: FontWeight.w600)),
+                              style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.green.shade600), fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ],
                     if (isFlagged && b['correction_note'] != null) ...[
                       const SizedBox(height: 6),
                       Text("Correction Note: ${b['correction_note']}",
-                          style: TextStyle(fontSize: 11, color: Colors.red.shade400, fontStyle: FontStyle.italic)),
+                          style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.red.shade400), fontStyle: FontStyle.italic)),
                     ],
                     const SizedBox(height: 10),
                     Align(
                       alignment: Alignment.centerRight,
                       child: Text("Tap to Inspect & Audit →",
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _accent)),
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_accent))),
                     ),
                   ],
                 ),
@@ -784,9 +785,9 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: _cs.surface,
+              color: AppPalette.bg(_cs.surface),
               borderRadius: BorderRadius.circular(15),
-              border: Border.all(color: _cardBorder, width: 1.0),
+              border: Border.all(color: AppPalette.line(_cardBorder), width: 1.0),
               boxShadow: [
                 BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3)),
               ],
@@ -795,17 +796,17 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("Inspecting: ${b['unit_name']}",
-                    style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold, color: _accent)),
+                    style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold, color: AppPalette.fg(_accent))),
                 if ((b['unit_context'] as String).isNotEmpty)
-                  Text(b['unit_context'], style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                  Text(b['unit_context'], style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
                 const SizedBox(height: 4),
                 Text("Duty: ${widget.selectedDuty}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                Text("Activity Date: ${b['report_date']}", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                Text("Activity Date: ${b['report_date']}", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade600))),
                 Text("Date of Submission: ${_formatDate(b['submitted_at'])}",
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                    style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade600))),
                 if (isDone)
                   Text("Date of Approval: ${_formatDate(b['approved_at'])}",
-                      style: TextStyle(fontSize: 12, color: Colors.green.shade600, fontWeight: FontWeight.bold)),
+                      style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.green.shade600), fontWeight: FontWeight.bold)),
               ],
             ),
           ),
@@ -838,16 +839,16 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         width: double.infinity,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: tone.withValues(alpha: 0.10),
+          color: AppPalette.bg(tone.withValues(alpha: 0.10)),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: tone.shade300),
+          border: Border.all(color: AppPalette.line(tone.shade300)),
         ),
         child: Row(
           children: [
-            Icon(icon, color: tone.shade400, size: 20),
+            Icon(icon, color: AppPalette.fg(tone.shade400), size: 20),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: tone.shade400)),
+              child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(tone.shade400))),
             ),
           ],
         ),
@@ -857,7 +858,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           children: [
-            Icon(icon, color: _accent, size: 18),
+            Icon(icon, color: AppPalette.fg(_accent), size: 18),
             const SizedBox(width: 8),
             Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
           ],
@@ -868,7 +869,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
-        backgroundColor: Colors.black,
+        backgroundColor: AppPalette.bg(Colors.black),
         insetPadding: const EdgeInsets.all(10),
         child: Stack(
           children: [
@@ -876,9 +877,9 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
               child: Image.network(
                 url,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Padding(
+                errorBuilder: (_, __, ___) => Padding(
                   padding: EdgeInsets.all(40),
-                  child: Center(child: Icon(Icons.broken_image_rounded, color: Colors.white54, size: 48)),
+                  child: Center(child: Icon(Icons.broken_image_rounded, color: AppPalette.fg(Colors.white54), size: 48)),
                 ),
               ),
             ),
@@ -886,7 +887,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
               right: 4,
               top: 4,
               child: IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white),
+                icon: Icon(Icons.close_rounded, color: AppPalette.fg(Colors.white)),
                 onPressed: () => Navigator.pop(ctx),
               ),
             ),
@@ -904,17 +905,17 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
       return Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.orange.withValues(alpha: 0.12),
+          color: AppPalette.bg(Colors.orange.withValues(alpha: 0.12)),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.orange.shade300),
+          border: Border.all(color: AppPalette.line(Colors.orange.shade300)),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
+            Icon(Icons.warning_amber_rounded, color: AppPalette.fg(Colors.orange), size: 18),
             SizedBox(width: 8),
             Expanded(
               child: Text("No photos were uploaded with this report.",
-                  style: TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.bold)),
+                  style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.orange), fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -935,24 +936,24 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
               width: 250,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _cardBorder, width: 1.0),
-                color: _cs.surfaceContainerHighest,
+                border: Border.all(color: AppPalette.line(_cardBorder), width: 1.0),
+                color: AppPalette.bg(_cs.surfaceContainerHighest),
               ),
               clipBehavior: Clip.antiAlias,
               child: url == null
-                  ? const Center(child: Icon(Icons.image_not_supported_rounded, color: Colors.grey, size: 36))
+                  ? Center(child: Icon(Icons.image_not_supported_rounded, color: AppPalette.fg(Colors.grey), size: 36))
                   : Image.network(
                       url,
                       fit: BoxFit.cover,
                       loadingBuilder: (ctx, child, progress) =>
                           progress == null ? child : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      errorBuilder: (_, __, ___) => const Center(
+                      errorBuilder: (_, __, ___) => Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.broken_image_rounded, color: Colors.grey, size: 36),
+                            Icon(Icons.broken_image_rounded, color: AppPalette.fg(Colors.grey), size: 36),
                             SizedBox(height: 6),
-                            Text("Photo can't be opened", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                            Text("Photo can't be opened", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
                           ],
                         ),
                       ),
@@ -967,9 +968,9 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
   Widget _buildAbsenteeList(List<dynamic> abs) {
     return Container(
       decoration: BoxDecoration(
-        color: _cs.surface,
+        color: AppPalette.bg(_cs.surface),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: _cardBorder, width: 1.0),
+        border: Border.all(color: AppPalette.line(_cardBorder), width: 1.0),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3)),
         ],
@@ -979,7 +980,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           ListTile(
             title: Text("Total Absentees: ${abs.length}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
             subtitle: const Text("Cross-check these reasons with the evidence photo.", style: TextStyle(fontSize: 11)),
-            trailing: Icon(Icons.warning_amber_rounded, color: abs.isEmpty ? Colors.green : Colors.orange),
+            trailing: Icon(Icons.warning_amber_rounded, color: AppPalette.fg(abs.isEmpty ? Colors.green : Colors.orange)),
           ),
           const Divider(height: 0),
           ...abs.map((l) {
@@ -987,12 +988,12 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
             final name = (m['english_name'] ?? m['korean_name'] ?? 'Unknown member').toString();
             return ListTile(
               dense: true,
-              leading: const CircleAvatar(backgroundColor: Colors.redAccent, radius: 4),
+              leading: CircleAvatar(backgroundColor: AppPalette.bg(Colors.redAccent), radius: 4),
               title: Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
               subtitle: Text(
                 l['reason_notes'] ?? l['situation_notes'] ?? "No reason provided",
                 style: TextStyle(
-                  color: (l['reason_notes'] == null && l['situation_notes'] == null) ? Colors.red : Colors.grey.shade600,
+                  color: AppPalette.fg((l['reason_notes'] == null && l['situation_notes'] == null) ? Colors.red : Colors.grey.shade600),
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
                 ),
@@ -1000,9 +1001,9 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
             );
           }),
           if (abs.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(16),
-              child: Text("No absentees to verify for this unit.", style: TextStyle(fontSize: 12, color: Colors.grey)),
+              child: Text("No absentees to verify for this unit.", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey))),
             ),
         ],
       ),
@@ -1016,29 +1017,29 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         Expanded(
           child: OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.red, width: 1.2),
+              side: BorderSide(color: AppPalette.line(Colors.red), width: 1.2),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               padding: const EdgeInsets.symmetric(vertical: 12),
             ),
             onPressed: _isSaving ? null : _showFlagDialog,
-            icon: const Icon(Icons.flag_rounded, color: Colors.red, size: 18),
-            label: const Text("Flag for Correction", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            icon: Icon(Icons.flag_rounded, color: AppPalette.fg(Colors.red), size: 18),
+            label: Text("Flag for Correction", style: TextStyle(color: AppPalette.fg(Colors.red), fontWeight: FontWeight.bold)),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade700,
+              backgroundColor: AppPalette.bg(Colors.green.shade700),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               padding: const EdgeInsets.symmetric(vertical: 12),
             ),
             onPressed: _isSaving ? null : () => _processApproval(true),
             icon: _isSaving
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.verified_rounded, color: Colors.white, size: 18),
+                : Icon(Icons.verified_rounded, color: AppPalette.fg(Colors.white), size: 18),
             label: Text(isFinal ? "Approve Report" : "Approve & Forward",
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                style: TextStyle(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold)),
           ),
         ),
       ],
@@ -1059,14 +1060,14 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("Cancel")),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(Colors.red.shade700)),
             onPressed: () {
               if (ctrl.text.trim().isEmpty) return; // a reason is required so the submitter knows what to fix
               final note = ctrl.text.trim();
               Navigator.pop(c);
               _processApproval(false, note: note);
             },
-            child: const Text("Return Report", style: TextStyle(color: Colors.white)),
+            child: Text("Return Report", style: TextStyle(color: AppPalette.fg(Colors.white))),
           ),
         ],
       ),

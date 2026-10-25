@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/absentee_logic.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class UniversalInterventionScreen extends StatefulWidget {
   final String duty;
@@ -280,28 +281,28 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
         title: Text(
           _screenTitle,
-          style: GoogleFonts.merriweather(fontWeight: FontWeight.w800, fontSize: 15, color: const Color(0xFF1E2D4A)),
+          style: GoogleFonts.merriweather(fontWeight: FontWeight.w800, fontSize: 15, color: AppPalette.fg(const Color(0xFF1E2D4A))),
         ),
         centerTitle: true,
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF1E2D4A), size: 19),
+          icon: Icon(Icons.arrow_back_ios_new, color: AppPalette.fg(Color(0xFF1E2D4A)), size: 19),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         actions: [
           IconButton(
             tooltip: "Columns",
-            icon: const Icon(Icons.view_column_outlined, color: Color(0xFF1E2D4A), size: 20),
+            icon: Icon(Icons.view_column_outlined, color: AppPalette.fg(Color(0xFF1E2D4A)), size: 20),
             onPressed: _showColumnVisibilityDialog,
           ),
           IconButton(
             tooltip: "Export Excel",
-            icon: const Icon(Icons.file_download_outlined, color: Color(0xFF1E2D4A), size: 20),
+            icon: Icon(Icons.file_download_outlined, color: AppPalette.fg(Color(0xFF1E2D4A)), size: 20),
             onPressed: _exportAsExcelCsv,
           ),
         ],
@@ -321,9 +322,9 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 6),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: gridLineColor, width: 0.6),
+        border: Border.all(color: AppPalette.line(gridLineColor), width: 0.6),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 1)),
         ],
@@ -339,18 +340,18 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: headerDarkNavy.withValues(alpha: 0.06),
+                  color: AppPalette.bg(headerDarkNavy.withValues(alpha: 0.06)),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: headerDarkNavy.withValues(alpha: 0.2)),
+                  border: Border.all(color: AppPalette.line(headerDarkNavy.withValues(alpha: 0.2))),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.calendar_month_rounded, size: 15, color: headerDarkNavy),
+                    Icon(Icons.calendar_month_rounded, size: 15, color: AppPalette.fg(headerDarkNavy)),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         "Period: $_periodLabel",
-                        style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: headerDarkNavy),
+                        style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(headerDarkNavy)),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -393,7 +394,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                     child: DropdownButton<String>(
                       value: _allDutyStyles.contains(_globalStyleFilter) ? _globalStyleFilter : "All Styles",
                       isDense: true,
-                      style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.bold),
+                      style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.bold),
                       items: _allDutyStyles.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
                       onChanged: (v) {
                         setState(() => _globalStyleFilter = v ?? "All Styles");
@@ -423,9 +424,9 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       return Container(
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppPalette.bg(Colors.white),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: gridLineColor, width: 0.5),
+          border: Border.all(color: AppPalette.line(gridLineColor), width: 0.5),
         ),
         clipBehavior: Clip.antiAlias,
         child: Row(
@@ -449,13 +450,13 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                           height: dataRowHeight,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: isEven ? const Color(0xFFFBFDFB) : const Color(0xFFEEF3F0),
+                            color: AppPalette.bg(isEven ? const Color(0xFFFBFDFB) : const Color(0xFFEEF3F0)),
                             border: Border(
-                              right: BorderSide(color: gridLineColor, width: 0.5),
-                              bottom: BorderSide(color: gridLineColor, width: 0.5),
+                              right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5),
+                              bottom: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5),
                             ),
                           ),
-                          child: Text("${index + 1}", style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.w600, color: const Color(0xFF475569))),
+                          child: Text("${index + 1}", style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.w600, color: AppPalette.fg(const Color(0xFF475569)))),
                         );
                       },
                     ),
@@ -516,10 +517,10 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       width: rowNumWidth,
       height: letterRowHeight + headerRowHeight,
       decoration: BoxDecoration(
-        color: cornerBg,
+        color: AppPalette.bg(cornerBg),
         border: Border(
-          right: BorderSide(color: gridLineColor, width: 0.5),
-          bottom: BorderSide(color: gridLineColor, width: 0.5),
+          right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5),
+          bottom: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5),
         ),
       ),
       child: Column(
@@ -527,13 +528,13 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
           Container(
             height: letterRowHeight,
             alignment: Alignment.center,
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: gridLineColor, width: 0.5))),
-            child: const Icon(Icons.grid_view_rounded, size: 12, color: Color(0xFF64748B)),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
+            child: Icon(Icons.grid_view_rounded, size: 12, color: AppPalette.fg(Color(0xFF64748B))),
           ),
           Container(
             height: headerRowHeight - 1,
             alignment: Alignment.center,
-            child: Text("#", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: headerDarkNavy)),
+            child: Text("#", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(headerDarkNavy))),
           ),
         ],
       ),
@@ -543,7 +544,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
   Widget _buildColumnLettersRow(List<String> cols, double factor) {
     return Container(
       height: letterRowHeight,
-      decoration: BoxDecoration(color: letterBg, border: Border(bottom: BorderSide(color: gridLineColor, width: 0.5))),
+      decoration: BoxDecoration(color: AppPalette.bg(letterBg), border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
       child: Row(
         children: List.generate(cols.length, (i) {
           String k = cols[i];
@@ -552,8 +553,8 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
             width: colWidth,
             height: letterRowHeight,
             alignment: Alignment.center,
-            decoration: BoxDecoration(border: Border(right: BorderSide(color: gridLineColor, width: 0.5))),
-            child: Text(_getExcelColumnLetter(i), style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
+            decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
+            child: Text(_getExcelColumnLetter(i), style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.w600, color: AppPalette.fg(const Color(0xFF64748B)))),
           );
         }),
       ),
@@ -563,7 +564,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
   Widget _buildExcelHeadersRow(List<String> cols, double factor) {
     return Container(
       height: headerRowHeight,
-      color: headerDarkNavy,
+      color: AppPalette.bg(headerDarkNavy),
       child: Row(
         children: cols.map((col) {
           double colWidth = (_colWidths[col] ?? 100) * factor;
@@ -574,7 +575,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
             width: colWidth,
             height: headerRowHeight,
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(border: Border(right: BorderSide(color: Colors.white.withValues(alpha: 0.18), width: 0.5))),
+            decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(Colors.white.withValues(alpha: 0.18)), width: 0.5))),
             child: InkWell(
               onTap: filterable ? () => _showCheckboxFilter(col) : null,
               child: Row(
@@ -585,14 +586,14 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                       col,
                       textAlign: TextAlign.center,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5),
+                      style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 11.5),
                     ),
                   ),
                   if (filterable)
                     Icon(
                       hasFilter ? Icons.filter_alt : Icons.arrow_drop_down,
                       size: 14,
-                      color: hasFilter ? Colors.amberAccent : Colors.white70,
+                      color: AppPalette.fg(hasFilter ? Colors.amberAccent : Colors.white70),
                     ),
                 ],
               ),
@@ -619,7 +620,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
 
     return Container(
       height: dataRowHeight,
-      decoration: BoxDecoration(color: rowBg, border: Border(bottom: BorderSide(color: gridLineColor, width: 0.5))),
+      decoration: BoxDecoration(color: AppPalette.bg(rowBg), border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
       child: Row(
         children: cols.map((col) {
           double width = (_colWidths[col] ?? 100) * factor;
@@ -638,16 +639,16 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
               height: dataRowHeight,
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: BoxDecoration(border: Border(right: BorderSide(color: gridLineColor, width: 0.5))),
+              decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
               child: memberStyles.isEmpty
-                  ? const Text("-", style: TextStyle(fontSize: 10, color: Colors.grey))
+                  ? Text("-", style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey)))
                   : DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: memberStyles.contains(currentStyle) ? currentStyle : memberStyles.first.toString(),
                         isDense: true,
                         isExpanded: true,
                         iconSize: 13,
-                        style: const TextStyle(fontSize: 10.5, color: Colors.black87, fontWeight: FontWeight.bold),
+                        style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.bold),
                         items: memberStyles.map((s) => DropdownMenuItem(value: s.toString(), child: Center(child: Text(s.toString(), overflow: TextOverflow.ellipsis)))).toList(),
                         onChanged: (val) {
                           if (val != null) {
@@ -667,11 +668,11 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
               width: width,
               height: dataRowHeight,
               alignment: Alignment.center,
-              decoration: BoxDecoration(border: Border(right: BorderSide(color: gridLineColor, width: 0.5))),
+              decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: countForCurrentStyle > 0 ? Colors.blue.shade50 : Colors.grey.shade100,
+                  color: AppPalette.bg(countForCurrentStyle > 0 ? Colors.blue.shade50 : Colors.grey.shade100),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -679,7 +680,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
-                    color: countForCurrentStyle > 0 ? Colors.blue[900] : Colors.grey[600],
+                    color: AppPalette.fg(countForCurrentStyle > 0 ? Colors.blue[900] : Colors.grey[600]),
                   ),
                 ),
               ),
@@ -691,10 +692,10 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
               width: width,
               height: dataRowHeight,
               alignment: Alignment.center,
-              decoration: BoxDecoration(border: Border(right: BorderSide(color: gridLineColor, width: 0.5))),
+              decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
               child: Text(
                 "${missedCount}x",
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: missedCount >= 4 ? Colors.red[700] : Colors.orange[800]),
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(missedCount >= 4 ? Colors.red[700] : Colors.orange[800])),
               ),
             );
           }
@@ -705,8 +706,8 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
               height: dataRowHeight,
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(border: Border(right: BorderSide(color: gridLineColor, width: 0.5))),
-              child: Text(item['last_recovery_outcome'] ?? "No Care Logged", overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Colors.blueGrey[600])),
+              decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
+              child: Text(item['last_recovery_outcome'] ?? "No Care Logged", overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: AppPalette.fg(Colors.blueGrey[600]))),
             );
           }
 
@@ -715,13 +716,13 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
               width: width,
               height: dataRowHeight,
               alignment: Alignment.center,
-              decoration: BoxDecoration(border: Border(right: BorderSide(color: gridLineColor, width: 0.5))),
+              decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
               child: SizedBox(
                 height: 20,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: actionBtnBlue, padding: const EdgeInsets.symmetric(horizontal: 6), elevation: 0),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(actionBtnBlue), padding: const EdgeInsets.symmetric(horizontal: 6), elevation: 0),
                   onPressed: () => _showMaintenanceDialog(m),
-                  child: const Text("Log Care", style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: Text("Log Care", style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold)),
                 ),
               ),
             );
@@ -733,8 +734,8 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
               height: dataRowHeight,
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(border: Border(right: BorderSide(color: gridLineColor, width: 0.5))),
-              child: Text(item['last_reason'] ?? "-", overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.black87)),
+              decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
+              child: Text(item['last_reason'] ?? "-", overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.black87))),
             );
           }
 
@@ -748,10 +749,10 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
     return Container(
       width: width,
       height: dataRowHeight,
-      decoration: BoxDecoration(border: Border(right: BorderSide(color: gridLineColor, width: 0.5))),
+      decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
       padding: const EdgeInsets.symmetric(horizontal: 4),
       alignment: Alignment.center,
-      child: Text(val.isEmpty ? "-" : val, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: isBold ? FontWeight.w600 : FontWeight.normal, color: Colors.black87)),
+      child: Text(val.isEmpty ? "-" : val, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: isBold ? FontWeight.w600 : FontWeight.normal, color: AppPalette.fg(Colors.black87))),
     );
   }
 
@@ -761,7 +762,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          title: Text("Show / Hide Columns", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: headerDarkNavy)),
+          title: Text("Show / Hide Columns", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: AppPalette.fg(headerDarkNavy))),
           content: SizedBox(
             width: 300,
             height: 350,
@@ -788,9 +789,9 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
           ),
           actions: [
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: headerDarkNavy),
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(headerDarkNavy)),
               onPressed: () => Navigator.pop(ctx),
-              child: const Text("Done", style: TextStyle(color: Colors.white, fontSize: 12)),
+              child: Text("Done", style: TextStyle(color: AppPalette.fg(Colors.white), fontSize: 12)),
             ),
           ],
         ),
@@ -848,7 +849,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       builder: (c) => StatefulBuilder(
         builder: (c, setST) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: Text("Care Log: ${_getName(Map<String, dynamic>.from(memberMap))}", style: TextStyle(color: headerDarkNavy, fontSize: 14, fontWeight: FontWeight.bold)),
+          title: Text("Care Log: ${_getName(Map<String, dynamic>.from(memberMap))}", style: TextStyle(color: AppPalette.fg(headerDarkNavy), fontSize: 14, fontWeight: FontWeight.bold)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -865,7 +866,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
           actions: [
             TextButton(onPressed: () => Navigator.pop(c), child: const Text("Cancel")),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: actionBtnBlue),
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(actionBtnBlue)),
               onPressed: () async {
                 final user = Supabase.instance.client.auth.currentUser;
                 await Supabase.instance.client.from('member_recovery_logs').insert({
@@ -879,7 +880,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                 Navigator.pop(c);
                 if (mounted) _load();
               },
-              child: const Text("Save Log", style: TextStyle(color: Colors.white)),
+              child: Text("Save Log", style: TextStyle(color: AppPalette.fg(Colors.white))),
             ),
           ],
         ),
@@ -908,7 +909,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: Text("Filter $column", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: headerDarkNavy)),
+          title: Text("Filter $column", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppPalette.fg(headerDarkNavy))),
           content: SizedBox(
             width: 280,
             child: Column(
@@ -947,12 +948,12 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: actionBtnBlue),
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(actionBtnBlue)),
               onPressed: () {
                 _applyFilters();
                 Navigator.pop(context);
               },
-              child: const Text("Apply Filter", style: TextStyle(color: Colors.white)),
+              child: Text("Apply Filter", style: TextStyle(color: AppPalette.fg(Colors.white))),
             ),
           ],
         ),

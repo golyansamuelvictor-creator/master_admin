@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class TaskManagerScreen extends StatefulWidget {
   const TaskManagerScreen({super.key});
@@ -52,10 +53,10 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
-        title: Text("Leader Accountability Tasks", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 18)),
-        centerTitle: true, elevation: 0.5, backgroundColor: Colors.white,
+        title: Text("Leader Accountability Tasks", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 18)),
+        centerTitle: true, elevation: 0.5, backgroundColor: AppPalette.bg(Colors.white),
       ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator())
@@ -65,9 +66,9 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
             itemBuilder: (c, i) => _buildTaskCard(_tasks[i]),
           ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: pPurple,
+        backgroundColor: AppPalette.bg(pPurple),
         onPressed: _showCreateTaskDialog,
-        child: const Icon(Icons.add_task_rounded, color: Colors.white),
+        child: Icon(Icons.add_task_rounded, color: AppPalette.fg(Colors.white)),
       ),
     );
   }
@@ -85,18 +86,18 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-              child: Text(status, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10)),
+              decoration: BoxDecoration(color: AppPalette.bg(statusColor.withValues(alpha: 0.1)), borderRadius: BorderRadius.circular(10)),
+              child: Text(status, style: TextStyle(color: AppPalette.fg(statusColor), fontWeight: FontWeight.bold, fontSize: 10)),
             ),
-            Text("Due: ${DateFormat('dd MMM').format(DateTime.parse(task['due_date']))}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            Text("Due: ${DateFormat('dd MMM').format(DateTime.parse(task['due_date']))}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
           ]),
           const SizedBox(height: 12),
           Text(task['title'], style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 5),
-          Text(task['description'] ?? "No description provided.", style: const TextStyle(fontSize: 13, color: Colors.black54)),
+          Text(task['description'] ?? "No description provided.", style: TextStyle(fontSize: 13, color: AppPalette.fg(Colors.black54))),
           const Divider(height: 30),
           Row(children: [
-            const Icon(Icons.person_outline, size: 14, color: Colors.blueGrey),
+            Icon(Icons.person_outline, size: 14, color: AppPalette.fg(Colors.blueGrey)),
             const SizedBox(width: 8),
             Text("Assigned to: ${task['assigned_to']['full_name']}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             const Spacer(),

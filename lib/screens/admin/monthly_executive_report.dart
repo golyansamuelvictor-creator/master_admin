@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../core/compliance_logic.dart';
 import '../../core/export_logic.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class DutyStat {
   final String dutyName;
@@ -453,17 +454,17 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
     double sidePadding = isDesktop ? 24.0 : 12.0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Color(0xFF3B0764)),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppPalette.fg(Color(0xFF3B0764))),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           "Executive performance report",
-          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 16),
+          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 16),
         ),
         centerTitle: true,
       ),
@@ -519,9 +520,9 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.18)),
+        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.18))),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -529,12 +530,12 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           Expanded(
             child: Row(
               children: [
-                Icon(Icons.shield_outlined, size: 18, color: pPurple),
+                Icon(Icons.shield_outlined, size: 18, color: AppPalette.fg(pPurple)),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     "${_formatRole(_activeRole)} • $_activeUnit",
-                    style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey[900]),
+                    style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[900])),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -546,14 +547,14 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
             height: 32,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFFF3E5F5),
+              color: AppPalette.bg(const Color(0xFFF3E5F5)),
               borderRadius: BorderRadius.circular(8),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: _selectedPeriod,
                 isDense: true,
-                style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple),
+                style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
                 items: _periodOptions.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
                 onChanged: (v) async {
                   if (v == null) return;
@@ -576,7 +577,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.red, size: 20),
+                icon: Icon(Icons.picture_as_pdf_rounded, color: AppPalette.fg(Colors.red), size: 20),
                 tooltip: "Download PDF",
                 constraints: const BoxConstraints(),
                 padding: const EdgeInsets.all(6),
@@ -588,14 +589,14 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.table_view_rounded, color: Colors.green, size: 20),
+                icon: Icon(Icons.table_view_rounded, color: AppPalette.fg(Colors.green), size: 20),
                 tooltip: "Export Excel",
                 constraints: const BoxConstraints(),
                 padding: const EdgeInsets.all(6),
                 onPressed: () => ExportLogic.exportToExcel(_logs, "Monthly_Report_${DateFormat('yyyy_MM_dd').format(_curStart)}"),
               ),
               IconButton(
-                icon: const Icon(Icons.print_rounded, color: Colors.blueGrey, size: 20),
+                icon: Icon(Icons.print_rounded, color: AppPalette.fg(Colors.blueGrey), size: 20),
                 tooltip: "Print report",
                 constraints: const BoxConstraints(),
                 padding: const EdgeInsets.all(6),
@@ -614,7 +615,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [pPurple, const Color(0xFF1E1B4B)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: LinearGradient(colors: [AppPalette.solid(pPurple), AppPalette.solid(const Color(0xFF1E1B4B))], begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: pPurple.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 4))],
       ),
@@ -624,18 +625,18 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Total saint growth and stability", style: GoogleFonts.merriweather(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+              Text("Total saint growth and stability", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white70), fontSize: 13, fontWeight: FontWeight.bold)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: up ? Colors.green.withValues(alpha: 0.25) : Colors.red.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(6)),
-                child: Text("${up ? '+' : ''}$netGrowth saints", style: GoogleFonts.merriweather(color: up ? Colors.greenAccent : Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                decoration: BoxDecoration(color: AppPalette.bg(up ? Colors.green.withValues(alpha: 0.25) : Colors.red.withValues(alpha: 0.25)), borderRadius: BorderRadius.circular(6)),
+                child: Text("${up ? '+' : ''}$netGrowth saints", style: GoogleFonts.merriweather(color: AppPalette.fg(up ? Colors.greenAccent : Colors.redAccent), fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          Text("$totalSaints", style: GoogleFonts.merriweather(fontSize: 30, fontWeight: FontWeight.w900, color: Colors.white)),
-          Text("Active registered members in assigned jurisdiction", style: GoogleFonts.merriweather(fontSize: 12, color: Colors.white60)),
-          const Divider(color: Colors.white24, height: 18),
+          Text("$totalSaints", style: GoogleFonts.merriweather(fontSize: 30, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.white))),
+          Text("Active registered members in assigned jurisdiction", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.white60))),
+          Divider(color: AppPalette.bg(Colors.white24), height: 18),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -653,8 +654,8 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   Widget _metricCol(String l, String v, Color c) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(v, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.w900, color: c)),
-      Text(l, style: GoogleFonts.merriweather(fontSize: 12, color: Colors.white60)),
+      Text(v, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.w900, color: AppPalette.fg(c))),
+      Text(l, style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.white60))),
     ],
   );
 
@@ -679,22 +680,22 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   Widget _kpiCard(String t, String v, IconData i, Color c) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), // Squeezed padding
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.grey.withValues(alpha: 0.16)),
+      border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.16))),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4)],
     ),
     child: Row(
       children: [
-        Icon(i, color: c, size: 20),
+        Icon(i, color: AppPalette.fg(c), size: 20),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(v, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.w900, color: c)),
-              Text(t, style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey[700], fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(v, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.w900, color: AppPalette.fg(c))),
+              Text(t, style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[700]), fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
@@ -719,9 +720,9 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppPalette.bg(Colors.white),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.withValues(alpha: 0.16)),
+            border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.16))),
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4)],
           ),
           child: Column(
@@ -731,26 +732,26 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(d.icon, color: d.color, size: 18),
+                  Icon(d.icon, color: AppPalette.fg(d.color), size: 18),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: up ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
-                    child: Text("${up ? '+' : ''}${d.diff.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: up ? Colors.green[800] : Colors.red[800])),
+                    decoration: BoxDecoration(color: AppPalette.bg(up ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1)), borderRadius: BorderRadius.circular(6)),
+                    child: Text("${up ? '+' : ''}${d.diff.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(up ? Colors.green[800] : Colors.red[800]))),
                   ),
                 ],
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(d.dutyName, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey[900]), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text("${d.currentRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: d.color)),
+                  Text(d.dutyName, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[900])), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text("${d.currentRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 18, fontWeight: FontWeight.w900, color: AppPalette.fg(d.color))),
                 ],
               ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text("Prior: ${d.previousRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey[600])),
-                  Text("${d.currentCount} logs", style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+                  Text("Prior: ${d.previousRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[600]))),
+                  Text("${d.currentCount} logs", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[600]), fontWeight: FontWeight.bold)),
                 ],
               ),
             ],
@@ -764,9 +765,9 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -774,16 +775,16 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Scale down jurisdiction level:", style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey[800])),
+              Text("Scale down jurisdiction level:", style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800]))),
               Container(
                 height: 30,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(color: const Color(0xFFF3E5F5), borderRadius: BorderRadius.circular(6)),
+                decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF3E5F5)), borderRadius: BorderRadius.circular(6)),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
                     value: _drilldownLevel,
                     isDense: true,
-                    style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: pPurple),
+                    style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
                     items: _drillLevels.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
                     onChanged: (v) {
                       if (v != null) {
@@ -799,7 +800,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           const Divider(height: 16),
           Text(
             missingUnits.isEmpty ? "All $_drilldownLevel units submitted their duties successfully." : "${missingUnits.length} $_drilldownLevel units pending submission:",
-            style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: missingUnits.isEmpty ? Colors.green[800] : Colors.red[900]),
+            style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(missingUnits.isEmpty ? Colors.green[800] : Colors.red[900])),
           ),
           const SizedBox(height: 8),
           if (missingUnits.isNotEmpty)
@@ -810,12 +811,12 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
                 itemBuilder: (c, i) => Container(
                   margin: const EdgeInsets.only(bottom: 6),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.red.withValues(alpha: 0.15))),
+                  decoration: BoxDecoration(color: AppPalette.bg(Colors.red.withValues(alpha: 0.04)), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppPalette.line(Colors.red.withValues(alpha: 0.15)))),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(missingUnits[i], style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
-                      Text("Pending duty report", style: GoogleFonts.merriweather(color: Colors.red[800], fontSize: 12, fontWeight: FontWeight.bold)),
+                      Text("Pending duty report", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.red[800]), fontSize: 12, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -831,22 +832,22 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.16)),
+        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.16))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              CircleAvatar(radius: 11, backgroundColor: pPurple.withValues(alpha: 0.1), child: Text("$point", style: TextStyle(color: pPurple, fontSize: 12, fontWeight: FontWeight.bold))),
+              CircleAvatar(radius: 11, backgroundColor: AppPalette.bg(pPurple.withValues(alpha: 0.1)), child: Text("$point", style: TextStyle(color: AppPalette.fg(pPurple), fontSize: 12, fontWeight: FontWeight.bold))),
               const SizedBox(width: 8),
-              Text(title, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])),
+              Text(title, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[900]))),
             ],
           ),
           const Divider(height: 16),
-          Text(content, style: GoogleFonts.merriweather(fontSize: 13, color: Colors.black87, height: 1.4)),
+          Text(content, style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.black87), height: 1.4)),
         ],
       ),
     );
@@ -854,6 +855,6 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
 
   Widget _sectionTitle(String title) => Padding(
     padding: const EdgeInsets.only(left: 2, bottom: 2),
-    child: Text(title, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.blueGrey[900])),
+    child: Text(title, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.blueGrey[900]))),
   );
 }

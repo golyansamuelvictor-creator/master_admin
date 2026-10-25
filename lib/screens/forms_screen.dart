@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class FormsScreen extends StatefulWidget {
   final String title;
@@ -144,27 +145,27 @@ class _FormsScreenState extends State<FormsScreen>
     bool isMobile = MediaQuery.of(context).size.width < 800;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F2F5),
+      backgroundColor: AppPalette.bg(const Color(0xFFF0F2F5)),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         titleSpacing: isMobile ? 10 : 40,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black54),
+          icon: Icon(Icons.arrow_back, color: AppPalette.fg(Colors.black54)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.description, color: themeColor, size: 24),
+            Icon(Icons.description, color: AppPalette.fg(themeColor), size: 24),
             const SizedBox(width: 8),
             Flexible(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_titleController.text, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500)),
-                  Text(widget.userEmail, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  Text(_titleController.text, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w500)),
+                  Text(widget.userEmail, style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey))),
                 ],
               ),
             ),
@@ -176,18 +177,18 @@ class _FormsScreenState extends State<FormsScreen>
             const SizedBox(width: 10),
             ElevatedButton(
               onPressed: _saveForm,
-              style: ElevatedButton.styleFrom(backgroundColor: themeColor, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(themeColor), foregroundColor: AppPalette.fg(Colors.white)),
               child: const Text("Save Sync"),
             ),
           ],
           const SizedBox(width: 10),
           CircleAvatar(
               radius: 14,
-              backgroundColor: themeColor,
+              backgroundColor: AppPalette.bg(themeColor),
               // FIXED: child is now the last property
               child: Text(
                 widget.userEmail.isNotEmpty ? widget.userEmail[0].toUpperCase() : "U", 
-                style: const TextStyle(fontSize: 10, color: Colors.white)
+                style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.white))
               )),
           const SizedBox(width: 15),
         ],
@@ -204,7 +205,7 @@ class _FormsScreenState extends State<FormsScreen>
         ),
       ),
       floatingActionButton: isMobile
-          ? FloatingActionButton(backgroundColor: themeColor, onPressed: _showMobileAddMenu, child: const Icon(Icons.add, color: Colors.white))
+          ? FloatingActionButton(backgroundColor: AppPalette.bg(themeColor), onPressed: _showMobileAddMenu, child: Icon(Icons.add, color: AppPalette.fg(Colors.white)))
           : null,
       body: Stack(
         children: [
@@ -261,9 +262,9 @@ class _FormsScreenState extends State<FormsScreen>
   Widget _buildFormHeader() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(8),
-        border: Border(top: BorderSide(color: themeColor, width: 10)),
+        border: Border(top: BorderSide(color: AppPalette.line(themeColor), width: 10)),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 5)],
       ),
       padding: const EdgeInsets.all(25),
@@ -272,13 +273,13 @@ class _FormsScreenState extends State<FormsScreen>
         children: [
           TextField(
             controller: _titleController,
-            style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.w500),
+            style: GoogleFonts.merriweather(fontSize: 28, fontWeight: FontWeight.w500),
             decoration: const InputDecoration(hintText: "Untitled Form", border: InputBorder.none),
           ),
-          Text("Author: ${widget.userEmail}", style: const TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic)),
+          Text("Author: ${widget.userEmail}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey), fontStyle: FontStyle.italic)),
           TextField(
             controller: _descController,
-            style: GoogleFonts.poppins(fontSize: 14),
+            style: GoogleFonts.merriweather(fontSize: 14),
             decoration: const InputDecoration(hintText: "Form description", border: InputBorder.none),
           ),
         ],
@@ -291,19 +292,19 @@ class _FormsScreenState extends State<FormsScreen>
       key: ValueKey("field_$index"),
       margin: const EdgeInsets.only(top: 15),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+      decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppPalette.line(Colors.grey.shade300))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.drag_indicator, color: Colors.grey, size: 20),
+              Icon(Icons.drag_indicator, color: AppPalette.fg(Colors.grey), size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: TextFormField(
                   initialValue: formFields[index]['label'],
                   onChanged: (val) => formFields[index]['label'] = val,
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 16),
+                  style: GoogleFonts.merriweather(fontWeight: FontWeight.w500, fontSize: 16),
                   decoration: const InputDecoration(border: UnderlineInputBorder()),
                 ),
               ),
@@ -317,7 +318,7 @@ class _FormsScreenState extends State<FormsScreen>
             decoration: InputDecoration(
               hintText: formFields[index]['hint'],
               filled: true,
-              fillColor: Colors.grey.shade50,
+              fillColor: AppPalette.bg(Colors.grey.shade50),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
             ),
           ),
@@ -325,7 +326,7 @@ class _FormsScreenState extends State<FormsScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              IconButton(icon: const Icon(Icons.delete_outline, size: 20, color: Colors.black54), onPressed: () => setState(() => formFields.removeAt(index))),
+              IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppPalette.fg(Colors.black54)), onPressed: () => setState(() => formFields.removeAt(index))),
               const VerticalDivider(width: 20),
               const Text("Required", style: TextStyle(fontSize: 12)),
               Switch(
@@ -360,17 +361,17 @@ class _FormsScreenState extends State<FormsScreen>
     );
   }
 
-  Widget _buildEmptyState(String message) => Center(child: Text(message, style: GoogleFonts.poppins(color: Colors.grey)));
+  Widget _buildEmptyState(String message) => Center(child: Text(message, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))));
 
-  Widget _buildTypeBadge(String type) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(4)), child: Text(type.toUpperCase(), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.black54)));
+  Widget _buildTypeBadge(String type) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: AppPalette.bg(Colors.grey.shade100), borderRadius: BorderRadius.circular(4)), child: Text(type.toUpperCase(), style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black54))));
 
-  Widget _buildDesktopQuickBar() => Container(width: 46, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10)], border: Border.all(color: Colors.grey.shade200)), child: Column(mainAxisSize: MainAxisSize.min, children: [_quickBarAction(Icons.add_circle_outline, "Add Question", "text"), _quickBarAction(Icons.title, "Add Title", "text"), _quickBarAction(Icons.calendar_month, "Add Date", "date")]));
+  Widget _buildDesktopQuickBar() => Container(width: 46, decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10)], border: Border.all(color: AppPalette.line(Colors.grey.shade200))), child: Column(mainAxisSize: MainAxisSize.min, children: [_quickBarAction(Icons.add_circle_outline, "Add Question", "text"), _quickBarAction(Icons.title, "Add Title", "text"), _quickBarAction(Icons.calendar_month, "Add Date", "date")]));
 
-  Widget _quickBarAction(IconData icon, String tooltip, String type) => Tooltip(message: tooltip, child: InkWell(onTap: () => _addField(type), child: Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Icon(icon, color: Colors.black54, size: 20))));
+  Widget _quickBarAction(IconData icon, String tooltip, String type) => Tooltip(message: tooltip, child: InkWell(onTap: () => _addField(type), child: Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Icon(icon, color: AppPalette.fg(Colors.black54), size: 20))));
 
   void _showMobileAddMenu() => showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))), builder: (context) => Padding(padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20), child: GridView.count(shrinkWrap: true, crossAxisCount: 3, children: [_mobileMenuOption(Icons.text_fields, "Short Text", "text"), _mobileMenuOption(Icons.calendar_month, "Date", "date"), _mobileMenuOption(Icons.check_box, "Checkboxes", "choice")])));
 
-  Widget _mobileMenuOption(IconData icon, String label, String type) => InkWell(onTap: () => _addField(type), child: Column(children: [CircleAvatar(backgroundColor: themeColor.withValues(alpha: 0.1), child: Icon(icon, color: themeColor, size: 20)), const SizedBox(height: 8), Text(label, style: const TextStyle(fontSize: 11))]));
+  Widget _mobileMenuOption(IconData icon, String label, String type) => InkWell(onTap: () => _addField(type), child: Column(children: [CircleAvatar(backgroundColor: AppPalette.bg(themeColor.withValues(alpha: 0.1)), child: Icon(icon, color: AppPalette.fg(themeColor), size: 20)), const SizedBox(height: 8), Text(label, style: const TextStyle(fontSize: 11))]));
 
-  void _showThemePicker() => showDialog(context: context, builder: (context) => AlertDialog(title: const Text("Theme Color"), content: Wrap(spacing: 12, runSpacing: 12, children: [Colors.indigo, Colors.red, Colors.teal, Colors.blue, Colors.black87].map((color) => InkWell(onTap: () { setState(() => themeColor = color); Navigator.pop(context); }, child: CircleAvatar(backgroundColor: color, radius: 18))).toList())));
+  void _showThemePicker() => showDialog(context: context, builder: (context) => AlertDialog(title: const Text("Theme Color"), content: Wrap(spacing: 12, runSpacing: 12, children: [Colors.indigo, Colors.red, Colors.teal, Colors.blue, Colors.black87].map((color) => InkWell(onTap: () { setState(() => themeColor = color); Navigator.pop(context); }, child: CircleAvatar(backgroundColor: AppPalette.bg(color), radius: 18))).toList())));
 }

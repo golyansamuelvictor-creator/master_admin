@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/app_lock_manager.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class CinematicLockScreen extends StatefulWidget {
   final VoidCallback? onUnlocked;
@@ -91,7 +92,7 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F071A), // Deep royal obsidian
+      backgroundColor: AppPalette.bg(const Color(0xFF0F071A)), // Deep royal obsidian
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _onScreenTapped,
@@ -106,8 +107,8 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                     center: Alignment.center,
                     radius: 0.85,
                     colors: [
-                      pPurple.withValues(alpha: 0.35),
-                      const Color(0xFF0B0414),
+                      AppPalette.solid(pPurple.withValues(alpha: 0.35)),
+                      AppPalette.solid(const Color(0xFF0B0414)),
                     ],
                   ),
                 ),
@@ -145,7 +146,7 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                               errorBuilder: (ctx, err, stack) => Icon(
                                 Icons.admin_panel_settings_rounded,
                                 size: 80,
-                                color: pGold,
+                                color: AppPalette.fg(pGold),
                               ),
                             ),
                           ),
@@ -165,7 +166,7 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                                 style: GoogleFonts.merriweather(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w900,
-                                  color: Colors.white,
+                                  color: AppPalette.fg(Colors.white),
                                   letterSpacing: 4.0,
                                 ),
                               ),
@@ -173,7 +174,7 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Container(width: 32, height: 1.5, color: pGold),
+                                  Container(width: 32, height: 1.5, color: AppPalette.bg(pGold)),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 10),
                                     child: Text(
@@ -181,12 +182,12 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                                       style: GoogleFonts.merriweather(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
-                                        color: pGold,
+                                        color: AppPalette.fg(pGold),
                                         letterSpacing: 3.0,
                                       ),
                                     ),
                                   ),
-                                  Container(width: 32, height: 1.5, color: pGold),
+                                  Container(width: 32, height: 1.5, color: AppPalette.bg(pGold)),
                                 ],
                               ),
                             ],
@@ -201,7 +202,7 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                           "App Locked • Tap anywhere to enter PIN",
                           style: GoogleFonts.merriweather(
                             fontSize: 12,
-                            color: Colors.white54,
+                            color: AppPalette.fg(Colors.white54),
                             fontStyle: FontStyle.italic,
                           ),
                         ),
@@ -210,10 +211,10 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                           constraints: const BoxConstraints(maxWidth: 320),
                           padding: const EdgeInsets.all(22),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.06),
+                            color: AppPalette.bg(Colors.white.withValues(alpha: 0.06)),
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: _isWrongPin ? Colors.redAccent : pPurple.withValues(alpha: 0.35),
+                              color: AppPalette.line(_isWrongPin ? Colors.redAccent : pPurple.withValues(alpha: 0.35)),
                               width: 1.5,
                             ),
                           ),
@@ -224,7 +225,7 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                                 style: GoogleFonts.merriweather(
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,
-                                  color: _isWrongPin ? Colors.redAccent : Colors.white70,
+                                  color: AppPalette.fg(_isWrongPin ? Colors.redAccent : Colors.white70),
                                 ),
                               ),
                               const SizedBox(height: 14),
@@ -236,15 +237,15 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                                 keyboardType: TextInputType.number,
                                 style: GoogleFonts.merriweather(
                                   fontSize: 22,
-                                  color: Colors.white,
+                                  color: AppPalette.fg(Colors.white),
                                   letterSpacing: 8,
                                   fontWeight: FontWeight.w900,
                                 ),
                                 decoration: InputDecoration(
                                   hintText: "••••",
-                                  hintStyle: TextStyle(color: Colors.white24, letterSpacing: 6),
+                                  hintStyle: TextStyle(color: AppPalette.fg(Colors.white24), letterSpacing: 6),
                                   filled: true,
-                                  fillColor: Colors.black26,
+                                  fillColor: AppPalette.bg(Colors.black26),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide.none,
@@ -260,8 +261,8 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                                 child: ElevatedButton(
                                   onPressed: _verifyPin,
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: pPurple,
-                                    foregroundColor: Colors.white,
+                                    backgroundColor: AppPalette.bg(pPurple),
+                                    foregroundColor: AppPalette.fg(Colors.white),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                     ),

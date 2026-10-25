@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class TargetSetterScreen extends StatefulWidget {
   final String? userRole;
@@ -173,17 +174,17 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
         title: Text(
           "Set unit targets",
-          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: pPurple, fontSize: 18),
+          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 18),
         ),
         centerTitle: true,
-        backgroundColor: Colors.white,
+        backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Color(0xFF4A148C)),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppPalette.fg(Color(0xFF4A148C))),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -204,9 +205,9 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
     return Container(
       padding: const EdgeInsets.all(25),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15)],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -233,9 +234,9 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
             hintText: "e.g. 85.0",
             suffixText: "%",
             filled: true,
-            fillColor: Colors.grey[50],
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+            fillColor: AppPalette.bg(Colors.grey[50]),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppPalette.line(Colors.grey.shade300))),
           ),
           style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold),
         ),
@@ -243,16 +244,16 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
 
         _label("5. Target month"),
         ListTile(
-          tileColor: Colors.grey[50],
+          tileColor: AppPalette.bg(Colors.grey[50]),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Colors.grey.shade300),
+            side: BorderSide(color: AppPalette.line(Colors.grey.shade300)),
           ),
           title: Text(
             DateFormat('MMMM yyyy').format(_selectedMonth),
             style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w600),
           ),
-          trailing: const Icon(Icons.calendar_month, color: Color(0xFF4A148C)),
+          trailing: Icon(Icons.calendar_month, color: AppPalette.fg(Color(0xFF4A148C))),
           onTap: () => _pickMonth(),
         ),
       ]),
@@ -267,7 +268,7 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
     padding: const EdgeInsets.only(bottom: 8),
     child: Text(
       t,
-      style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
+      style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13, color: AppPalette.fg(Colors.blueGrey)),
     ),
   );
 
@@ -275,9 +276,9 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 15),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: AppPalette.bg(Colors.grey[50]),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
@@ -306,14 +307,14 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
   Widget _buildSaveButton() {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: pPurple,
+        backgroundColor: AppPalette.bg(pPurple),
         minimumSize: const Size(double.infinity, 54),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       onPressed: _saveTarget,
       child: Text(
         "Officially set target",
-        style: GoogleFonts.merriweather(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+        style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 15),
       ),
     );
   }

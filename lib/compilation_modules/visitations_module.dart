@@ -6,6 +6,8 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/compilation_style.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class VisitationsModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -85,8 +87,12 @@ class _VisitationsModuleState extends State<VisitationsModule> {
   static const double rh = 24.0;
   static const double hh = 28.0;
   static const double sh = 18.0;
-  static const double cw = 60.0;
-  static const double lw = 115.0;
+  // Column widths grow with the card so the table fills it, keeping about
+  // 1 cm free on each side (set by _buildExcelGrid before the rows are built).
+  double _scale = 1.0;
+  double get cw => 60.0 * _scale;
+  double get lw => 115.0 * _scale;
+  static const double _naturalWidth = 115.0 * 2 + 60.0 * 8;
   static const double totalHeaderHeight = hh + hh + sh;
 
   @override
@@ -241,16 +247,16 @@ class _VisitationsModuleState extends State<VisitationsModule> {
   Widget _buildToolbar() => Row(
     mainAxisAlignment: MainAxisAlignment.start,
     children: [
-      IconButton(onPressed: _printReport, icon: const Icon(Icons.print, color: Colors.blueGrey, size: 18)),
-      IconButton(onPressed: () {}, icon: const Icon(Icons.download, color: Colors.green, size: 18)),
+      IconButton(onPressed: _printReport, icon: Icon(Icons.print, color: AppPalette.fg(Colors.blueGrey), size: 18)),
+      IconButton(onPressed: () {}, icon: Icon(Icons.download, color: AppPalette.fg(Colors.green), size: 18)),
     ],
   );
 
   Widget _buildCategoryPillBar() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.black, width: 1.0)),
+    decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppPalette.line(Colors.black), width: 1.0)),
     child: Row(children: [
-      Text("Category: ", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.w900, color: pPurple)),
+      Text("Category: ", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
       Expanded(
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -265,8 +271,8 @@ class _VisitationsModuleState extends State<VisitationsModule> {
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: isSel ? pPurple : const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6), border: Border.all(color: isSel ? Colors.black : Colors.black26)),
-                    child: Text(cat, style: GoogleFonts.merriweather(fontSize: 10, fontWeight: isSel ? FontWeight.bold : FontWeight.w600, color: isSel ? Colors.white : Colors.black87)),
+                    decoration: BoxDecoration(color: AppPalette.bg(isSel ? pPurple : const Color(0xFFF1F5F9)), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppPalette.line(isSel ? Colors.black : Colors.black26))),
+                    child: Text(cat, style: GoogleFonts.merriweather(fontSize: 10, fontWeight: isSel ? FontWeight.bold : FontWeight.w600, color: AppPalette.fg(isSel ? Colors.white : Colors.black87))),
                   ),
                 ),
               );
@@ -277,19 +283,25 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     ]),
   );
 
-  Widget _buildExcelGrid(Map<String, dynamic> tot) {
+  Widget _buildExcelGrid(Map<String, dynamic> tot) => LayoutBuilder(builder: (context, constraints) {
+        final double avail = constraints.maxWidth.isFinite ? constraints.maxWidth - 2 * CompStyle.tableSideMargin : _naturalWidth;
+        _scale = avail > _naturalWidth ? avail / _naturalWidth : 1.0;
+        return _buildExcelGridScaled(tot);
+      });
+
+  Widget _buildExcelGridScaled(Map<String, dynamic> tot) {
     Widget? childRows = _buildDynamicHierarchicalRows();
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 12),
+        padding: EdgeInsets.fromLTRB(_scale > 1.0 ? CompStyle.tableSideMargin : 0, 0, _scale > 1.0 ? CompStyle.tableSideMargin : 0, 12),
         child: Container(
-          decoration: BoxDecoration(border: Border.all(color: Colors.black, width: 1.0)),
+          decoration: BoxDecoration(border: Border.all(color: AppPalette.line(Colors.black), width: 1.0)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _buildMergedHeader(),
-            _mergedRow("Total", "General total", tot, b: true),
+            _totalRow(() => _mergedRow("Total", "General total", tot, b: true)),
             if (childRows != null) childRows,
           ]),
         ),
@@ -327,7 +339,29 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     return _mergedBlock(categoryName, blockData);
   }
 
+  // Header row and General total row share one look across all modules
+  // (CompStyle): their own fills, header text a little larger.
+  ({Color bg, Color fg, double fs, bool force})? _rowStyle;
+
   Widget _buildMergedHeader() {
+    _rowStyle = (bg: CompStyle.headerBg, fg: CompStyle.headerFg, fs: CompStyle.headerFont, force: true);
+    try {
+      return _buildMergedHeaderRaw();
+    } finally {
+      _rowStyle = null;
+    }
+  }
+
+  Widget _totalRow(Widget Function() build) {
+    _rowStyle = (bg: CompStyle.totalBg, fg: CompStyle.totalFg, fs: CompStyle.cellFont, force: false);
+    try {
+      return build();
+    } finally {
+      _rowStyle = null;
+    }
+  }
+
+  Widget _buildMergedHeaderRaw() {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _cell("Classification", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
       _cell("Unit", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
@@ -395,11 +429,15 @@ class _VisitationsModuleState extends State<VisitationsModule> {
       height: h,
       alignment: a,
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      decoration: BoxDecoration(color: bg ?? Colors.white, border: Border.all(color: Colors.black45, width: 0.4)),
+      decoration: BoxDecoration(color: AppPalette.bg((_rowStyle?.force ?? false) ? _rowStyle!.bg : (bg ?? _rowStyle?.bg ?? Colors.white)), border: Border.all(color: AppPalette.line(Colors.black45), width: 0.4)),
       child: Text(
         t,
         textAlign: TextAlign.center,
-        style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: b ? FontWeight.w900 : FontWeight.normal, color: color ?? Colors.black87),
+        style: GoogleFonts.merriweather(
+          fontSize: _rowStyle?.fs ?? CompStyle.cellFont,
+          fontWeight: (b || (_rowStyle?.force ?? false)) ? FontWeight.w900 : FontWeight.normal,
+          color: AppPalette.fg((_rowStyle?.force ?? false) ? _rowStyle!.fg : (color ?? _rowStyle?.fg ?? Colors.black87)),
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -429,16 +467,16 @@ class _VisitationsModuleState extends State<VisitationsModule> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: isSel ? pPurple : const Color(0xFFF1F5F9),
+                          color: AppPalette.bg(isSel ? pPurple : const Color(0xFFF1F5F9)),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: isSel ? Colors.black : Colors.black26),
+                          border: Border.all(color: AppPalette.line(isSel ? Colors.black : Colors.black26)),
                         ),
                         child: Text(
                           u,
                           style: GoogleFonts.merriweather(
                             fontSize: 10.5,
                             fontWeight: isSel ? FontWeight.bold : FontWeight.w600,
-                            color: isSel ? Colors.white : Colors.black87,
+                            color: AppPalette.fg(isSel ? Colors.white : Colors.black87),
                           ),
                         ),
                       ),
@@ -472,7 +510,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
         alignment: Alignment.center,
         child: Text(
           "No visitations logged yet for '$_selectedChartUnit' under '$_activeCategory'",
-          style: GoogleFonts.merriweather(fontSize: 12, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+          style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey.shade600), fontStyle: FontStyle.italic),
         ),
       );
     }
@@ -543,12 +581,12 @@ class _VisitationsModuleState extends State<VisitationsModule> {
 
   Widget _metricPill(String t, String v, Color c) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(color: c.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(6), border: Border.all(color: c.withValues(alpha: 0.3))),
+    decoration: BoxDecoration(color: AppPalette.bg(c.withValues(alpha: 0.08)), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppPalette.line(c.withValues(alpha: 0.3)))),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text("$t: ", style: GoogleFonts.merriweather(fontSize: 10, color: Colors.black87)),
-        Text(v, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.w900, color: c)),
+        Text("$t: ", style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(Colors.black87))),
+        Text(v, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.w900, color: AppPalette.fg(c))),
       ],
     ),
   );
@@ -556,9 +594,9 @@ class _VisitationsModuleState extends State<VisitationsModule> {
   Widget _legendDot(String l, Color c) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Container(width: 12, height: 12, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(3))),
+      Container(width: 12, height: 12, decoration: BoxDecoration(color: AppPalette.bg(c), borderRadius: BorderRadius.circular(3))),
       const SizedBox(width: 6),
-      Text(l, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800)),
+      Text(l, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey.shade800))),
     ],
   );
 
@@ -571,15 +609,15 @@ class _VisitationsModuleState extends State<VisitationsModule> {
   Widget _section(String title, Widget content, BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 6),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: Colors.black, width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
     ),
     child: Column(children: [
       ListTile(
         dense: true,
-        title: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14.5, color: pPurple)),
+        title: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14.5, color: AppPalette.fg(pPurple))),
         trailing: IconButton(
           icon: const Icon(Icons.fullscreen, size: 18),
           onPressed: () => Navigator.push(context, MaterialPageRoute(
@@ -590,7 +628,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
           )),
         ),
       ),
-      const Divider(height: 1, color: Colors.black26),
+      Divider(height: 1, color: AppPalette.bg(Colors.black26)),
       content,
     ]),
   );
@@ -667,8 +705,8 @@ class _3DPizzaPainter extends CustomPainter {
           center: Alignment.topLeft,
           radius: 0.9,
           colors: [
-            Color.lerp(slice.topColor, Colors.white, 0.2)!,
-            slice.topColor,
+            AppPalette.solid(Color.lerp(slice.topColor, Colors.white, 0.2)!),
+            AppPalette.solid(slice.topColor),
           ],
         ).createShader(Rect.fromCenter(center: center, width: radiusX * 2, height: radiusY * 2));
       canvas.drawPath(slicePath, slicePaint);
@@ -732,7 +770,7 @@ class _3DPizzaPainter extends CustomPainter {
         style: GoogleFonts.merriweather(
           fontSize: 12,
           fontWeight: FontWeight.w900,
-          color: Colors.white,
+          color: AppPalette.fg(Colors.white),
           shadows: [
             const Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1.5)),
           ],

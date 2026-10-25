@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/notice_permissions.dart';
+import 'package:master_admin/core/app_palette.dart';
 
 class QuotesScreen extends StatefulWidget {
   final double s;
@@ -21,10 +23,150 @@ class _QuotesScreenState extends State<QuotesScreen> {
   // Moved to class level to fix "Undefined name 'pPurple'"
   final Color pPurple = const Color(0xFF4A148C);
 
+  // Quotes are added by roles with "Manage Quotes" (Internal Affairs Dept Sec by default)
+  NoticePermissions _perm = NoticePermissions.none;
+
+  static const List<String> _swatches = ['#4A148C', '#B71C1C', '#0D47A1', '#1B5E20', '#E65100', '#37474F'];
+
   @override
   void initState() {
     super.initState();
     _fetchQuotes();
+    NoticePermissions.load().then((p) {
+      if (mounted) setState(() => _perm = p);
+    });
+  }
+
+  Future<void> _deleteQuote(dynamic q) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text("Remove quote?", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16)),
+        content: Text(q['quote_text']?.toString() ?? '', style: GoogleFonts.merriweather(fontSize: 13)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text("Remove", style: TextStyle(color: AppPalette.fg(Colors.red.shade700)))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supabase.from('app_quotes').delete().eq('id', q['id']);
+      _fetchQuotes();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't remove it. You may not have permission.")));
+      }
+    }
+  }
+
+  Future<void> _openQuoteForm({dynamic existing}) async {
+    final textC = TextEditingController(text: existing?['quote_text']?.toString() ?? '');
+    final orderC = TextEditingController(text: (existing?['sort_order'] ?? (_dynamicQuotes.length + 1)).toString());
+    String color = (existing?['color_hex'] ?? _swatches.first).toString();
+    String? error;
+    bool saving = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            title: Text(existing == null ? "Add quote" : "Edit quote",
+                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(pPurple))),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text("Shown to everyone in the church",
+                      style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.blueGrey[700]), fontStyle: FontStyle.italic)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: textC,
+                    minLines: 3,
+                    maxLines: 7,
+                    decoration: const InputDecoration(labelText: "Quote", border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 12),
+                  Text("Colour", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _swatches.map((h) {
+                      final selected = h.toUpperCase() == color.toUpperCase();
+                      return InkWell(
+                        onTap: () => setD(() => color = h),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: AppPalette.bg(_fromHex(h)),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppPalette.line(selected ? Colors.black87 : Colors.white), width: 3),
+                          ),
+                          child: selected ? Icon(Icons.check, size: 16, color: AppPalette.fg(Colors.white)) : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: 140,
+                    child: TextField(
+                      controller: orderC,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: "Order", border: OutlineInputBorder()),
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(error!, style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.red.shade800))),
+                  ],
+                ]),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: saving ? null : () => Navigator.pop(ctx), child: const Text("Cancel")),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple), foregroundColor: AppPalette.fg(Colors.white)),
+                onPressed: saving
+                    ? null
+                    : () async {
+                        final text = textC.text.trim();
+                        if (text.isEmpty) {
+                          setD(() => error = "Write the quote first.");
+                          return;
+                        }
+                        setD(() {
+                          saving = true;
+                          error = null;
+                        });
+                        final data = {
+                          'quote_text': text,
+                          'color_hex': color,
+                          'sort_order': int.tryParse(orderC.text.trim()) ?? 0,
+                        };
+                        try {
+                          if (existing == null) {
+                            await _supabase.from('app_quotes').insert({...data, 'is_active': true});
+                          } else {
+                            await _supabase.from('app_quotes').update(data).eq('id', existing['id']);
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          _fetchQuotes();
+                        } catch (e) {
+                          setD(() {
+                            saving = false;
+                            error = "Couldn't save. Your role may not be allowed to manage quotes.";
+                          });
+                        }
+                      },
+                child: Text(saving ? "Saving..." : "Save"),
+              ),
+            ],
+          )),
+    );
   }
 
   // ==========================================
@@ -55,7 +197,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
     final buffer = StringBuffer();
     if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
     buffer.write(hexString.replaceFirst('#', ''));
-    return Color(int.parse(buffer.toString(), radix: 16));
+    return Color(int.tryParse(buffer.toString(), radix: 16) ?? 0xFF4A148C);
   }
 
   // ==========================================
@@ -74,22 +216,40 @@ class _QuotesScreenState extends State<QuotesScreen> {
         child: Column(
           children: [
             _buildOutstandingHeader(titleFontSize, isDesktop),
+            if (_perm.canAddQuotes)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppPalette.bg(pPurple),
+                      foregroundColor: AppPalette.fg(Colors.white),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => _openQuoteForm(),
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: Text("Add quote", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ),
+              ),
             const SizedBox(height: 15), 
             Expanded(
               child: _isLoading 
                 ? Center(child: CircularProgressIndicator(color: pPurple))
                 : _dynamicQuotes.isEmpty 
-                  ? Center(child: Text("No quotes found in database.", style: GoogleFonts.merriweather(color: Colors.grey)))
+                  ? Center(child: Text("No quotes found in database.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
                   : ListView.builder(
                       physics: const BouncingScrollPhysics(),
-                      itemCount: widget.isFullPage ? _dynamicQuotes.length : 2,
+                      itemCount: widget.isFullPage ? _dynamicQuotes.length : (_dynamicQuotes.length < 2 ? _dynamicQuotes.length : 2),
                       itemBuilder: (context, index) {
                         final q = _dynamicQuotes[index];
                         return _buildQuoteCard(
-                          q['quote_text'], 
+                          q['quote_text'] ?? '', 
                           (index + 1).toString(), 
                           _fromHex(q['color_hex'] ?? "#4A148C"),
-                          isDesktop
+                          isDesktop,
+                          item: _perm.canAddQuotes ? q : null,
                         );
                       },
                     ),
@@ -103,12 +263,12 @@ class _QuotesScreenState extends State<QuotesScreen> {
       return mainContent; 
     } else {
       return Scaffold(
-        backgroundColor: const Color(0xFFFBFBFE),
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: AppPalette.bg(Colors.white),
           elevation: 0.5,
           centerTitle: true,
-          title: Text("Quotes of Chairman", style: GoogleFonts.merriweather(fontSize: 16, color: pPurple, fontWeight: FontWeight.bold)),
+          title: Text("Quotes of Chairman", style: GoogleFonts.merriweather(fontSize: 16, color: AppPalette.fg(pPurple), fontWeight: FontWeight.bold)),
         ),
         body: mainContent,
       );
@@ -120,10 +280,10 @@ class _QuotesScreenState extends State<QuotesScreen> {
       width: double.infinity, 
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), 
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
+        color: AppPalette.bg(Colors.white.withValues(alpha: 0.9)),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))],
-        border: Border.all(color: pPurple.withValues(alpha: 0.1), width: 1),
+        border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.1)), width: 1),
       ),
       child: Center(
         child: RichText(
@@ -134,7 +294,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
                 text: "총회장님 말씀  ", 
                 style: GoogleFonts.merriweather(
                   fontSize: size, 
-                  color: Colors.red[900], 
+                  color: AppPalette.fg(Colors.red[900]), 
                   fontWeight: FontWeight.bold
                 )
               ),
@@ -142,7 +302,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
                 text: "|  Quotes of Chairman", 
                 style: GoogleFonts.merriweather(
                   fontSize: size * 0.9, 
-                  color: pPurple, 
+                  color: AppPalette.fg(pPurple), 
                   fontWeight: FontWeight.w900
                 )
               ),
@@ -153,20 +313,20 @@ class _QuotesScreenState extends State<QuotesScreen> {
     );
   }
 
-  Widget _buildQuoteCard(String text, String id, Color quoteColor, bool isDesktop) {
+  Widget _buildQuoteCard(String text, String id, Color quoteColor, bool isDesktop, {dynamic item}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12), 
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.1), width: 1),
+        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.1)), width: 1),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 5))],
       ),
       child: Column(
         children: [
           Container(
             height: 4, 
-            decoration: BoxDecoration(color: quoteColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(15))),
+            decoration: BoxDecoration(color: AppPalette.bg(quoteColor), borderRadius: const BorderRadius.vertical(top: Radius.circular(15))),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15), 
@@ -175,8 +335,8 @@ class _QuotesScreenState extends State<QuotesScreen> {
               children: [
                 CircleAvatar(
                   radius: 15, 
-                  backgroundColor: pPurple.withValues(alpha: 0.05),
-                  child: Text(id, style: TextStyle(color: quoteColor, fontWeight: FontWeight.bold, fontSize: 12)),
+                  backgroundColor: AppPalette.bg(pPurple.withValues(alpha: 0.05)),
+                  child: Text(id, style: TextStyle(color: AppPalette.fg(quoteColor), fontWeight: FontWeight.bold, fontSize: 12)),
                 ),
                 const SizedBox(width: 15),
                 Expanded(
@@ -185,11 +345,21 @@ class _QuotesScreenState extends State<QuotesScreen> {
                     style: GoogleFonts.merriweather(
                       fontSize: isDesktop ? 16 : 13,
                       height: 1.5,
-                      color: Colors.black87,
+                      color: AppPalette.fg(Colors.black87),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
+                if (item != null)
+                  PopupMenuButton<String>(
+                    tooltip: "Edit or remove",
+                    icon: Icon(Icons.more_vert_rounded, size: 18, color: AppPalette.fg(Colors.blueGrey[400])),
+                    onSelected: (v) => v == 'edit' ? _openQuoteForm(existing: item) : _deleteQuote(item),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text("Edit")),
+                      PopupMenuItem(value: 'delete', child: Text("Remove")),
+                    ],
+                  ),
               ],
             ),
           ),
