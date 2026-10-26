@@ -4,6 +4,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:flutter/services.dart';
+import '../widgets/app_menus.dart';
+import '../core/compilation_rules.dart';
+import '../services/evidence_service.dart';
 
 class ApprovalCockpit extends StatefulWidget {
   final String role, unitName, selectedDuty;
@@ -49,6 +53,10 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
   Map<String, dynamic>? _selectedReport;
   List<dynamic> _inspectedLogs = [];
   List<dynamic> _inspectedImages = [];
+  Map<String, ({String? thumb, String? full})> _imageLinks = {}; // private photo links
+  List<dynamic> _inspectedFlags = []; // reused photos that were blocked / flagged for this report
+  String _nameFilter = 'all'; // all | done | not_done | blank | no_reason
+  String _nameSearch = '';
   bool _isLoadingDetails = false;
   bool _isSaving = false;
 
@@ -76,6 +84,102 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     if (d == 'Workers Education') return 'logs_workers_education';
     if (d == 'Workers Daily Participation') return 'logs_workers_participation';
     return 'logs_service_attendance_status';
+  }
+
+  // ==========================================
+  // NAME LIST: what was entered for each person, per duty
+  // ==========================================
+  static const Map<String, List<(String, String)>> _dutyFields = {
+    'logs_service_attendance_status': [
+      ('attendance_pre', 'Pre-attendance'),
+      ('attendance_realtime', 'Real-time'),
+      ('attendance_makeup', 'Make-up'),
+      ('situation_notes', 'Situation'),
+      ('strategy_notes', 'Strategy'),
+    ],
+    'logs_cell_service': [('status_detail', 'Status'), ('reason_notes', 'Reason'), ('solution_notes', 'Solution')],
+    'logs_offering': [
+      ('offering_tithe', 'Tithe'),
+      ('offering_weekly', 'Weekly'),
+      ('offering_thanks', 'Thanks'),
+      ('offering_construction', 'Construction'),
+      ('offering_donation', 'Donation'),
+      ('reason_notes', 'Reason'),
+    ],
+    'logs_evangelism': [
+      ('status_detail', 'Status'),
+      ('evang_day', 'Day'),
+      ('weekly_schedule', 'Schedule'),
+      ('reason_notes', 'Reason'),
+      ('solution_notes', 'Solution'),
+    ],
+    'logs_morning_light': [('status_detail', 'Status'), ('ml_day', 'Day')],
+    'logs_all_saints_education': [
+      ('status_detail', 'Status'),
+      ('education_day', 'Day'),
+      ('reason_notes', 'Reason'),
+      ('solution_notes', 'Solution'),
+    ],
+    'logs_visitations': [
+      ('status_detail', 'Status'),
+      ('visitation_reason', 'Visit reason'),
+      ('result', 'Result'),
+      ('situation_notes', 'Situation'),
+      ('strategy_notes', 'Strategy'),
+    ],
+    'logs_workers_education': [
+      ('status_detail', 'Status'),
+      ('edu_day', 'Day'),
+      ('reason_notes', 'Reason'),
+      ('solution_notes', 'Solution'),
+    ],
+    'logs_workers_participation': [('status_detail', 'Status'), ('part_day', 'Day')],
+  };
+
+  static const Set<String> _noteFields = {
+    'reason_notes',
+    'solution_notes',
+    'situation_notes',
+    'strategy_notes',
+    'weekly_schedule',
+    'result',
+  };
+
+  static bool _paid(dynamic v) {
+    final s = (v ?? '').toString().replaceAll(',', '').replaceAll(' ', '').trim();
+    if (s.isEmpty) return false;
+    final n = double.tryParse(s);
+    return n != null ? n > 0 : CompStatus.isPositive(v);
+  }
+
+  /// true = done, false = not done, null = nothing entered
+  bool? _rowDone(Map l) {
+    switch (_getTableName()) {
+      case 'logs_service_attendance_status':
+        final rt = l['attendance_realtime'], mu = l['attendance_makeup'], pre = l['attendance_pre'];
+        if (CompStatus.norm(rt).isEmpty && CompStatus.norm(mu).isEmpty && CompStatus.norm(pre).isEmpty) return null;
+        if (CompStatus.isPositive(rt) || CompStatus.isPositive(mu)) return true;
+        return CompStatus.norm(rt).isEmpty && CompStatus.norm(mu).isEmpty ? null : false;
+      case 'logs_offering':
+        const cols = ['offering_tithe', 'offering_weekly', 'offering_thanks', 'offering_construction', 'offering_donation'];
+        if (cols.every((c) => CompStatus.norm(l[c]).isEmpty)) return null;
+        return cols.any((c) => _paid(l[c]));
+      case 'logs_visitations':
+        if (CompStatus.norm(l['visitation_reason']).isNotEmpty) return true;
+        if (CompStatus.norm(l['status_detail']).isEmpty) return null;
+        return CompStatus.isPositive(l['status_detail']);
+      default:
+        if (CompStatus.norm(l['status_detail']).isEmpty) return null;
+        return CompStatus.isPositive(l['status_detail']);
+    }
+  }
+
+  bool _hasReason(Map l) => ['reason_notes', 'situation_notes', 'strategy_notes', 'solution_notes']
+      .any((c) => CompStatus.norm(l[c]).isNotEmpty);
+
+  String _memberName(Map l) {
+    final m = l['members'] is Map ? l['members'] as Map : const {};
+    return (m['english_name'] ?? m['korean_name'] ?? 'Unknown member').toString();
   }
 
   // ==========================================
@@ -413,6 +517,10 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     _isLoadingDetails = true;
     _inspectedLogs = batch['logs'] as List<dynamic>;
     _inspectedImages = [];
+    _imageLinks = {};
+    _inspectedFlags = [];
+    _nameFilter = 'all';
+    _nameSearch = '';
   });
 
   try {
@@ -428,9 +536,26 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         .ilike('duty_name', _escapeLike(duty))
         .eq('unit_name', batch['unit_name']);
 
+    final images = List<dynamic>.from(imgRes as List);
+    final links = await EvidenceService.signedUrls(images);
+
+    // Reused photos that were blocked or flagged when this report's evidence was uploaded
+    List<dynamic> flags = [];
+    try {
+      flags = List<dynamic>.from(await _supabase
+          .from('evidence_flags')
+          .select()
+          .eq('report_date', batch['report_date'])
+          .eq('unit_name', batch['unit_name'])
+          .ilike('duty_name', _escapeLike(duty))
+          .order('created_at', ascending: false));
+    } catch (_) {}
+
     if (mounted) {
       setState(() {
-        _inspectedImages = List<dynamic>.from(imgRes as List);
+        _inspectedImages = images;
+        _imageLinks = links;
+        _inspectedFlags = flags;
         _isLoadingDetails = false;
       });
     }
@@ -509,7 +634,24 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
   // ==========================================
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.f5): _loadAllReports,
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (_selectedReport != null) setState(() => _selectedReport = null);
+        },
+        ...officeKeys({
+          LogicalKeyboardKey.keyR: _loadAllReports,
+          LogicalKeyboardKey.enter: () {
+            if (_selectedReport != null && !_isSaving) _processApproval(true);
+          },
+        }, ctrlShift: {
+          LogicalKeyboardKey.keyF: () {
+            if (_selectedReport != null && !_isSaving) _showFlagDialog();
+          },
+        }),
+      },
+      child: Focus(autofocus: true, child: DefaultTabController(
       length: 2,
       child: Scaffold(
         backgroundColor: AppPalette.bg(Theme.of(context).scaffoldBackgroundColor),
@@ -545,7 +687,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         children: [
                           const Icon(Icons.pending_actions_rounded, size: 17),
                           const SizedBox(width: 8),
-                          Text("Pending Reports (${_pendingBatches.length})"),
+                          Flexible(child: Text("Pending Reports (${_pendingBatches.length})")),
                         ],
                       ),
                     ),
@@ -555,7 +697,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         children: [
                           const Icon(Icons.verified_outlined, size: 17),
                           const SizedBox(width: 8),
-                          Text("Approved Reports (${_approvedBatches.length})"),
+                          Flexible(child: Text("Approved Reports (${_approvedBatches.length})")),
                         ],
                       ),
                     ),
@@ -583,7 +725,15 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         ],
                       ),
       ),
-    );
+    )));
+  }
+
+  void _batchMenu(Offset pos, Map<String, dynamic> b, bool isPendingTab) {
+    showOfficeMenu(context, pos, [
+      OfficeMenuItem(isPendingTab ? "Open and review" : "Open report", icon: Icons.fact_check_outlined, onTap: () => _openReportInspection(b)),
+      const OfficeMenuItem.divider(),
+      OfficeMenuItem("Refresh list", icon: Icons.refresh_rounded, shortcut: "F5", onTap: _loadAllReports),
+    ]);
   }
 
   Widget _buildMessage(String text) => RefreshIndicator(
@@ -670,7 +820,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                       ? "Flagged"
                       : "Awaiting your approval";
 
-          return Container(
+          return OfficeRightClick(longPress: true, onMenu: (p) => _batchMenu(p, b, isPendingTab), child: Container(
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
               color: AppPalette.bg(_cs.surface),
@@ -720,10 +870,10 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                       children: [
                         Icon(Icons.event_note_rounded, size: 15, color: AppPalette.fg(Colors.blueGrey)),
                         const SizedBox(width: 6),
-                        Text("Activity Date: ${b['report_date']}",
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        Flexible(child: Text("Activity Date: ${b['report_date']}",
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
                         const Spacer(),
-                        Text("${b['total_members']} Entries", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade600))),
+                        Flexible(child: Text("${b['total_members']} Entries", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade600)))),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -731,8 +881,8 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                       children: [
                         Icon(Icons.upload_file_rounded, size: 15, color: AppPalette.fg(Colors.blueGrey)),
                         const SizedBox(width: 6),
-                        Text("Date of Submission: ${_formatDate(b['submitted_at'])}",
-                            style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
+                        Flexible(child: Text("Date of Submission: ${_formatDate(b['submitted_at'])}",
+                            style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600)))),
                       ],
                     ),
                     if (isFinal || isForwarded) ...[
@@ -741,8 +891,8 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         children: [
                           Icon(Icons.check_circle_rounded, size: 15, color: AppPalette.fg(Colors.green.shade600)),
                           const SizedBox(width: 6),
-                          Text("Date of Approval: ${_formatDate(b['approved_at'])}",
-                              style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.green.shade600), fontWeight: FontWeight.w600)),
+                          Flexible(child: Text("Date of Approval: ${_formatDate(b['approved_at'])}",
+                              style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.green.shade600), fontWeight: FontWeight.w600))),
                         ],
                       ),
                     ],
@@ -761,7 +911,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                 ),
               ),
             ),
-          );
+          ));
         },
       ),
     );
@@ -813,7 +963,15 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           const SizedBox(height: 16),
 
           _sectionHeader(Icons.camera_alt_rounded, "Physical Evidence (Photos)"),
+          if (_inspectedFlags.isNotEmpty) ...[
+            _buildFlagsBox(),
+            const SizedBox(height: 10),
+          ],
           _buildEvidenceGallery(),
+          const SizedBox(height: 20),
+
+          _sectionHeader(Icons.format_list_numbered_rounded, "Name List (what was entered)"),
+          _buildNameList(),
           const SizedBox(height: 20),
 
           _sectionHeader(Icons.rule_folder_rounded, "Data Consistency Audit (Absentees)"),
@@ -928,9 +1086,12 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         scrollDirection: Axis.horizontal,
         itemCount: _inspectedImages.length,
         itemBuilder: (c, i) {
-          final url = _imageUrl(_inspectedImages[i]);
+          final row = _inspectedImages[i];
+          final link = _imageLinks[(row is Map ? row['id'] : '').toString()];
+          final url = link?.thumb ?? _imageUrl(row);
+          final full = link?.full ?? url;
           return GestureDetector(
-            onTap: url == null ? null : () => _openFullImage(url),
+            onTap: full == null ? null : () => _openFullImage(full),
             child: Container(
               margin: const EdgeInsets.only(right: 12),
               width: 250,
@@ -962,6 +1123,239 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildFlagsBox() {
+    final blocked = _inspectedFlags.where((f) => (f as Map)['action'] == 'blocked').length;
+    final flagged = _inspectedFlags.length - blocked;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppPalette.bg(Colors.red.withValues(alpha: 0.08)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppPalette.line(Colors.red.shade300)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.gpp_maybe_rounded, color: AppPalette.fg(Colors.red.shade700), size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              [
+                if (blocked > 0) "$blocked reused photo${blocked == 1 ? ' was' : 's were'} blocked",
+                if (flagged > 0) "$flagged photo${flagged == 1 ? ' looks' : 's look'} like an older one",
+              ].join(' · '),
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.red.shade800)),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        ..._inspectedFlags.take(5).map((f) {
+          final m = f as Map;
+          final d = DateTime.tryParse((m['matched_report_date'] ?? '').toString());
+          final when = d == null ? 'an earlier report' : DateFormat('d MMM yyyy').format(d);
+          final how = m['exact'] == true
+              ? 'identical file'
+              : m['ai_verdict'] == 'duplicate'
+                  ? 'AI: same photo'
+                  : 'very similar';
+          return Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(
+              "• ${m['action'] == 'blocked' ? 'Blocked' : 'Uploaded, check it'}: matches a photo from $when"
+              "${(m['matched_unit_name'] ?? '').toString().isEmpty ? '' : ' (${m['matched_unit_name']})'} — $how"
+              "${(m['ai_reason'] ?? '').toString().isEmpty ? '' : '. ${m['ai_reason']}'}",
+              style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.red.shade900)),
+            ),
+          );
+        }),
+        const SizedBox(height: 4),
+        Text("Someone tried to submit an older photo as evidence for this report. Check the photos and the name list before approving.",
+            style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700), fontStyle: FontStyle.italic)),
+      ]),
+    );
+  }
+
+  Widget _buildNameList() {
+    final fields = _dutyFields[_getTableName()] ?? const [('status_detail', 'Status')];
+    final rows = _inspectedLogs.map((l) => Map<String, dynamic>.from(l as Map)).toList()
+      ..sort((a, b) => _memberName(a).toLowerCase().compareTo(_memberName(b).toLowerCase()));
+
+    int done = 0, notDone = 0, blank = 0, noReason = 0;
+    for (final l in rows) {
+      final d = _rowDone(l);
+      if (d == true) done++;
+      if (d == false) notDone++;
+      if (d == null) blank++;
+      if (d == false && !_hasReason(l)) noReason++;
+    }
+
+    final q = _nameSearch.trim().toLowerCase();
+    final shown = rows.where((l) {
+      final d = _rowDone(l);
+      final okFilter = switch (_nameFilter) {
+        'done' => d == true,
+        'not_done' => d == false,
+        'blank' => d == null,
+        'no_reason' => d == false && !_hasReason(l),
+        _ => true,
+      };
+      if (!okFilter) return false;
+      if (q.isEmpty) return true;
+      final m = l['members'] is Map ? l['members'] as Map : const {};
+      return _memberName(l).toLowerCase().contains(q) || (m['scj_id'] ?? '').toString().toLowerCase().contains(q);
+    }).toList();
+
+    Widget chip(String key, String label, int n, Color c) {
+      final sel = _nameFilter == key;
+      return ChoiceChip(
+        label: Text("$label ($n)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(sel ? Colors.white : c))),
+        selected: sel,
+        selectedColor: AppPalette.bg(c),
+        backgroundColor: AppPalette.bg(c.withValues(alpha: 0.08)),
+        side: BorderSide(color: AppPalette.line(c.withValues(alpha: 0.4))),
+        visualDensity: VisualDensity.compact,
+        onSelected: (_) => setState(() => _nameFilter = key),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppPalette.bg(_cs.surface),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: AppPalette.line(_cardBorder), width: 1.0),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          chip('all', 'All', rows.length, _accent),
+          chip('done', 'Done', done, Colors.green.shade700),
+          chip('not_done', 'Not done', notDone, Colors.red.shade700),
+          if (blank > 0) chip('blank', 'Not filled', blank, Colors.blueGrey),
+          if (noReason > 0) chip('no_reason', 'No reason given', noReason, Colors.orange.shade800),
+        ]),
+        const SizedBox(height: 10),
+        TextField(
+          onChanged: (v) => setState(() => _nameSearch = v),
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(
+            isDense: true,
+            prefixIcon: const Icon(Icons.search, size: 18),
+            hintText: "Search name or SCJ ID",
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (shown.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text("Nobody matches this filter.", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade600))),
+          )
+        else
+          LayoutBuilder(builder: (context, c) {
+            final wide = c.maxWidth >= 760;
+            return wide ? _nameTable(shown, fields) : Column(children: [for (int i = 0; i < shown.length; i++) _nameCard(i + 1, shown[i], fields)]);
+          }),
+      ]),
+    );
+  }
+
+  Widget _statusBadge(bool? d) {
+    final (String t, Color c) = d == true
+        ? ('Done', Colors.green.shade700)
+        : d == false
+            ? ('Not done', Colors.red.shade700)
+            : ('Not filled', Colors.blueGrey);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: AppPalette.bg(c.withValues(alpha: 0.12)), borderRadius: BorderRadius.circular(6)),
+      child: Text(t, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(c))),
+    );
+  }
+
+  Widget _nameTable(List<Map<String, dynamic>> rows, List<(String, String)> fields) {
+    final head = TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: AppPalette.fg(_accent));
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        headingRowHeight: 34,
+        dataRowMinHeight: 34,
+        dataRowMaxHeight: 64,
+        columnSpacing: 18,
+        headingRowColor: WidgetStatePropertyAll(_accent.withValues(alpha: 0.08)),
+        columns: [
+          DataColumn(label: Text('#', style: head)),
+          DataColumn(label: Text('Name', style: head)),
+          DataColumn(label: Text('Result', style: head)),
+          for (final f in fields) DataColumn(label: Text(f.$2, style: head)),
+        ],
+        rows: [
+          for (int i = 0; i < rows.length; i++)
+            DataRow(
+              color: WidgetStatePropertyAll(_rowDone(rows[i]) == false && !_hasReason(rows[i])
+                  ? Colors.orange.withValues(alpha: 0.07)
+                  : null),
+              cells: [
+                DataCell(Text('${i + 1}', style: const TextStyle(fontSize: 11.5))),
+                DataCell(ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
+                  child: Text(_memberName(rows[i]),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                )),
+                DataCell(_statusBadge(_rowDone(rows[i]))),
+                for (final f in fields)
+                  DataCell(ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: _noteFields.contains(f.$1) ? 240 : 130),
+                    child: Text(
+                      (rows[i][f.$1] ?? '').toString().trim().isEmpty ? '—' : rows[i][f.$1].toString(),
+                      style: TextStyle(fontSize: 11.5, color: AppPalette.fg((rows[i][f.$1] ?? '').toString().trim().isEmpty ? Colors.grey : null)),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  )),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _nameCard(int n, Map<String, dynamic> l, List<(String, String)> fields) {
+    final m = l['members'] is Map ? l['members'] as Map : const {};
+    final d = _rowDone(l);
+    final filled = fields.where((f) => (l[f.$1] ?? '').toString().trim().isNotEmpty).toList();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppPalette.bg(d == false && !_hasReason(l) ? Colors.orange.withValues(alpha: 0.07) : _cs.surface),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppPalette.line(_cardBorder.withValues(alpha: 0.4))),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text("$n. ", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          Expanded(
+            child: Text(_memberName(l),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          _statusBadge(d),
+        ]),
+        if ((m['scj_id'] ?? '').toString().isNotEmpty)
+          Text("SCJ ID ${m['scj_id']}", style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.grey.shade600))),
+        if (filled.isNotEmpty) const SizedBox(height: 6),
+        Wrap(spacing: 10, runSpacing: 4, children: [
+          for (final f in filled)
+            Text.rich(TextSpan(children: [
+              TextSpan(text: "${f.$2}: ", style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade600))),
+              TextSpan(text: l[f.$1].toString(), style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+            ])),
+        ]),
+        if (filled.isEmpty)
+          Text("Nothing was entered for this person.", style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade600))),
+      ]),
     );
   }
 

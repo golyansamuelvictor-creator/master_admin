@@ -3,18 +3,29 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/screens/forms_studio.dart';
 
-class SurveyScreen extends StatefulWidget {
+/// Surveys tab: forms to answer, my forms, and the admin feedback form.
+class SurveyScreen extends StatelessWidget {
   final double s;
-  final bool isFullPage; // Added to match other screens
-
+  final bool isFullPage;
   const SurveyScreen({super.key, this.s = 1.0, this.isFullPage = false});
 
   @override
-  State<SurveyScreen> createState() => _SurveyScreenState();
+  Widget build(BuildContext context) => FormsHub(fullPage: false, legacyFeedback: (_) => const AdminFeedbackForm(isFullPage: true));
 }
 
-class _SurveyScreenState extends State<SurveyScreen> {
+class AdminFeedbackForm extends StatefulWidget {
+  final double s;
+  final bool isFullPage; // Added to match other screens
+
+  const AdminFeedbackForm({super.key, this.s = 1.0, this.isFullPage = false});
+
+  @override
+  State<AdminFeedbackForm> createState() => _SurveyScreenState();
+}
+
+class _SurveyScreenState extends State<AdminFeedbackForm> {
   final _supabase = Supabase.instance.client;
   bool _isLoading = true;
   bool _isSubmitting = false;

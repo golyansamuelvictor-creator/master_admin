@@ -502,14 +502,14 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
               children: [
                 Icon(Icons.checklist_rounded, size: 15, color: AppPalette.fg(pPurple)),
                 const SizedBox(width: 6),
-                Text(
+                Flexible(child: Text(
                   "$totalDirectives Active",
                   style: GoogleFonts.merriweather(
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                     color: AppPalette.fg(pPurple),
                   ),
-                ),
+                )),
               ],
             ),
           ),

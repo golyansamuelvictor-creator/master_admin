@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/workflow_logic.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../../widgets/app_menus.dart';
 
 class ApprovalInbox extends StatefulWidget {
   final String userRole;
@@ -372,7 +373,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                   children: [
                     const Icon(Icons.mark_email_unread_outlined, size: 18),
                     const SizedBox(width: 8),
-                    Text("Unread ($totalUnreadCount)"),
+                    Flexible(child: Text("Unread ($totalUnreadCount)")),
                   ],
                 ),
               ),
@@ -382,7 +383,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                   children: [
                     const Icon(Icons.mark_email_read_outlined, size: 18),
                     const SizedBox(width: 8),
-                    Text("Read ($totalReadCount)"),
+                    Flexible(child: Text("Read ($totalReadCount)")),
                   ],
                 ),
               ),
@@ -494,6 +495,21 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
     );
   }
 
+  void _requestMenu(Offset pos, dynamic req) {
+    showOfficeMenu(context, pos, [
+      OfficeMenuItem("Open details", icon: Icons.open_in_new, onTap: () {
+        _markAsRead(req['id']);
+        _showRequestDetailsBottomSheet(req);
+      }),
+      OfficeMenuItem("Mark as read", icon: Icons.mark_email_read_outlined, onTap: () => _markAsRead(req['id'])),
+      const OfficeMenuItem.divider(),
+      OfficeMenuItem("Approve", icon: Icons.check_circle_outline, color: Colors.green.shade700, onTap: () => _signRequest(req, true)),
+      OfficeMenuItem("Reject", icon: Icons.cancel_outlined, color: Colors.red.shade700, onTap: () => _signRequest(req, false)),
+      const OfficeMenuItem.divider(),
+      OfficeMenuItem("Refresh", icon: Icons.refresh_rounded, onTap: _loadRequests),
+    ]);
+  }
+
   Widget _buildMessageCard(dynamic req, bool isUnread) {
     final oldU = req['old_unit_details'] ?? {};
     final newU = req['new_unit_details'] ?? {};
@@ -501,7 +517,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
     final sender = _getSender(req);
     final dateSent = _formatDate(req['created_at'] ?? req['date_sent']);
 
-    return Card(
+    return OfficeRightClick(longPress: true, onMenu: (p) => _requestMenu(p, req), child: Card(
       elevation: isUnread ? 2 : 0.5,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
@@ -647,7 +663,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildActionButtons(dynamic req) {

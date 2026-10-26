@@ -608,25 +608,20 @@ class _ReportsScreenState extends State<ReportsScreen> {
             const SizedBox(height: 5),
             if (canEdit) ...[
               _compactActionBtn(Icons.edit_note_rounded, "Enter new report", Colors.purple, () async { 
-                Navigator.pop(context); 
+                // opens on top of this menu, so Back returns here
                 await _nav(duty, "entry", selectedDate: DateTime.now()); 
-                if (mounted) _showDutyActionDialog(duty, exitOnClose: exitOnClose); 
               }),
               _compactActionBtn(Icons.history_rounded, "Edit previous report", Colors.orange[800]!, () async { 
-                Navigator.pop(context); 
                 final picked = await _pickNiceDate();
                 if (picked != null) {
                   await _nav(duty, "edit", selectedDate: picked);
                 }
-                if (mounted) _showDutyActionDialog(duty, exitOnClose: exitOnClose); 
               }),
             ],
             _compactActionBtn(Icons.dashboard_customize_rounded, "Open dashboard", Colors.teal[700]!, () { 
-              Navigator.pop(context); 
               _goToCorrectDashboard(duty); 
             }),
             _compactActionBtn(Icons.person_search_rounded, interventionLabel, Colors.blue[800]!, () { 
-              Navigator.pop(context); 
               Navigator.push(context, MaterialPageRoute(
                 builder: (c) => UniversalInterventionScreen(
                   duty: duty, 
@@ -637,7 +632,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
             }),
             if (!_roleForDuty(duty).contains('cell')) 
               _compactActionBtn(Icons.verified_user_rounded, "Approval cockpit", Colors.green[800]!, () { 
-                Navigator.pop(context); 
                 Navigator.push(context, MaterialPageRoute(
                   builder: (c) => ApprovalCockpit(
                     role: _roleForDuty(duty), 
@@ -868,7 +862,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
         body: Padding(padding: const EdgeInsets.all(25), child: Column(children: [
           const SizedBox(height: 5),
           _compactActionBtn(Icons.person_pin_rounded, "View member profiles", Colors.blue, () { 
-            Navigator.pop(context); 
             Navigator.push(context, MaterialPageRoute(builder: (c) => MemberDirectoryScreen(
               userRole: _simulatedRole!, 
               userLoc: userLoc, 
@@ -880,17 +873,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
           }),
           if (isIASec || r == 'admin') ...[
             _compactActionBtn(Icons.sync_lock_rounded, "Database master sync", Colors.red[900]!, () { 
-              Navigator.pop(context); 
               Navigator.push(context, MaterialPageRoute(builder: (c) => const MemberSyncTool())); 
             }),
             _compactActionBtn(Icons.upload_file_rounded, "Milestone bulk importer", Colors.indigo, () { 
-              Navigator.pop(context); 
               Navigator.push(context, MaterialPageRoute(builder: (c) => const MilestoneUploadScreen())); 
             }),
           ],
           if (isIASec || isOtherSec || r == 'admin') ...[
             _compactActionBtn(Icons.move_up_rounded, "Request member transfer", Colors.orange, () { 
-              Navigator.pop(context); 
               Navigator.push(context, MaterialPageRoute(builder: (c) => const TransferRequestForm())); 
             }),
           ],
@@ -917,7 +907,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
           const SizedBox(height: 5),
           if (canSetTargets)
             _compactActionBtn(Icons.track_changes_rounded, "Set unit targets", Colors.redAccent, () { 
-              Navigator.pop(context); 
               Navigator.push(context, MaterialPageRoute(
                 builder: (c) => TargetSetterScreen(
                   allowedDuties: _dynamicDuties,
@@ -930,7 +919,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
             }),
             
           _compactActionBtn(Icons.trending_up_rounded, "Track growth", Colors.blue, () { 
-            Navigator.pop(context); 
             Navigator.push(context, MaterialPageRoute(builder: (c) => UnitGrowthTrackerScreen(
               userRole: _simulatedRole ?? widget.userRole, 
               userLoc: userLoc, 
@@ -942,12 +930,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
           }),
           
           _compactActionBtn(Icons.assignment_turned_in_rounded, "Accountability tasks", Colors.teal[800]!, () { 
-            Navigator.pop(context); 
             Navigator.push(context, MaterialPageRoute(builder: (c) => const TaskManagerScreen())); 
           }),
           
           _compactActionBtn(Icons.assessment_rounded, "Monthly performance report", Colors.purple, () { 
-            Navigator.pop(context); 
             Navigator.push(context, MaterialPageRoute(builder: (c) => const MonthlyExecutiveReport())); 
           }),
         ]))
@@ -962,11 +948,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
         appBar: AppBar(backgroundColor: AppPalette.bg(Colors.white), elevation: 0.5, leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)), centerTitle: true, title: Text("Evangelism management", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold))),
         body: Padding(padding: const EdgeInsets.all(25), child: Column(children: [
           _compactActionBtn(Icons.fact_check_rounded, "Evangelism participation", Colors.blue, () { 
-            Navigator.pop(context); 
             _showDutyActionDialog("Evangelism"); 
           }),
           _compactActionBtn(Icons.folder_shared_outlined, "BB file (Students)", Colors.orange[800]!, () { 
-            Navigator.pop(context); 
             if (_canUserEnterData("BB File")) {
               _nav("BB File", "entry", selectedDate: DateTime.now());
             } else {
@@ -974,7 +958,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
             }
           }),
           _compactActionBtn(Icons.analytics_outlined, "Evangelism results", Colors.purple, () { 
-            Navigator.pop(context); 
             _goToCorrectDashboard("Evangelism Results"); 
           }),
         ]))

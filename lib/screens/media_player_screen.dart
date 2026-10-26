@@ -87,7 +87,6 @@ class _MediaPlayerScreenState extends State<MediaPlayerScreen> {
                   children: [
                     _utilBtn(Icons.share, "Share"),
                     _utilBtn(Icons.playlist_add, "Add to List"),
-                    _utilBtn(Icons.download_for_offline, "Download"),
                   ],
                 ),
               ],

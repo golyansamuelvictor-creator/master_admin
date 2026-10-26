@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart' hide TextDirection;
@@ -23,7 +24,9 @@ import '../compilation_modules/visitations_module.dart';
 import '../compilation_modules/growth_tracking_module.dart';
 import 'compilation_results_list.dart';
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../widgets/app_menus.dart';
 
 class CompilationEngine extends StatefulWidget {
   final String role, userUnit, selectedDuty, loc, sub, dept, team; 
@@ -47,6 +50,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
   final _supabase = Supabase.instance.client;
   final Color pPurple = const Color(0xFF4A148C);
   final TextEditingController _analysisController = TextEditingController();
+  final FocusNode _findingsFocus = FocusNode();
+  List<Map<String, dynamic>> _recentFindings = []; // findings already submitted for this duty + unit
 
   List<String> _timeOptions = ["Current status", "Weekly status", "Monthly status", "Custom period"];
   List<String> _modeOptions = ["Summary", "Ranking", "Trend Analysis"];
@@ -930,6 +935,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       setState(() {
         _logs = allCurrentLogs;
         _masterMembers = members;
+        CompLevel.configure(members); // repeated cell / team names get their parents
         _isLoading = false;
       });
       if (_analyticsMode.contains('Ranking')) _loadRanking();
@@ -1119,12 +1125,47 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return "$formattedRole's findings";
   }
 
+  void _setMode(String v) {
+    setState(() => _analyticsMode = v);
+    if (v.contains('Ranking')) _loadRanking();
+  }
+
+  void _togglePending() {
+    setState(() => _includePending = !_includePending);
+    _fetchData();
+  }
+
+  Future<void> _rightClick(Offset pos) => showOfficeMenu(context, pos, [
+        OfficeMenuItem("Refresh data", icon: Icons.refresh_rounded, shortcut: "F5", onTap: _isLoading ? null : _refreshData),
+        const OfficeMenuItem.divider(),
+        for (int i = 0; i < _modeOptions.length; i++)
+          OfficeMenuItem(_modeOptions[i],
+              icon: _analyticsMode == _modeOptions[i] ? Icons.radio_button_checked : Icons.radio_button_unchecked, shortcut: "Alt+${i + 1}", onTap: () => _setMode(_modeOptions[i])),
+        const OfficeMenuItem.divider(),
+        OfficeMenuItem(_includePending ? "Count approved reports only" : "Include pending reports", icon: Icons.pending_actions_rounded, shortcut: "Ctrl+Shift+P", onTap: _togglePending),
+        OfficeMenuItem("Write findings", icon: Icons.edit_note_rounded, shortcut: "Ctrl+Shift+F", onTap: () => _findingsFocus.requestFocus()),
+      ]);
+
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
     bool isMobile = screenWidth < 900;
 
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.f5): () { if (!_isLoading) _refreshData(); },
+        ...officeKeys({LogicalKeyboardKey.keyR: () { if (!_isLoading) _refreshData(); }}, ctrlShift: {
+          LogicalKeyboardKey.keyP: _togglePending,
+          LogicalKeyboardKey.keyF: () => _findingsFocus.requestFocus(),
+        }),
+        for (int i = 0; i < _modeOptions.length && i < 3; i++)
+          SingleActivator(const [LogicalKeyboardKey.digit1, LogicalKeyboardKey.digit2, LogicalKeyboardKey.digit3][i], alt: true): () => _setMode(_modeOptions[i]),
+      },
+      child: Focus(
+        autofocus: true,
+        child: OfficeRightClick(
+          onMenu: _rightClick,
+          child: Scaffold(
       backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
         centerTitle: true,
@@ -1159,6 +1200,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
               )
         ),
       ]),
+    ),
+        ),
+      ),
     );
   }
 
@@ -1515,7 +1559,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
   String _rankKey(dynamic record, String levelName, List<String> path) {
     final parts = <String>[];
     for (final lv in path) {
-      parts.add(CompLevel.unitKey(record, lv));
+      parts.add(CompLevel.unitKey(record, lv, qualified: false));
       if (lv == levelName) break;
     }
     return parts.join(' › ');
@@ -1975,45 +2019,52 @@ class _CompilationEngineState extends State<CompilationEngine> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppPalette.bg(pPurple.withValues(alpha: 0.1)),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(Icons.analytics_rounded, color: AppPalette.fg(pPurple), size: 22),
+          // On narrow screens the title wraps and the button moves below it
+          LayoutBuilder(builder: (ctx, bc) {
+            final titleBlock = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppPalette.bg(pPurple.withValues(alpha: 0.1)),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  const SizedBox(width: 10),
-                  Column(
+                  child: Icon(Icons.analytics_rounded, color: AppPalette.fg(pPurple), size: 22),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text("Strategic Performance & Trend Evaluation",
-                          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(pPurple))),
+                          softWrap: true,
+                          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: bc.maxWidth < 420 ? 13.5 : 15, color: AppPalette.fg(pPurple))),
                       Text("$duty • $period Analysis",
+                          softWrap: true,
                           style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
                     ],
                   ),
-                ],
-              ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppPalette.bg(pPurple),
-                  foregroundColor: AppPalette.fg(Colors.white),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  side: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
                 ),
-                icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-                label: Text("Download PDF Report", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 11.5)),
-                onPressed: () => _exportAiReportPdf(duty, period, topUnits, bottomUnits, findingsSummary, directives),
+              ],
+            );
+            final button = ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppPalette.bg(pPurple),
+                foregroundColor: AppPalette.fg(Colors.white),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                side: BorderSide(color: AppPalette.line(Colors.black), width: 1.0),
               ),
-            ],
-          ),
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+              label: Text("Download PDF Report", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 11.5)),
+              onPressed: () => _exportAiReportPdf(duty, period, topUnits, bottomUnits, findingsSummary, directives),
+            );
+            if (bc.maxWidth < 560) {
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [titleBlock, const SizedBox(height: 10), button]);
+            }
+            return Row(children: [Expanded(child: titleBlock), const SizedBox(width: 12), button]);
+          }),
           const SizedBox(height: 14),
           Divider(height: 1, color: AppPalette.bg(Colors.black26)),
           const SizedBox(height: 14),
@@ -2454,20 +2505,38 @@ class _CompilationEngineState extends State<CompilationEngine> {
       if (!mounted) return;
       _analysisController.clear();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Findings submitted successfully")));
+      _loadRecentFindings();
     } catch (e) {
       debugPrint("Findings save error: $e");
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(backgroundColor: Colors.red.shade800, content: const Text("Couldn't save your findings. Please try again.")),
-      );
+      final msg = e is PostgrestException && e.code == '42501'
+          ? "Your account isn't allowed to save findings yet. Ask the admin to run 08_round7.sql."
+          : "Couldn't save your findings${e is PostgrestException ? ': ${e.message}' : '. Please try again.'}";
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red.shade800, content: Text(msg)));
     } finally {
       if (mounted) setState(() => _savingFindings = false);
+    }
+  }
+
+  Future<void> _loadRecentFindings() async {
+    try {
+      final res = await _supabase
+          .from('manager_insights')
+          .select('id, observation, period_start, period_end, manager_id, profiles(full_name)')
+          .eq('duty_name', widget.selectedDuty)
+          .eq('unit_id', _getActiveUnitDisplayLabel())
+          .order('period_end', ascending: false)
+          .limit(5);
+      if (mounted) setState(() => _recentFindings = List<Map<String, dynamic>>.from(res));
+    } catch (e) {
+      debugPrint("Findings load: $e");
     }
   }
 
   @override
   void dispose() {
     _analysisController.dispose();
+    _findingsFocus.dispose();
     super.dispose();
   }
 
@@ -2486,14 +2555,17 @@ class _CompilationEngineState extends State<CompilationEngine> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Growth Performance Metrics", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),
-                  const SizedBox(height: 2),
-                  Text(_timePeriod, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Growth Performance Metrics", maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),
+                    const SizedBox(height: 2),
+                    Text(_timePeriod, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -2502,10 +2574,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
                   border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.3))),
                 ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.tune_rounded, color: AppPalette.fg(pPurple), size: 14),
                     const SizedBox(width: 4),
-                    Text(_analyticsMode, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
+                    Text(_analyticsMode, maxLines: 1, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
                   ],
                 ),
               ),
@@ -2515,6 +2588,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           Divider(height: 1, color: AppPalette.bg(Colors.black12)),
           const SizedBox(height: 10),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _metricPill(_primaryLabel, _primaryGrowth, isPercentage: !_primaryLabel.contains('Saints') && !_primaryLabel.contains('Fruits')),
               const SizedBox(width: 8),
@@ -2548,9 +2622,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+            // wraps onto a second line instead of "General Att…"
+            Text(title, style: GoogleFonts.merriweather(fontSize: 9.5, height: 1.25, color: AppPalette.fg(Colors.black87), fontWeight: FontWeight.bold), maxLines: 2, softWrap: true, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 2),
-            Text(display, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(color))),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(display, maxLines: 1, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(color))),
+            ),
           ],
         ),
       ),
@@ -2573,7 +2652,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
             children: [
               Icon(icon, size: 16, color: AppPalette.fg(color ?? pPurple)),
               const SizedBox(width: 8),
-              Text(title, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: AppPalette.fg(color ?? Colors.black87))),
+              Expanded(child: Text(title, softWrap: true, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: AppPalette.fg(color ?? Colors.black87)))),
             ],
           ),
           const SizedBox(height: 6),
@@ -2637,7 +2716,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
       ),
     );
 
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+    if (!mounted) return;
+    await TableExport.previewDoc(context, widget.selectedDuty, pdf, fileName: '${widget.selectedDuty.replaceAll(' ', '_')}_report.pdf');
   }
 
   Widget _buildSidebarContent() {
@@ -2756,8 +2836,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
               _buildApprovalToggle(),
 
               _bentoNavCard("Analytics mode", _modeOptions, _analyticsMode, (v) { 
-                setState(() => _analyticsMode = v);
-                if (v.contains('Ranking')) _loadRanking();
+                _setMode(v);
                 if (isMobile) Navigator.pop(context);
               }),
               const SizedBox(height: 10),
@@ -3087,6 +3166,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         const SizedBox(height: 10),
         TextField(
           controller: _analysisController, 
+          focusNode: _findingsFocus,
           minLines: 3,
           maxLines: 5, 
           style: GoogleFonts.merriweather(fontSize: 13), 
@@ -3129,6 +3209,30 @@ class _CompilationEngineState extends State<CompilationEngine> {
             label: Text("Submit findings", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12)),
           ),
         ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _loadRecentFindings,
+            icon: const Icon(Icons.history_rounded, size: 16),
+            label: Text(_recentFindings.isEmpty ? "Show earlier findings" : "Earlier findings (${_recentFindings.length})",
+                style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        for (final f in _recentFindings)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: pPurple.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(10)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                "${(f['profiles'] is Map ? f['profiles']['full_name'] : null) ?? 'Manager'} · ${f['period_start']} – ${f['period_end']}",
+                style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.blueGrey[700]),
+              ),
+              const SizedBox(height: 4),
+              Text((f['observation'] ?? '').toString(), style: GoogleFonts.merriweather(fontSize: 12, height: 1.4)),
+            ]),
+          ),
       ],
     ),
   );

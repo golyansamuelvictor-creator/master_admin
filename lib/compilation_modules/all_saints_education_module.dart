@@ -3,10 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:printing/printing.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:intl/intl.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -195,48 +193,58 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
   // [sessions] > 1 turns period totals into an average per session.
   // Each report is counted once: make-up first, then in-person, then online
   // (before, "make up online" was counted twice).
+  // [sessions] is worked out from the reports given: the weeks THIS unit
+  // reported in (before, every row was divided by the weeks of the whole
+  // view, so a cell that reported 3 of 5 weeks looked 40% worse, and the
+  // same cell showed different figures at team and cell level).
+  // Percentages come from the exact totals, not from rounded averages.
+  // Any filled-in answer that isn't a "no" counts as attended: make-up and
+  // online are recognised by name, everything else counts as in-person
+  // (before, wording such as "In person" or "Present" counted as absent).
   Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers, int sessions = 1}) {
-    int per(int v) => CompPeriod.perSession(v, sessions);
-    int n = officialMembers != null ? officialMembers.length : per(logsList.length);
+    logsList = CompPeriod.onePerMemberWeek(logsList); // the chosen day: a member counts once per week
+    sessions = widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(logsList);
+    num per(int v) => CompPeriod.avgPerSession(v, sessions);
+    num n = officialMembers != null ? officialMembers.length : per(logsList.length);
+    final int heads = officialMembers?.length ?? 0;
+    double pct(int raw) => officialMembers != null ? CompPeriod.pctOf(raw, heads, sessions) : (logsList.isEmpty ? 0.0 : raw / logsList.length * 100);
 
     String st(dynamic x) => CompStatus.norm(x['status_detail'] ?? x['attendance_realtime'] ?? x['attendance_makeup']);
-    bool isMu(dynamic x) {
-      final s = st(x);
-      return !CompStatus.isNegative(s) && (s.contains('make up') || s.contains('makeup') || s.contains('make-up') || s == 'mu');
-    }
-    bool isIp(dynamic x) {
-      final s = st(x);
-      return !isMu(x) && !CompStatus.isNegative(s) && (s.contains('in-person') || s.contains('inperson') || s == 'ip');
-    }
-    bool isOn(dynamic x) {
-      final s = st(x);
-      return !isMu(x) && !isIp(x) && !CompStatus.isNegative(s) && (s.contains('online') || s.contains('on-line'));
-    }
-    bool isAb(dynamic x) => CompStatus.isNegative(st(x));
+    String flat(dynamic x) => st(x).replaceAll(RegExp(r'[\s_\-]'), '');
+    bool isAttended(dynamic x) => CompStatus.isPositive(st(x));
+    bool isMu(dynamic x) => isAttended(x) && (flat(x).contains('makeup') || flat(x) == 'mu');
+    bool isOn(dynamic x) => isAttended(x) && !isMu(x) && flat(x).contains('online');
+    bool isIp(dynamic x) => isAttended(x) && !isMu(x) && !isOn(x);
 
-    int ip = per(logsList.where(isIp).length);
-    int on = per(logsList.where(isOn).length);
-    int mu = per(logsList.where(isMu).length);
-    int att = ip + on + mu;
-    int ab = n > att ? (n - att) : per(logsList.where(isAb).length);
+    final rIp = logsList.where(isIp).length;
+    final rOn = logsList.where(isOn).length;
+    final rMu = logsList.where(isMu).length;
+    final rAtt = rIp + rOn + rMu;
+    num ip = per(rIp);
+    num on = per(rOn);
+    num mu = per(rMu);
+    num att = per(rAtt);
+    num ab = n > att ? (n - att) : 0;
+    final attP = pct(rAtt);
 
     return {
       "n": n,
       "att": att,
-      "pct": n > 0 ? (att / n * 100) : 0.0,
+      "pct": attP,
       "ip": ip,
-      "ipp": n > 0 ? (ip / n * 100) : 0.0,
+      "ipp": pct(rIp),
       "on": on,
-      "onp": n > 0 ? (on / n * 100) : 0.0,
+      "onp": pct(rOn),
       "mu": mu,
-      "mup": n > 0 ? (mu / n * 100) : 0.0,
+      "mup": pct(rMu),
       "ab": ab,
-      "abp": n > 0 ? (ab / n * 100) : 0.0,
+      "abp": attP >= 100 ? 0.0 : 100 - attP,
     };
   }
 
   @override
   Widget build(BuildContext context) {
+    _capRows.clear();
     final activeLogs = _filteredLogs;
     final Map<String, dynamic> totS = _calc(activeLogs, officialMembers: _effectiveMembers.isNotEmpty ? _effectiveMembers : null, sessions: _sessions);
 
@@ -252,8 +260,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
       Row(children: [
-        IconButton(onPressed: _printReport, icon: Icon(Icons.print, color: AppPalette.fg(Colors.blueGrey), size: 18)),
-        IconButton(onPressed: () {}, icon: Icon(Icons.download, color: AppPalette.fg(Colors.green), size: 18)),
+        TableExport.buttons(context, _exportTable),
         const SizedBox(width: 8),
 
         if (widget.timePeriod != "Current status")
@@ -428,19 +435,45 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     _dataRow(c2, d, colW, b: b),
   ]);
 
+  // Each table row is also recorded as text for Excel / PDF / Print.
+  List<String>? _capRow;
+  final List<List<String>> _capRows = [];
+
   Widget _dataRow(String label, Map<String, dynamic> d, double colW, {bool b = false}) {
+    final row = <String>[];
+    _capRow = row;
+    try {
+      return _dataRowRaw(label, d, colW, b: b);
+    } finally {
+      _capRow = null;
+      _capRows.add(row);
+    }
+  }
+
+  ExportTable _exportTable() {
+    final unit = (widget.activeUnitLabel ?? '').isNotEmpty ? widget.activeUnitLabel! : CompLevel.unitTitle(widget.level);
+    final heads = <String>[unit, ...['Num', 'Attended', 'Att %', 'In-person', 'In-person %', 'Online', 'Online %', 'Make-up', 'Make-up %', 'Absentees', 'Absent %']];
+    return ExportTable(
+      title: "All Saints Education – $unit",
+      subtitle: "Period: ${widget.timePeriod} · Level: ${widget.level}",
+      headers: heads,
+      rows: [for (final r in _capRows) r],
+    );
+  }
+
+  Widget _dataRowRaw(String label, Map<String, dynamic> d, double colW, {bool b = false}) {
     return Row(children: [
       _cell(label, w: lw, h: rh, b: b, a: Alignment.center),
-      _cell("${d['n']}", w: colW, a: Alignment.center),
-      _cell("${d['att']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['n']), w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['att']), w: colW, a: Alignment.center),
       _cell("${d['pct'].toStringAsFixed(1)}%", w: colW, b: true, a: Alignment.center),
-      _cell("${d['ip']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['ip']), w: colW, a: Alignment.center),
       _cell("${d['ipp'].toStringAsFixed(1)}%", w: colW, a: Alignment.center),
-      _cell("${d['on']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['on']), w: colW, a: Alignment.center),
       _cell("${d['onp'].toStringAsFixed(1)}%", w: colW, a: Alignment.center),
-      _cell("${d['mu']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['mu']), w: colW, a: Alignment.center),
       _cell("${d['mup'].toStringAsFixed(1)}%", w: colW, a: Alignment.center),
-      _cell("${d['ab']}", w: colW, color: Colors.red[800], a: Alignment.center),
+      _cell(CompPeriod.fmt(d['ab']), w: colW, color: Colors.red[800], a: Alignment.center),
       _cell("${d['abp'].toStringAsFixed(1)}%", w: colW, a: Alignment.center),
     ]);
   }
@@ -454,6 +487,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     Color? bg,
     Alignment a = Alignment.center,
   }) {
+    _capRow?.add(t);
     return Container(
       width: w ?? baseCw,
       height: h,
@@ -560,7 +594,7 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
               spacing: 16,
               runSpacing: 6,
               alignment: WrapAlignment.center,
-              children: metrics.map((m) => _lgItem("${m.label}: ${m.val.toInt()}", m.color)).toList(),
+              children: metrics.map((m) => _lgItem("${m.label}: ${CompPeriod.fmt(m.val)}", m.color)).toList(),
             ),
           ),
         ]);
@@ -871,11 +905,6 @@ class _AllSaintsEducationModuleState extends State<AllSaintsEducationModule> {
     ],
   );
 
-  Future<void> _printReport() async {
-    final pdf = pw.Document();
-    pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Text("All Saints Education Report"))));
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-  }
 
   Widget _section(String title, Widget content, BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 6),

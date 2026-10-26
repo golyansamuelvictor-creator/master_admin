@@ -19,6 +19,7 @@ import '../entry_modules/daily_participation_entry.dart';
 import '../entry_modules/bb_file_entry.dart';
 import '../core/compilation_rules.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../widgets/app_menus.dart';
 
 class EntryFormScreen extends StatefulWidget {
   final String sheetName, cellName, location, subLocation, dept, team;
@@ -640,7 +641,15 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           row['status_detail'] = data['status_detail'];
         }
 
-        row.addAll(data);
+        // Rows loaded from an earlier save carry their id / timestamps / joined
+        // member. Sending an id for some rows and not others made the database
+        // fill the missing ids with null ("null value in column id"). The
+        // upsert below matches rows by member + date (+ day), so no id is needed.
+        final clean = Map<String, dynamic>.from(data)
+          ..remove('id')
+          ..remove('created_at')
+          ..remove('members');
+        row.addAll(clean);
         logRows.add(row);
       }
     });
@@ -663,50 +672,59 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date,service_day',
+          defaultToNull: false,
         );
       } else if (isAllSaintsEdu) {
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date,education_day',
+          defaultToNull: false,
         );
       } else if (isCellService) {
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date',
+          defaultToNull: false,
         );
       } else if (_isMorningLight) {
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date,ml_day',
+          defaultToNull: false,
         );
       } else if (_isWorkersEducation) {
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date,edu_day',
+          defaultToNull: false,
         );
       } else if (_isWorkersParticipation) {
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date,part_day',
+          defaultToNull: false,
         );
       } else if (_isEvangelism) {
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date,evang_day',
+          defaultToNull: false,
         );
       } else if (isVisitations) {
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date',
+          defaultToNull: false,
         );
       } else if (widget.sheetName == 'Offering Status') {
         // Needs the unique key from 02_schema_fixes.sql; without it every save added new rows
         await supabase.from(_getTargetTable()).upsert(
           logRows,
           onConflict: 'member_id,report_date',
+          defaultToNull: false,
         );
       } else {
-        await supabase.from(_getTargetTable()).upsert(logRows);
+        await supabase.from(_getTargetTable()).upsert(logRows, defaultToNull: false);
       }
 
       if (mounted) {
@@ -956,8 +974,15 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyS, control: true): _save,
-        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
+        ...officeKeys({
+          LogicalKeyboardKey.keyS: _save,
+          LogicalKeyboardKey.enter: _save,
+          LogicalKeyboardKey.keyZ: _undo,
+          LogicalKeyboardKey.keyY: _redo,
+          LogicalKeyboardKey.keyD: _pickAnotherDate,
+        }, ctrlShift: {
+          LogicalKeyboardKey.keyZ: _redo,
+        }),
       },
       child: Scaffold(
         backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),

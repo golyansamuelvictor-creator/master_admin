@@ -851,7 +851,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                 child: Icon(Icons.filter_alt_outlined, color: AppPalette.fg(Colors.blue.shade700), size: 22),
               ),
               const SizedBox(width: 14),
-              Column(
+              Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -863,7 +863,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                     style: GoogleFonts.merriweather(fontSize: 13.5, color: AppPalette.fg(Colors.grey.shade600)),
                   ),
                 ],
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 18),
@@ -933,7 +933,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                 child: Icon(Icons.input_rounded, color: AppPalette.fg(_primaryPurple), size: 22),
               ),
               const SizedBox(width: 14),
-              Column(
+              Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -945,7 +945,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                     style: GoogleFonts.merriweather(fontSize: 13.5, color: AppPalette.fg(Colors.grey.shade600)),
                   ),
                 ],
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 18),
@@ -1057,7 +1057,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
+              Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -1069,7 +1069,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                     style: GoogleFonts.merriweather(fontSize: 13.5, color: AppPalette.fg(Colors.grey.shade600)),
                   ),
                 ],
-              ),
+              )),
               if (_bulkMembers.isNotEmpty)
                 TextButton.icon(
                   onPressed: () {

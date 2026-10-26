@@ -136,6 +136,13 @@ class AbsenteeLogic {
 
       List<Map<String, dynamic>> results = [];
 
+      // Sessions held by this unit in the period (a date anyone reported on).
+      // A member with no report for one of them is counted absent too.
+      final Set<String> sessionDates = {
+        for (final l in allLogs)
+          if ((l['report_date'] ?? '').toString().isNotEmpty) (l['report_date']).toString().split('T').first,
+      };
+
       for (var member in members) {
         final memberIdStr = member['id']?.toString() ?? "";
         if (memberIdStr.isEmpty) continue;
@@ -152,9 +159,14 @@ class AbsenteeLogic {
         };
         final Set<String> memberObservedStyles = {};
 
+        final Set<String> reportedDates = {
+          for (final l in memberLogs) (l['report_date'] ?? '').toString().split('T').first,
+        };
+        final int notReported = sessionDates.difference(reportedDates).length;
+
         for (var log in memberLogs) {
-          // Check if log represents an Absence
-          if (_checkIfMissedWithLabels(duty, log, absenteeLabels)) {
+          // Check if log represents an Absence (a blank answer counts too)
+          if (_checkIfMissedWithLabels(duty, log, absenteeLabels) || _isBlankLog(duty, log)) {
             missedCount++;
             if (lastReason == "No reason logged") {
               lastReason = log['reason_notes'] ?? 
@@ -176,6 +188,11 @@ class AbsenteeLogic {
           (r) => r['member_id']?.toString() == memberIdStr, 
           orElse: () => null,
         );
+
+        if (notReported > 0) {
+          missedCount += notReported;
+          if (lastReason == "No reason logged") lastReason = "Not reported / did not participate";
+        }
 
         // Include members who missed at least once in this period
         if (missedCount > 0) {
@@ -231,6 +248,24 @@ class AbsenteeLogic {
     return "";
   }
 
+  static const List<String> _answerKeys = [
+    'status_detail', 'attendance_realtime', 'attendance_makeup', 'attendance_pre', 'mon_part', 'mon_ml',
+  ];
+
+  /// A report row whose answer fields are all empty (nothing was chosen).
+  static bool _isBlankLog(String duty, dynamic log) {
+    if (log == null || log is! Map) return false;
+    if (duty.contains('Offering') || duty.contains('Visitation')) return false;
+    final present = _answerKeys.where((k) => log.containsKey(k)).toList();
+    if (present.isEmpty) return false;
+    return present.every((k) => (log[k] ?? '').toString().trim().isEmpty);
+  }
+
+  static bool _looksAbsent(String lower) =>
+      lower.contains('absent') || lower.contains('absence') || lower.contains('didn') || lower.contains('did not') ||
+      lower.contains('not part') || lower.contains('no part') || lower.contains('missed') || lower == 'no' ||
+      lower == 'none' || lower == 'nil' || lower == '-';
+
   static bool _checkIfMissedWithLabels(String duty, dynamic log, Set<String> absenteeLabels) {
     if (log == null || log is! Map) return false;
 
@@ -248,9 +283,11 @@ class AbsenteeLogic {
     for (var cand in candidates) {
       if (cand == null) continue;
       final str = cand.toString().trim();
+      if (str.isEmpty) continue;
       for (var abs in absenteeLabels) {
         if (abs.toLowerCase() == str.toLowerCase()) return true;
       }
+      if (_looksAbsent(str.toLowerCase())) return true;
     }
     return false;
   }

@@ -1,9 +1,11 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/table_export.dart';
+import 'package:flutter/services.dart';
+import 'package:master_admin/widgets/app_menus.dart';
 
 class CompilationResultsList extends StatefulWidget {
   final List<dynamic> logs;
@@ -492,151 +494,23 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   // CATEGORY 4: DOWNLOAD (EXCEL/PDF) & PRINT
   // ==========================================
 
-  void _exportAsExcelCsv() {
+  ExportTable _resultsTable() {
     final keys = _getVisibleDutyKeys();
-    final buffer = StringBuffer();
-
-    // UTF-8 BOM so Microsoft Excel reads encoding properly
-    buffer.write('\uFEFF');
-
-    // Header row
-    buffer.writeln(keys.map((k) => '"${_getDisplayName(k).replaceAll('"', '""')}"').join(','));
-
-    // Data rows
-    for (var log in _filteredData) {
-      final row = keys.map((k) {
-        String val = (_getCellValue(log, k) ?? "").toString();
-        return '"${val.replaceAll('"', '""')}"';
-      }).join(',');
-      buffer.writeln(row);
-    }
-
-    Clipboard.setData(ClipboardData(text: buffer.toString()));
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        title: Row(
-          children: [
-            Icon(Icons.table_chart, color: AppPalette.fg(Color(0xFF107C41)), size: 22),
-            const SizedBox(width: 8),
-            const Text("Excel Spreadsheet Ready", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Spreadsheet data for '${widget.selectedDuty}' (${_filteredData.length} records) has been formatted.",
-              style: const TextStyle(fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF1F5F9)), borderRadius: BorderRadius.circular(6)),
-              child: Text(
-                "✓ Data copied to clipboard!\nYou can paste directly into Microsoft Excel, Google Sheets, or save as a .csv file.",
-                style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Color(0xFF334155)), fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close")),
-        ],
-      ),
+    return ExportTable(
+      title: widget.selectedDuty,
+      subtitle: "${_filteredData.length} records",
+      headers: keys.map(_getDisplayName).toList(),
+      rows: [
+        for (final log in _filteredData) keys.map((k) => (_getCellValue(log, k) ?? "").toString()).toList(),
+      ],
     );
   }
 
-  void _showPrintAndPdfDialog() {
-    final keys = _getVisibleDutyKeys();
+  /// Real .xlsx download (was: copied to the clipboard).
+  void _exportAsExcelCsv() => TableExport.excel(context, _resultsTable());
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        title: Row(
-          children: [
-            Icon(Icons.print_rounded, color: AppPalette.fg(appBarColor), size: 22),
-            const SizedBox(width: 8),
-            Text("Print / PDF Document", style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: SizedBox(
-          width: 500,
-          height: 380,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Document: ${widget.selectedDuty} • ${_filteredData.length} records",
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppPalette.fg(Color(0xFF64748B))),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppPalette.bg(Colors.white),
-                    border: Border.all(color: AppPalette.line(Colors.grey.shade300)),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: SingleChildScrollView(
-                      child: DataTable(
-                        headingRowHeight: 28,
-                        dataRowMinHeight: 24,
-                        dataRowMaxHeight: 24,
-                        headingRowColor: WidgetStateProperty.all(const Color(0xFFF1F5F9)),
-                        columns: keys.map((k) => DataColumn(
-                          label: Text(_getDisplayName(k), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                        )).toList(),
-                        rows: _filteredData.take(50).map((log) {
-                          return DataRow(
-                            cells: keys.map((k) {
-                              return DataCell(
-                                Center(
-                                  child: Text(
-                                    (_getCellValue(log, k) ?? "").toString(),
-                                    style: const TextStyle(fontSize: 9.5),
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                "* Showing printable layout view. For native system printers, the printing package can stream this buffer directly.",
-                style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: AppPalette.fg(Colors.grey)),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close")),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(appBarColor)),
-            icon: Icon(Icons.print, size: 16, color: AppPalette.fg(Colors.white)),
-            label: Text("Print Document", style: TextStyle(color: AppPalette.fg(Colors.white), fontSize: 12)),
-            onPressed: () {
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Print job sent to document spooler"), duration: Duration(seconds: 2)),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
+  /// Print preview with page size, orientation and printer options.
+  void _showPrintAndPdfDialog() => TableExport.preview(context, _resultsTable());
 
   // ==========================================
   // CATEGORY 5: MAIN VIEW & LAYOUT
@@ -644,7 +518,19 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: officeKeys({
+        LogicalKeyboardKey.keyP: _showPrintAndPdfDialog,
+      }, ctrlShift: {
+        LogicalKeyboardKey.keyE: _exportAsExcelCsv,
+        LogicalKeyboardKey.keyL: () {
+          _columnFilters.clear();
+          _applyFilters();
+        },
+      }),
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
       backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
         backgroundColor: AppPalette.bg(appBarColor),
@@ -678,7 +564,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             icon: Icon(Icons.download_rounded, color: AppPalette.fg(Colors.white), size: 20),
             onSelected: (value) {
               if (value == 'excel') _exportAsExcelCsv();
-              if (value == 'pdf' || value == 'print') _showPrintAndPdfDialog();
+              if (value == 'pdf') TableExport.pdf(context, _resultsTable());
+              if (value == 'print') _showPrintAndPdfDialog();
             },
             itemBuilder: (context) => [
               PopupMenuItem(
@@ -687,7 +574,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                   children: [
                     Icon(Icons.table_chart, color: AppPalette.fg(Color(0xFF107C41)), size: 18),
                     SizedBox(width: 8),
-                    Text("Download as Excel (.csv)", style: TextStyle(fontSize: 12.5)),
+                    Text("Download as Excel (.xlsx)", style: TextStyle(fontSize: 12.5)),
                   ],
                 ),
               ),
@@ -721,6 +608,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
           Expanded(child: _buildSpreadsheetGrid()),
           _buildSummaryFooter(),
         ],
+      ),
+        ),
       ),
     );
   }
@@ -1003,6 +892,30 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   }
 
   // Bento Data Row: Every single cell is CENTER ALIGNED
+  // Right-click (or long-press) on a cell
+  void _cellMenu(Offset pos, dynamic log, String key, List<String> keys) {
+    final v = (_getCellValue(log, key) ?? "").toString().trim();
+    showOfficeMenu(context, pos, [
+      OfficeMenuItem("Copy cell", icon: Icons.content_copy, shortcut: "Ctrl+C", onTap: () => Clipboard.setData(ClipboardData(text: v))),
+      OfficeMenuItem("Copy row", icon: Icons.table_rows_outlined, onTap: () => Clipboard.setData(ClipboardData(text: keys.map((k) => (_getCellValue(log, k) ?? "").toString()).join('\t')))),
+      const OfficeMenuItem.divider(),
+      OfficeMenuItem(v.isEmpty ? "Filter (empty value)" : "Filter: \"$v\"", icon: Icons.filter_alt_outlined, onTap: v.isEmpty ? null : () {
+        _columnFilters[key] = v;
+        _applyFilters();
+      }),
+      OfficeMenuItem("Filter this column…", icon: Icons.tune_rounded, onTap: () => _showFilterDialog(key, _getDisplayName(key))),
+      OfficeMenuItem("Clear all filters", icon: Icons.filter_alt_off_outlined, onTap: _columnFilters.isEmpty ? null : () {
+        _columnFilters.clear();
+        _applyFilters();
+      }),
+      OfficeMenuItem("Hide column \"${_getDisplayName(key)}\"", icon: Icons.visibility_off_outlined, onTap: () => setState(() => _hiddenColumns.add(key))),
+      OfficeMenuItem("Columns…", icon: Icons.view_column_outlined, onTap: _showColumnVisibilityDialog),
+      const OfficeMenuItem.divider(),
+      OfficeMenuItem("Download Excel", icon: Icons.grid_on_rounded, shortcut: "Ctrl+Shift+E", onTap: _exportAsExcelCsv),
+      OfficeMenuItem("Print…", icon: Icons.print_rounded, shortcut: "Ctrl+P", onTap: _showPrintAndPdfDialog),
+    ]);
+  }
+
   Widget _buildDataRow(int rowIndex, dynamic log, List<String> keys, double factor) {
     final bool isEven = rowIndex % 2 == 0;
     final Color rowBg = isEven ? rowEvenBg : rowOddBg;
@@ -1018,7 +931,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
           double colWidth = _getColWidth(k) * factor;
           String sVal = (_getCellValue(log, k) ?? "").toString().trim();
 
-          return Container(
+          return OfficeRightClick(
+            longPress: true,
+            onMenu: (p) => _cellMenu(p, log, k, keys),
+            child: Container(
             width: colWidth,
             height: dataRowHeight,
             padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -1037,6 +953,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+          ),
           );
         }).toList(),
       ),
@@ -1077,10 +994,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       decoration: BoxDecoration(border: Border(top: BorderSide(color: AppPalette.line(gridLineColor)))),
       child: Row(
         children: [
-          Text(
+          Flexible(child: Text(
             "Total Records: ${_filteredData.length} of ${widget.logs.length}",
             style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(headerBgColor), fontSize: 12),
-          ),
+          )),
           const Spacer(),
           if (_hiddenColumns.isNotEmpty)
             Padding(
@@ -1091,10 +1008,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               ),
             ),
           if (_columnFilters.isNotEmpty)
-            Text(
+            Flexible(child: Text(
               "${_columnFilters.length} filter(s) active",
               style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.amber.shade900), fontWeight: FontWeight.bold),
-            ),
+            )),
         ],
       ),
     );

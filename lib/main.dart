@@ -14,6 +14,8 @@ import 'screens/home_screen.dart';
 import 'services/app_lock_manager.dart';
 import 'services/profile_refresh.dart';
 import 'services/device_accounts.dart';
+import 'services/media_playback.dart';
+import 'widgets/media_mini_player.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 // ==========================================
@@ -96,6 +98,7 @@ class MasterAdminApp extends StatelessWidget {
       valueListenable: themeNotifier,
       builder: (_, ThemeMode currentMode, __) {
         return MaterialApp(
+          navigatorKey: appNavigatorKey,
           title: 'Master Administration',
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
@@ -201,6 +204,10 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
             fit: StackFit.expand,
             children: [
               widget.child,
+              // Media Hub: keeps playing above every screen (mini bar / pop-up video)
+              Positioned.fill(
+                child: Overlay(initialEntries: [OverlayEntry(builder: (_) => const MediaMiniPlayer())]),
+              ),
               if (AppLockManager.instance.isLocked)
                 Positioned.fill(
                   child: Overlay(

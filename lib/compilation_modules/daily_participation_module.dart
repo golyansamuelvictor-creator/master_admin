@@ -3,10 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:printing/printing.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:intl/intl.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -202,38 +200,43 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
 
   // Strictly 5 Worker Days: Mon, Tue, Thu, Fri, Sat (Divided by n * 5)
   // [sessions] = number of weeks; day columns show an average week.
+  // Sessions = the weeks THIS unit reported in; percentages from exact totals.
   Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers, int sessions = 1}) {
-    int per(int v) => CompPeriod.perSession(v, sessions);
-    int n = officialMembers != null ? officialMembers.length : per(logsList.length);
+    sessions = widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(logsList);
+    num per(int v) => CompPeriod.avgPerSession(v, sessions);
+    num n = officialMembers != null ? officialMembers.length : per(logsList.length);
+    double pct(int raw) => officialMembers != null
+        ? CompPeriod.pctOf(raw, officialMembers.length, sessions)
+        : (logsList.isEmpty ? 0.0 : raw / logsList.length * 100);
 
-    int mon = per(logsList.where((l) => _isDayDone(l, 'Mon', 'mon_part')).length);
-    int tue = per(logsList.where((l) => _isDayDone(l, 'Tue', 'tue_part')).length);
-    int thu = per(logsList.where((l) => _isDayDone(l, 'Thu', 'thu_part')).length);
-    int fri = per(logsList.where((l) => _isDayDone(l, 'Fri', 'fri_part')).length);
-    int sat = per(logsList.where((l) => _isDayDone(l, 'Sat', 'sat_part')).length);
+    final rMon = logsList.where((l) => _isDayDone(l, 'Mon', 'mon_part')).length;
+    final rTue = logsList.where((l) => _isDayDone(l, 'Tue', 'tue_part')).length;
+    final rThu = logsList.where((l) => _isDayDone(l, 'Thu', 'thu_part')).length;
+    final rFri = logsList.where((l) => _isDayDone(l, 'Fri', 'fri_part')).length;
+    final rSat = logsList.where((l) => _isDayDone(l, 'Sat', 'sat_part')).length;
+    num mon = per(rMon), tue = per(rTue), thu = per(rThu), fri = per(rFri), sat = per(rSat);
 
-    double avgPct = (n > 0)
-        ? ((mon + tue + thu + fri + sat) / (n * 5.0)) * 100.0
-        : 0.0;
+    double avgPct = (pct(rMon) + pct(rTue) + pct(rThu) + pct(rFri) + pct(rSat)) / 5.0;
 
     return {
       "n": n,
       "mon": mon,
-      "monp": n > 0 ? (mon / n * 100) : 0.0,
+      "monp": pct(rMon),
       "tue": tue,
-      "tuep": n > 0 ? (tue / n * 100) : 0.0,
+      "tuep": pct(rTue),
       "thu": thu,
-      "thup": n > 0 ? (thu / n * 100) : 0.0,
+      "thup": pct(rThu),
       "fri": fri,
-      "frip": n > 0 ? (fri / n * 100) : 0.0,
+      "frip": pct(rFri),
       "sat": sat,
-      "satp": n > 0 ? (sat / n * 100) : 0.0,
+      "satp": pct(rSat),
       "avg": avgPct,
     };
   }
 
   @override
   Widget build(BuildContext context) {
+    _capRows.clear();
     final Map<String, dynamic> totS = _calc(
       _scopedWorkerLogs,
       officialMembers: _scopedWorkers.isNotEmpty ? _scopedWorkers : null, sessions: _sessions);
@@ -265,8 +268,7 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
   Widget _buildToolbar() => Row(
     mainAxisAlignment: MainAxisAlignment.start,
     children: [
-      IconButton(onPressed: _printReport, icon: Icon(Icons.print, color: AppPalette.fg(Colors.blueGrey), size: 18)),
-      IconButton(onPressed: () {}, icon: Icon(Icons.download, color: AppPalette.fg(Colors.green), size: 18)),
+      TableExport.buttons(context, _exportTable),
     ],
   );
 
@@ -403,19 +405,45 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     _dataRow(c2, d, colW, b: b),
   ]);
 
+  // Each table row is also recorded as text for Excel / PDF / Print.
+  List<String>? _capRow;
+  final List<List<String>> _capRows = [];
+
   Widget _dataRow(String label, Map<String, dynamic> d, double colW, {bool b = false}) {
+    final row = <String>[];
+    _capRow = row;
+    try {
+      return _dataRowRaw(label, d, colW, b: b);
+    } finally {
+      _capRow = null;
+      _capRows.add(row);
+    }
+  }
+
+  ExportTable _exportTable() {
+    final unit = (widget.activeUnitLabel ?? '').isNotEmpty ? widget.activeUnitLabel! : CompLevel.unitTitle(widget.level);
+    final heads = <String>[unit, ...['Num', 'Mon', 'Mon %', 'Tue', 'Tue %', 'Thu', 'Thu %', 'Fri', 'Fri %', 'Sat', 'Sat %', 'Avg %']];
+    return ExportTable(
+      title: "Workers Daily Participation – $unit",
+      subtitle: "Period: ${widget.timePeriod} · Level: ${widget.level}",
+      headers: heads,
+      rows: [for (final r in _capRows) r],
+    );
+  }
+
+  Widget _dataRowRaw(String label, Map<String, dynamic> d, double colW, {bool b = false}) {
     return Row(children: [
       _cell(label, w: lw, h: rh, b: b, a: Alignment.center),
-      _cell("${d['n']}", w: colW, a: Alignment.center),
-      _cell("${d['mon']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['n']), w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['mon']), w: colW, a: Alignment.center),
       _cell("${d['monp'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
-      _cell("${d['tue']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['tue']), w: colW, a: Alignment.center),
       _cell("${d['tuep'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
-      _cell("${d['thu']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['thu']), w: colW, a: Alignment.center),
       _cell("${d['thup'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
-      _cell("${d['fri']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['fri']), w: colW, a: Alignment.center),
       _cell("${d['frip'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
-      _cell("${d['sat']}", w: colW, a: Alignment.center),
+      _cell(CompPeriod.fmt(d['sat']), w: colW, a: Alignment.center),
       _cell("${d['satp'].toStringAsFixed(1)}%", w: colW, a: Alignment.center, color: pPurple, b: true),
       _cell(
         "${d['avg'].toStringAsFixed(1)}%",
@@ -436,6 +464,7 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     Color? bg,
     Alignment a = Alignment.center,
   }) {
+    _capRow?.add(t);
     return Container(
       width: w ?? baseCw,
       height: h,
@@ -758,11 +787,6 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
     ],
   );
 
-  Future<void> _printReport() async {
-    final pdf = pw.Document();
-    pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Text("Workers Daily Participation Report"))));
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-  }
 
   Widget _section(String title, Widget content, BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 6),

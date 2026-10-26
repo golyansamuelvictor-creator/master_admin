@@ -4,22 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
-import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 class _OfferingUnitStat {
   final String unitName;
   final int totalSaints;
-  final int givers;
-  final int tithe;
-  final int weekly;
-  final int thanks;
-  final int construction;
-  final int donation;
+  final num givers;
+  final num tithe;
+  final num weekly;
+  final num thanks;
+  final num construction;
+  final num donation;
 
   _OfferingUnitStat({
     required this.unitName,
@@ -256,16 +255,16 @@ class _OfferingModuleState extends State<OfferingModule> {
         saints = distinctIds.isNotEmpty ? distinctIds.length : uLogs.length;
       }
 
-      // Per-week averages over the period (one week for "Current status")
-      final int sessions = _sessions;
-      int per(int v) => CompPeriod.perSession(v, sessions);
-      int t = per(uLogs.where((l) => _isPaid(l['offering_tithe'])).length);
-      int w = per(uLogs.where((l) => _isPaid(l['offering_weekly'])).length);
-      int th = per(uLogs.where((l) => _isPaid(l['offering_thanks'])).length);
-      int c = per(uLogs.where((l) => _isPaid(l['offering_construction'])).length);
-      int d = per(uLogs.where((l) => _isPaid(l['offering_donation'])).length);
+      // Per-week averages over the weeks THIS unit reported in (one week for "Current status")
+      final int sessions = widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(uLogs);
+      num per(int v) => CompPeriod.avgPerSession(v, sessions);
+      num t = per(uLogs.where((l) => _isPaid(l['offering_tithe'])).length);
+      num w = per(uLogs.where((l) => _isPaid(l['offering_weekly'])).length);
+      num th = per(uLogs.where((l) => _isPaid(l['offering_thanks'])).length);
+      num c = per(uLogs.where((l) => _isPaid(l['offering_construction'])).length);
+      num d = per(uLogs.where((l) => _isPaid(l['offering_donation'])).length);
 
-      int givers = per(uLogs.where((l) =>
+      num givers = per(uLogs.where((l) =>
         _isPaid(l['offering_tithe']) ||
         _isPaid(l['offering_weekly']) ||
         _isPaid(l['offering_thanks']) ||
@@ -273,7 +272,7 @@ class _OfferingModuleState extends State<OfferingModule> {
         _isPaid(l['offering_donation'])
       ).length);
 
-      saints = math.max(saints, math.max(givers, math.max(t, math.max(w, math.max(th, math.max(c, d))))));
+      saints = math.max(saints, math.max(givers, math.max(t, math.max(w, math.max(th, math.max(c, d))))).ceil());
 
       stats.add(_OfferingUnitStat(
         unitName: u,
@@ -292,12 +291,12 @@ class _OfferingModuleState extends State<OfferingModule> {
 
   _OfferingUnitStat _calculateTotalStat(List<_OfferingUnitStat> stats) {
     int totalSaints = 0;
-    int givers = 0;
-    int tithe = 0;
-    int weekly = 0;
-    int thanks = 0;
-    int construction = 0;
-    int donation = 0;
+    num givers = 0;
+    num tithe = 0;
+    num weekly = 0;
+    num thanks = 0;
+    num construction = 0;
+    num donation = 0;
 
     for (var s in stats) {
       totalSaints += s.totalSaints;
@@ -414,16 +413,16 @@ class _OfferingModuleState extends State<OfferingModule> {
             children: [
               _cellText("General total", 26.0, isBold: true, color: pPurple),
               _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
-              _cellText("${totalStat.givers}", 26.0, isBold: true, color: pPurple),
-              _cellText("${totalStat.tithe}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.givers), 26.0, isBold: true, color: pPurple),
+              _cellText(CompPeriod.fmt(totalStat.tithe), 26.0, isBold: true),
               _cellPercent(totalStat.tithePct, 26.0, pPurple, isBold: true),
-              _cellText("${totalStat.weekly}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.weekly), 26.0, isBold: true),
               _cellPercent(totalStat.weeklyPct, 26.0, Colors.blue[900]!, isBold: true),
-              _cellText("${totalStat.thanks}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.thanks), 26.0, isBold: true),
               _cellPercent(totalStat.thanksPct, 26.0, Colors.orange[900]!, isBold: true),
-              _cellText("${totalStat.construction}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.construction), 26.0, isBold: true),
               _cellPercent(totalStat.constructionPct, 26.0, Colors.teal[900]!, isBold: true),
-              _cellText("${totalStat.donation}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.donation), 26.0, isBold: true),
               _cellPercent(totalStat.donationPct, 26.0, Colors.indigo[900]!, isBold: true),
             ],
           ),
@@ -441,16 +440,16 @@ class _OfferingModuleState extends State<OfferingModule> {
               children: [
                 _cellText(u.unitName, rh, isBold: true),
                 _cellText("${u.totalSaints}", rh),
-                _cellText("${u.givers}", rh, color: pPurple, isBold: true),
-                _cellText("${u.tithe}", rh),
+                _cellText(CompPeriod.fmt(u.givers), rh, color: pPurple, isBold: true),
+                _cellText(CompPeriod.fmt(u.tithe), rh),
                 _cellPercent(u.tithePct, rh, pPurple),
-                _cellText("${u.weekly}", rh),
+                _cellText(CompPeriod.fmt(u.weekly), rh),
                 _cellPercent(u.weeklyPct, rh, Colors.blue[800]!),
-                _cellText("${u.thanks}", rh),
+                _cellText(CompPeriod.fmt(u.thanks), rh),
                 _cellPercent(u.thanksPct, rh, Colors.orange[900]!),
-                _cellText("${u.construction}", rh),
+                _cellText(CompPeriod.fmt(u.construction), rh),
                 _cellPercent(u.constructionPct, rh, Colors.teal[800]!),
-                _cellText("${u.donation}", rh),
+                _cellText(CompPeriod.fmt(u.donation), rh),
                 _cellPercent(u.donationPct, rh, Colors.indigo[800]!),
               ],
             );
@@ -689,7 +688,7 @@ class _OfferingModuleState extends State<OfferingModule> {
             ],
           ),
           subtitle: Text(
-            "Saints: ${item.totalSaints} | Givers: ${item.givers} (Tithe: ${item.tithe}, Wkly: ${item.weekly})",
+            "Saints: ${item.totalSaints} | Givers: ${CompPeriod.fmt(item.givers)} (Tithe: ${CompPeriod.fmt(item.tithe)}, Wkly: ${CompPeriod.fmt(item.weekly)})",
             style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.blueGrey)),
           ),
           trailing: Text(
@@ -702,43 +701,15 @@ class _OfferingModuleState extends State<OfferingModule> {
   }
 
   // --- PDF REPORT EXPORT ---
-  Future<void> _exportPdf(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) async {
-    final pdf = pw.Document();
-    final font = await PdfGoogleFonts.merriweatherRegular();
-    final fontBold = await PdfGoogleFonts.merriweatherBold();
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(24),
-        build: (pw.Context context) {
-          return [
-            pw.Header(
-              level: 0,
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('Offering & Giving Participation Report (All Saints)',
-                      style: pw.TextStyle(font: fontBold, fontSize: 15, color: PdfColors.purple900)),
-                  pw.Text(
-                    'Generated: ${DateTime.now().toLocal().toString().split(' ')[0]}',
-                    style: pw.TextStyle(font: font, fontSize: 9, color: PdfColors.grey700),
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 6),
-            pw.Text(
-              'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
+  // Excel / PDF / Print for the summary table (same rows as the old PDF)
+  ExportTable _exportTable(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) => ExportTable(
+        title: "Offering Status – ${widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : widget.level}",
+        subtitle: 'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
               '${widget.selectedLocation.isNotEmpty ? ' | Loc: ${widget.selectedLocation}' : ''}'
               '${widget.selectedSubLocation.isNotEmpty ? ' | Sub: ${widget.selectedSubLocation}' : ''}'
               '${widget.selectedDepartment.isNotEmpty ? ' | Dept: ${widget.selectedDepartment}' : ''}'
               '${widget.selectedTeam.isNotEmpty ? ' | Team: ${widget.selectedTeam}' : ''}',
-              style: pw.TextStyle(font: font, fontSize: 8.5, color: PdfColors.grey800),
-            ),
-            pw.SizedBox(height: 10),
-            pw.TableHelper.fromTextArray(
-              headers: [
+        headers: <String>[
                 widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : 'Unit',
                 'Saints',
                 'Givers',
@@ -753,52 +724,42 @@ class _OfferingModuleState extends State<OfferingModule> {
                 'Donat',
                 'Donat %',
               ],
-              data: [
+        rows: <List<String>>[
                 ...stats.map((u) => [
                       u.unitName,
                       '${u.totalSaints}',
-                      '${u.givers}',
-                      '${u.tithe}',
+                      CompPeriod.fmt(u.givers),
+                      CompPeriod.fmt(u.tithe),
                       '${u.tithePct.toStringAsFixed(0)}%',
-                      '${u.weekly}',
+                      CompPeriod.fmt(u.weekly),
                       '${u.weeklyPct.toStringAsFixed(0)}%',
-                      '${u.thanks}',
+                      CompPeriod.fmt(u.thanks),
                       '${u.thanksPct.toStringAsFixed(0)}%',
-                      '${u.construction}',
+                      CompPeriod.fmt(u.construction),
                       '${u.constructionPct.toStringAsFixed(0)}%',
-                      '${u.donation}',
+                      CompPeriod.fmt(u.donation),
                       '${u.donationPct.toStringAsFixed(0)}%',
                     ]),
                 [
                   'General Total',
                   '${totalStat.totalSaints}',
-                  '${totalStat.givers}',
-                  '${totalStat.tithe}',
+                  CompPeriod.fmt(totalStat.givers),
+                  CompPeriod.fmt(totalStat.tithe),
                   '${totalStat.tithePct.toStringAsFixed(0)}%',
-                  '${totalStat.weekly}',
+                  CompPeriod.fmt(totalStat.weekly),
                   '${totalStat.weeklyPct.toStringAsFixed(0)}%',
-                  '${totalStat.thanks}',
+                  CompPeriod.fmt(totalStat.thanks),
                   '${totalStat.thanksPct.toStringAsFixed(0)}%',
-                  '${totalStat.construction}',
+                  CompPeriod.fmt(totalStat.construction),
                   '${totalStat.constructionPct.toStringAsFixed(0)}%',
-                  '${totalStat.donation}',
+                  CompPeriod.fmt(totalStat.donation),
                   '${totalStat.donationPct.toStringAsFixed(0)}%',
                 ],
               ],
-              headerStyle: pw.TextStyle(font: fontBold, fontSize: 7.5, color: PdfColors.white),
-              headerDecoration: const pw.BoxDecoration(color: PdfColors.purple900),
-              cellStyle: pw.TextStyle(font: font, fontSize: 7.5),
-              cellAlignment: pw.Alignment.center,
-              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
-              rowDecoration: const pw.BoxDecoration(),
-            ),
-          ];
-        },
-      ),
-    );
+      );
 
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-  }
+  Future<void> _exportPdf(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) =>
+      TableExport.showMenu(context, () => _exportTable(stats, totalStat));
 
   // --- HELPERS ---
   Widget _cellText(String text, double height, {
@@ -909,8 +870,8 @@ class _OfferingModuleState extends State<OfferingModule> {
                 ),
                 if (onPdf != null)
                   IconButton(
-                    icon: Icon(Icons.picture_as_pdf_outlined, size: 20, color: AppPalette.fg(pPurple)),
-                    tooltip: 'Export PDF Report',
+                    icon: Icon(Icons.download_rounded, size: 20, color: AppPalette.fg(pPurple)),
+                    tooltip: 'Excel / PDF / Print',
                     onPressed: onPdf,
                   ),
                 IconButton(

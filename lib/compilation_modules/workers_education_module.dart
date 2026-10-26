@@ -3,10 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:printing/printing.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:intl/intl.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -168,51 +166,61 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   }
 
   // BULLETPROOF: Supports new WorkersEducationEntry (status_detail) + Legacy columns
+  // Sessions = the weeks THIS unit reported in; percentages from exact totals.
   Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers, int sessions = 1}) {
-    int per(int v) => CompPeriod.perSession(v, sessions);
-    int n = officialMembers != null ? officialMembers.length : per(logsList.length);
+    sessions = widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(logsList);
+    num per(int v) => CompPeriod.avgPerSession(v, sessions);
+    num n = officialMembers != null ? officialMembers.length : per(logsList.length);
+    double pct(int raw) => officialMembers != null
+        ? CompPeriod.pctOf(raw, officialMembers.length, sessions)
+        : (logsList.isEmpty ? 0.0 : raw / logsList.length * 100);
 
     // Any filled-in answer that isn't a "no" (WE Missed, Absent, Didn't ...) counts as attended
     bool isAttended(dynamic x) => CompStatus.isPositive(x['status_detail'] ?? x['edu_sun'] ?? x['edu_wed']);
 
     bool isSun(dynamic x) {
-      final day = (x['education_day'] ?? x['service_day'] ?? '').toString().toLowerCase();
+      final day = (x['edu_day'] ?? x['education_day'] ?? x['service_day'] ?? '').toString().trim().toLowerCase();
       if (day == 'sunday' || day == 'sun') return true;
       final d = (x['report_date'] ?? '').toString();
       try { return DateTime.parse(d).weekday == DateTime.sunday; } catch (_) { return false; }
     }
 
     bool isWed(dynamic x) {
-      final day = (x['education_day'] ?? x['service_day'] ?? '').toString().toLowerCase();
+      final day = (x['edu_day'] ?? x['education_day'] ?? x['service_day'] ?? '').toString().trim().toLowerCase();
       if (day == 'wednesday' || day == 'wed') return true;
       final d = (x['report_date'] ?? '').toString();
       try { return DateTime.parse(d).weekday == DateTime.wednesday; } catch (_) { return false; }
     }
 
-    int sun = per(logsList.where((x) => (x['edu_sun'] == "Attended") || (isSun(x) && isAttended(x))).length);
-    int wed = per(logsList.where((x) => (x['edu_wed'] == "Attended") || (isWed(x) && isAttended(x))).length);
-    int oth = per(logsList.where((x) => (x['edu_other'] == "Attended") || (!isSun(x) && !isWed(x) && isAttended(x))).length);
-
-    int att = per(logsList.where(isAttended).length);
-    int ab = n > att ? (n - att) : per(logsList.where((x) => CompStatus.isNegative(x['status_detail'])).length);
+    final rSun = logsList.where((x) => (x['edu_sun'] == "Attended") || (isSun(x) && isAttended(x))).length;
+    final rWed = logsList.where((x) => (x['edu_wed'] == "Attended") || (isWed(x) && isAttended(x))).length;
+    final rOth = logsList.where((x) => (x['edu_other'] == "Attended") || (!isSun(x) && !isWed(x) && isAttended(x))).length;
+    final rAtt = logsList.where(isAttended).length;
+    num sun = per(rSun);
+    num wed = per(rWed);
+    num oth = per(rOth);
+    num att = per(rAtt);
+    num ab = n > att ? (n - att) : 0;
+    final attP = pct(rAtt);
 
     return {
       "n": n,
       "att": att,
-      "pct": n > 0 ? (att / n * 100) : 0.0,
+      "pct": attP,
       "sun": sun,
-      "sunp": n > 0 ? (sun / n * 100) : 0.0,
+      "sunp": pct(rSun),
       "wed": wed,
-      "wedp": n > 0 ? (wed / n * 100) : 0.0,
+      "wedp": pct(rWed),
       "oth": oth,
-      "othp": n > 0 ? (oth / n * 100) : 0.0,
+      "othp": pct(rOth),
       "ab": ab,
-      "abp": n > 0 ? (ab / n * 100) : 0.0,
+      "abp": attP >= 100 ? 0.0 : 100 - attP,
     };
   }
 
   @override
   Widget build(BuildContext context) {
+    _capRows.clear();
     final Map<String, dynamic> totS = _calc(
       _scopedWorkerLogs,
       officialMembers: _scopedWorkers.isNotEmpty ? _scopedWorkers : null, sessions: _sessions);
@@ -228,8 +236,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
   Widget _buildToolbar() => Row(
     mainAxisAlignment: MainAxisAlignment.start,
     children: [
-      IconButton(onPressed: _printReport, icon: Icon(Icons.print, color: AppPalette.fg(Colors.blueGrey), size: 18)),
-      IconButton(onPressed: () {}, icon: Icon(Icons.download, color: AppPalette.fg(Colors.green), size: 18)),
+      TableExport.buttons(context, _exportTable),
     ],
   );
 
@@ -342,19 +349,45 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
     _dataRow(c2, d, b: b),
   ]);
 
+  // Each table row is also recorded as text for Excel / PDF / Print.
+  List<String>? _capRow;
+  final List<List<String>> _capRows = [];
+
   Widget _dataRow(String label, Map<String, dynamic> d, {bool b = false}) {
+    final row = <String>[];
+    _capRow = row;
+    try {
+      return _dataRowRaw(label, d, b: b);
+    } finally {
+      _capRow = null;
+      _capRows.add(row);
+    }
+  }
+
+  ExportTable _exportTable() {
+    final unit = (widget.activeUnitLabel ?? '').isNotEmpty ? widget.activeUnitLabel! : CompLevel.unitTitle(widget.level);
+    final heads = <String>[unit, ...['Num', 'Attended', 'Att %', 'Sunday', 'Sun %', 'Wednesday', 'Wed %', 'Other', 'Other %', 'Absentees', 'Absent %']];
+    return ExportTable(
+      title: "Workers Education – $unit",
+      subtitle: "Period: ${widget.timePeriod} · Level: ${widget.level}",
+      headers: heads,
+      rows: [for (final r in _capRows) r],
+    );
+  }
+
+  Widget _dataRowRaw(String label, Map<String, dynamic> d, {bool b = false}) {
     return Row(children: [
       _cell(label, w: lw, h: rh, b: b, a: Alignment.center),
-      _cell("${d['n']}", a: Alignment.center),
-      _cell("${d['att']}", a: Alignment.center),
+      _cell(CompPeriod.fmt(d['n']), a: Alignment.center),
+      _cell(CompPeriod.fmt(d['att']), a: Alignment.center),
       _cell("${d['pct'].toStringAsFixed(1)}%", b: true, a: Alignment.center),
-      _cell("${d['sun']}", a: Alignment.center),
+      _cell(CompPeriod.fmt(d['sun']), a: Alignment.center),
       _cell("${d['sunp'].toStringAsFixed(1)}%", a: Alignment.center),
-      _cell("${d['wed']}", a: Alignment.center),
+      _cell(CompPeriod.fmt(d['wed']), a: Alignment.center),
       _cell("${d['wedp'].toStringAsFixed(1)}%", a: Alignment.center),
-      _cell("${d['oth']}", a: Alignment.center),
+      _cell(CompPeriod.fmt(d['oth']), a: Alignment.center),
       _cell("${d['othp'].toStringAsFixed(1)}%", a: Alignment.center),
-      _cell("${d['ab']}", color: Colors.red[800], a: Alignment.center),
+      _cell(CompPeriod.fmt(d['ab']), color: Colors.red[800], a: Alignment.center),
       _cell("${d['abp'].toStringAsFixed(1)}%", a: Alignment.center),
     ]);
   }
@@ -368,6 +401,7 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
     Color? bg,
     Alignment a = Alignment.center,
   }) {
+    _capRow?.add(t);
     return Container(
       width: w ?? cw,
       height: h,
@@ -686,11 +720,6 @@ class _WorkersEducationModuleState extends State<WorkersEducationModule> {
     ],
   );
 
-  Future<void> _printReport() async {
-    final pdf = pw.Document();
-    pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Text("Workers Education Report"))));
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-  }
 
   Widget _section(String title, Widget content, BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 6),

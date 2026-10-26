@@ -856,10 +856,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                   _toTitleCase(selectedRole.replaceAll('_', ' ')),
                                   style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_lift(pBlue))),
                                 ),
-                                Text(
+                                Flexible(child: Text(
                                   " • $accountType",
                                   style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(pInk), fontWeight: FontWeight.w600),
-                                ),
+                                )),
                               ],
                             ),
                           ),
@@ -2043,10 +2043,10 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
                     child: CircularProgressIndicator(color: pAccent, strokeWidth: 2),
                   ),
                   const SizedBox(width: 10),
-                  Text(
+                  Flexible(child: Text(
                     "Searching church knowledge base...",
                     style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.blueGrey), fontStyle: FontStyle.italic),
-                  ),
+                  )),
                 ],
               ),
             ),

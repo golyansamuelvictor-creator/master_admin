@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:math' as math;
+import '../core/table_export.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -464,30 +465,18 @@ class _BbFileEntryState extends State<BbFileEntry> {
     );
   }
 
-  // Export visible data to CSV/Excel Clipboard
-  void _exportCsv() {
-    final buffer = StringBuffer();
-    // Headers
-    buffer.writeln(_colTitles.join(','));
-    // Rows
-    for (final s in _filteredStudents) {
-      final row = <String>[];
-      for (int c = 0; c < _activeColIndices.length; c++) {
-        final val = _getCellValue(s, c).replaceAll('"', '""');
-        row.add('"$val"');
-      }
-      buffer.writeln(row.join(','));
-    }
-
-    Clipboard.setData(ClipboardData(text: buffer.toString()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Exported active grid to CSV format! (Copied to Clipboard)"),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 3),
-      ),
-    );
-  }
+  // Export the visible grid: Excel (.xlsx), PDF, Print preview or Copy
+  void _exportCsv() => TableExport.showMenu(
+        context,
+        () => ExportTable(
+          title: "BB File",
+          subtitle: "${_filteredStudents.length} students",
+          headers: List<String>.from(_colTitles),
+          rows: [
+            for (final s in _filteredStudents) [for (int c = 0; c < _activeColIndices.length; c++) _getCellValue(s, c)],
+          ],
+        ),
+      );
 
   void _showContextMenu(Offset pos, int r, int c) {
     if (!_isCellSelected(r, c)) _selectCell(r, c);
@@ -664,7 +653,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
                         onPressed: _exportCsv,
                       ),
                       const Spacer(),
-                      Text("Total: ${filtered.length} students", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey))),
+                      Flexible(child: Text("Total: ${filtered.length} students", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey)))),
                     ],
                   ),
                 ),

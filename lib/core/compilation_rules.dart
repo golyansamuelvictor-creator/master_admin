@@ -102,9 +102,57 @@ class CompLevel {
     return loc.isNotEmpty ? loc : 'Other';
   }
 
+  // Cell and team names repeat ("Cell 1" in every team, "1팀" in every
+  // department). When the loaded members have such repeats, cell / team keys
+  // carry their parents ("1팀 › Cell 1") so different units are never added
+  // together. Set by [configure] whenever the screen loads its members.
+  static int _cellDepth = 0; // parents to prefix: 0 none, 1 team, 2 dept+team, 3 sub+dept+team, 4 +location
+  static int _teamDepth = 0; // 0 none, 1 dept, 2 sub+dept, 3 +location
+
+  static void configure(Iterable<dynamic> members) {
+    int depthFor(List<List<String>> parentsOf, String Function(dynamic) name) {
+      final rows = members.toList();
+      final maxDepth = parentsOf.isEmpty ? 0 : parentsOf.first.length;
+      for (int d = 0; d <= maxDepth; d++) {
+        final Map<String, String> seen = {};
+        bool clash = false;
+        for (int i = 0; i < rows.length && !clash; i++) {
+          final n = name(rows[i]);
+          if (n.isEmpty) continue;
+          final parent = parentsOf[i].sublist(0, maxDepth - d).join('|'); // what is NOT prefixed
+          final key = [...parentsOf[i].sublist(maxDepth - d), n].join('|');
+          final prev = seen[key];
+          if (prev != null && prev != parent) clash = true;
+          seen[key] = parent;
+        }
+        if (!clash) return d;
+      }
+      return maxDepth;
+    }
+
+    final rows = members.toList();
+    // parents listed outermost first: location, sub-location, department, team
+    _cellDepth = depthFor(
+      [for (final m in rows) [_field(m, ['location']), _field(m, ['sub_location']), _field(m, ['department', 'dept']), _field(m, ['team', 'team_number'])]],
+      (m) => _field(m, ['cell_group', 'cell_name']),
+    );
+    _teamDepth = depthFor(
+      [for (final m in rows) [_field(m, ['location']), _field(m, ['sub_location']), _field(m, ['department', 'dept'])]],
+      (m) => _field(m, ['team', 'team_number']),
+    );
+  }
+
+  static String _qualified(dynamic record, String name, List<List<String>> parentKeys, int depth) {
+    if (depth <= 0 || name.isEmpty) return name;
+    final parents = [for (final k in parentKeys) _field(record, k)];
+    final used = parents.sublist(parents.length - depth).where((p) => p.isNotEmpty).toList();
+    return [...used, name].join(' › ');
+  }
+
   /// The unit a member row or report row belongs to at [level].
-  /// BB rows use the guide's unit.
-  static String unitKey(dynamic record, String level) {
+  /// BB rows use the guide's unit. [qualified] adds parent names when
+  /// cell / team names repeat (see [configure]).
+  static String unitKey(dynamic record, String level, {bool qualified = true}) {
     String v;
     switch (of(level)) {
       case church:
@@ -121,9 +169,19 @@ class CompLevel {
         break;
       case team:
         v = _field(record, ['team', 'team_number', 'guide_team']);
+        if (qualified) {
+          v = _qualified(record, v, const [['location', 'guide_location'], ['sub_location', 'guide_sub_location'], ['department', 'dept', 'guide_dept']], _teamDepth);
+        }
         break;
       case cell:
         v = _field(record, ['cell_group', 'cell_name', 'guide_cell', 'unit_name']);
+        if (qualified) {
+          v = _qualified(
+              record,
+              v,
+              const [['location', 'guide_location'], ['sub_location', 'guide_sub_location'], ['department', 'dept', 'guide_dept'], ['team', 'team_number', 'guide_team']],
+              _cellDepth);
+        }
         break;
       case member:
         v = _field(record, ['english_name', 'student_name']);
@@ -269,6 +327,70 @@ class CompPeriod {
   /// Divides a period total by the number of sessions, rounded to whole people.
   static int perSession(int total, int sessions) =>
       sessions <= 1 ? total : (total / sessions).round();
+
+  /// Average per session, kept to one decimal (0.4 instead of a rounded 0).
+  /// Rounding small units to whole people left columns showing 0 and empty
+  /// chart bars even though the percentage next to them was not 0.
+  static num avgPerSession(num total, int sessions) {
+    if (sessions <= 1) return total;
+    final double r = (total / sessions * 10).round() / 10;
+    return r == r.roundToDouble() ? r.round() : r;
+  }
+
+  /// Shows a count: "3", "0.4", "12.5".
+  static String fmt(dynamic v) {
+    if (v is num) {
+      final double r = (v * 10).round() / 10;
+      return r == r.roundToDouble() ? r.round().toString() : r.toStringAsFixed(1);
+    }
+    return (v ?? 0).toString();
+  }
+
+  /// Percentage from the exact period total (not from the rounded average),
+  /// so small units don't jump by a whole person's share.
+  static double pctOf(int rawTotal, int headcount, int sessions) =>
+      headcount > 0 ? rawTotal / (headcount * (sessions < 1 ? 1 : sessions)) * 100 : 0.0;
+
+  /// Keeps one report per member per week (the newest). For duties held once
+  /// a week (Cell Service), a member saved on two dates of the same week was
+  /// counted twice and pushed units over 100%.
+  static List<dynamic> onePerMemberWeek(Iterable<dynamic> logs) {
+    final Map<String, dynamic> best = {};
+    final List<dynamic> other = [];
+    for (final l in logs) {
+      final d = _date(l);
+      final mid = (l is Map ? (l['member_id'] ?? (l['members'] is Map ? l['members']['id'] : null)) : null)?.toString();
+      if (d == null || mid == null || mid.isEmpty) {
+        other.add(l);
+        continue;
+      }
+      final k = "$mid|${weekKey(d)}";
+      final prev = best[k];
+      if (prev == null) {
+        best[k] = l;
+        continue;
+      }
+      String stamp(dynamic x) => ((x as Map)['updated_at'] ?? x['created_at'] ?? x['report_date'] ?? '').toString();
+      if (stamp(l).compareTo(stamp(prev)) > 0) best[k] = l;
+    }
+    return [...best.values, ...other];
+  }
+
+  /// Counts each member once (Visitations: several visits to one person
+  /// count as one person visited).
+  static int distinctMembers(Iterable<dynamic> logs) {
+    final ids = <String>{};
+    int noId = 0;
+    for (final l in logs) {
+      final mid = (l is Map ? (l['member_id'] ?? (l['members'] is Map ? l['members']['id'] : null)) : null)?.toString();
+      if (mid == null || mid.isEmpty) {
+        noId++;
+      } else {
+        ids.add(mid);
+      }
+    }
+    return ids.length + noId;
+  }
 }
 
 class CompStatus {

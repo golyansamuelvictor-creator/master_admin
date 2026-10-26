@@ -1,12 +1,14 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/absentee_logic.dart';
+import '../../core/table_export.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:flutter/services.dart';
+import '../../widgets/app_menus.dart';
 
 class UniversalInterventionScreen extends StatefulWidget {
   final String duty;
@@ -280,7 +282,19 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.f5): _load,
+        ...officeKeys({
+          LogicalKeyboardKey.keyP: () => TableExport.preview(context, _interventionTable()),
+          LogicalKeyboardKey.keyD: _pickDateRange,
+        }, ctrlShift: {
+          LogicalKeyboardKey.keyE: _exportAsExcelCsv,
+        }),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
       backgroundColor: AppPalette.bg(const Color(0xFFF8FAFC)),
       appBar: AppBar(
         title: Text(
@@ -314,7 +328,30 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
           Expanded(child: _buildSpreadsheetGrid()),
         ],
       ),
+        ),
+      ),
     );
+  }
+
+  void _rowMenu(Offset pos, Map<String, dynamic> item, List<String> cols) {
+    final m = _extractMember(item);
+    final name = _getName(m);
+    showOfficeMenu(context, pos, [
+      OfficeMenuItem("Log care for $name", icon: Icons.volunteer_activism_outlined, onTap: () => _showMaintenanceDialog(m)),
+      const OfficeMenuItem.divider(),
+      OfficeMenuItem("Copy name", icon: Icons.content_copy, onTap: () => Clipboard.setData(ClipboardData(text: name))),
+      OfficeMenuItem("Copy row", icon: Icons.table_rows_outlined, onTap: () {
+        final t = _interventionTable();
+        final i = _filteredData.indexOf(item);
+        if (i >= 0 && i < t.rows.length) Clipboard.setData(ClipboardData(text: t.rows[i].join('\t')));
+      }),
+      const OfficeMenuItem.divider(),
+      OfficeMenuItem("Columns…", icon: Icons.view_column_outlined, onTap: _showColumnVisibilityDialog),
+      OfficeMenuItem("Change period…", icon: Icons.date_range_outlined, shortcut: "Ctrl+D", onTap: _pickDateRange),
+      OfficeMenuItem("Reload", icon: Icons.refresh_rounded, shortcut: "F5", onTap: _load),
+      OfficeMenuItem("Download Excel / PDF", icon: Icons.file_download_outlined, shortcut: "Ctrl+Shift+E", onTap: _exportAsExcelCsv),
+      OfficeMenuItem("Print…", icon: Icons.print_rounded, shortcut: "Ctrl+P", onTap: () => TableExport.preview(context, _interventionTable())),
+    ]);
   }
 
   Widget _buildDividedTopBar() {
@@ -618,7 +655,10 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
     final bool isEven = index % 2 == 0;
     final Color rowBg = isEven ? rowEvenBg : rowOddBg;
 
-    return Container(
+    return OfficeRightClick(
+      longPress: true,
+      onMenu: (p) => _rowMenu(p, item, cols),
+      child: Container(
       height: dataRowHeight,
       decoration: BoxDecoration(color: AppPalette.bg(rowBg), border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
       child: Row(
@@ -742,6 +782,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
           return const SizedBox.shrink();
         }).toList(),
       ),
+      ),
     );
   }
 
@@ -799,44 +840,40 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
     );
   }
 
-  void _exportAsExcelCsv() {
-    final cols = _visibleColumns;
-    final buffer = StringBuffer();
-    buffer.write('\uFEFF');
-    buffer.writeln(cols.map((c) => '"$c"').join(','));
-
+  ExportTable _interventionTable() {
+    final cols = _visibleColumns.where((c) => c != "Action").toList();
+    final rows = <List<String>>[];
     for (var item in _filteredData) {
       final m = _extractMember(item);
       final mid = m['id']?.toString() ?? "";
       final missed = _getMissedCount(item);
       final style = _memberSelectedStyle[mid] ?? "None";
       final count = (item['style_counts']?[style] ?? 0);
-
-      final row = cols.map((col) {
-        String val = "";
-        if (col == "Loc") val = _getLocation(m);
-        else if (col == "Sub-Loc") val = _getSubLocation(m);
-        else if (col == "Dept") val = _getDepartment(m);
-        else if (col == "Team") val = _getTeam(m);
-        else if (col == "Cell Group") val = _getCellGroup(m);
-        else if (col == "Name") val = _getName(m);
-        else if (col == "Service Style") val = style;
-        else if (col == "Style Count") val = "${count}x";
-        else if (col == "Missed") val = "${missed}x";
-        else if (col == "Care Status") val = item['last_recovery_outcome'] ?? "No Care Logged";
-        else if (col == "Action") val = "Log Care";
-        else if (col == "Reason") val = item['last_reason'] ?? "-";
-        return '"${val.replaceAll('"', '""')}"';
-      }).join(',');
-
-      buffer.writeln(row);
+      rows.add(cols.map((col) {
+        if (col == "Loc") return _getLocation(m);
+        if (col == "Sub-Loc") return _getSubLocation(m);
+        if (col == "Dept") return _getDepartment(m);
+        if (col == "Team") return _getTeam(m);
+        if (col == "Cell Group") return _getCellGroup(m);
+        if (col == "Name") return _getName(m);
+        if (col == "Service Style") return style;
+        if (col == "Style Count") return "$count";
+        if (col == "Missed") return "$missed";
+        if (col == "Care Status") return (item['last_recovery_outcome'] ?? "No Care Logged").toString();
+        if (col == "Reason") return (item['last_reason'] ?? "-").toString();
+        return "";
+      }).toList());
     }
-
-    Clipboard.setData(ClipboardData(text: buffer.toString()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Formatted records copied to clipboard (Ready for Excel)!"), backgroundColor: Colors.green),
+    return ExportTable(
+      title: "$_screenTitle – ${widget.unitName}",
+      subtitle: "${widget.duty} · ${rows.length} members",
+      headers: cols,
+      rows: rows,
     );
   }
+
+  /// Excel (.xlsx), PDF, Print preview or Copy.
+  void _exportAsExcelCsv() => TableExport.showMenu(context, _interventionTable);
 
   void _showMaintenanceDialog(dynamic member) {
     String selectedOutcome = 'Recovered';

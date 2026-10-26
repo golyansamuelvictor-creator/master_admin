@@ -625,7 +625,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Total saint growth and stability", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white70), fontSize: 13, fontWeight: FontWeight.bold)),
+              Flexible(child: Text("Total saint growth and stability", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white70), fontSize: 13, fontWeight: FontWeight.bold))),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(color: AppPalette.bg(up ? Colors.green.withValues(alpha: 0.25) : Colors.red.withValues(alpha: 0.25)), borderRadius: BorderRadius.circular(6)),
@@ -750,8 +750,8 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text("Prior: ${d.previousRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[600]))),
-                  Text("${d.currentCount} logs", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[600]), fontWeight: FontWeight.bold)),
+                  Flexible(child: Text("Prior: ${d.previousRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[600])))),
+                  Flexible(child: Text("${d.currentCount} logs", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey[600]), fontWeight: FontWeight.bold))),
                 ],
               ),
             ],
@@ -775,7 +775,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Scale down jurisdiction level:", style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800]))),
+              Flexible(child: Text("Scale down jurisdiction level:", style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])))),
               Container(
                 height: 30,
                 padding: const EdgeInsets.symmetric(horizontal: 8),

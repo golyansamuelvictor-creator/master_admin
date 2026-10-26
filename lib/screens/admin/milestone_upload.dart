@@ -390,7 +390,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
               child: Icon(Icons.cloud_upload_outlined, size: 22, color: AppPalette.fg(_primaryPurple)),
             ),
             const SizedBox(width: 14),
-            Column(
+            Expanded(child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -411,7 +411,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
                   ),
                 ),
               ],
-            ),
+            )),
           ],
         ),
       ),

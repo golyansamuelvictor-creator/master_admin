@@ -89,7 +89,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
               decoration: BoxDecoration(color: AppPalette.bg(statusColor.withValues(alpha: 0.1)), borderRadius: BorderRadius.circular(10)),
               child: Text(status, style: TextStyle(color: AppPalette.fg(statusColor), fontWeight: FontWeight.bold, fontSize: 10)),
             ),
-            Text("Due: ${DateFormat('dd MMM').format(DateTime.parse(task['due_date']))}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
+            Flexible(child: Text("Due: ${DateFormat('dd MMM').format(DateTime.parse(task['due_date']))}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey)))),
           ]),
           const SizedBox(height: 12),
           Text(task['title'], style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -99,7 +99,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
           Row(children: [
             Icon(Icons.person_outline, size: 14, color: AppPalette.fg(Colors.blueGrey)),
             const SizedBox(width: 8),
-            Text("Assigned to: ${task['assigned_to']['full_name']}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            Flexible(child: Text("Assigned to: ${task['assigned_to']['full_name']}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
             const Spacer(),
             if (status != 'Completed')
               TextButton(

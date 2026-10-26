@@ -4,6 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'member_detail_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../widgets/app_menus.dart';
 
 class MemberDirectoryScreen extends StatefulWidget {
   final String userRole, userLoc, userSub, userDept, userTeam, userCell;
@@ -249,6 +252,27 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
   }
 
   @override
+  void _openMember(dynamic member) => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (c) => MemberDetailScreen(member: member, userRole: widget.userRole)),
+      );
+
+  void _memberMenu(Offset pos, dynamic member) {
+    final name = (member['english_name'] ?? '').toString();
+    final phone = (member['phone'] ?? '').toString().replaceAll(' ', '');
+    final id = (member['scj_id'] ?? '').toString();
+    showOfficeMenu(context, pos, [
+      OfficeMenuItem("Open profile", icon: Icons.person_outline, onTap: () => _openMember(member)),
+      const OfficeMenuItem.divider(),
+      OfficeMenuItem("Copy name", icon: Icons.content_copy, onTap: name.isEmpty ? null : () => Clipboard.setData(ClipboardData(text: name))),
+      OfficeMenuItem("Copy SCJ ID", icon: Icons.badge_outlined, onTap: id.isEmpty ? null : () => Clipboard.setData(ClipboardData(text: id))),
+      OfficeMenuItem("Copy phone", icon: Icons.phone_outlined, onTap: phone.isEmpty ? null : () => Clipboard.setData(ClipboardData(text: phone))),
+      OfficeMenuItem("Call", icon: Icons.call_outlined, onTap: phone.isEmpty ? null : () => launchUrl(Uri.parse('tel:$phone'))),
+      OfficeMenuItem("SMS", icon: Icons.sms_outlined, onTap: phone.isEmpty ? null : () => launchUrl(Uri.parse('sms:$phone'))),
+      OfficeMenuItem("WhatsApp", icon: Icons.chat_outlined, onTap: phone.isEmpty ? null : () => launchUrl(Uri.parse('https://wa.me/${phone.replaceAll(RegExp(r'[^0-9]'), '')}'), mode: LaunchMode.externalApplication)),
+    ]);
+  }
+
   Widget build(BuildContext context) {
     if (_loadingRole) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -349,7 +373,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                     final member = members[index];
                     final recruiter = member['introduced_by']?['english_name'] ?? "Direct Enrollment";
 
-                    return Card(
+                    return OfficeRightClick(longPress: true, onMenu: (p) => _memberMenu(p, member), child: Card(
                       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
                       child: ListTile(
                         leading: CircleAvatar(
@@ -379,7 +403,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                           ),
                         ),
                       ),
-                    );
+                    ));
                   },
                 );
               },

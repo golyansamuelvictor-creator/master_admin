@@ -2,10 +2,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:printing/printing.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
 
@@ -189,15 +187,18 @@ class _VisitationsModuleState extends State<VisitationsModule> {
   Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers, int sessions = 1}) {
     int n = officialMembers != null ? officialMembers.length : logsList.length;
 
+    // Count PEOPLE visited, not visits: three visits to one member is one
+    // person out of the headcount (before, it could push a cell over 100%).
     final catLogs = _filterLogsByCategory(logsList);
-    int pos = catLogs.where((l) => _isPositive(l['status_detail'])).length;
-    int neg = catLogs.where((l) => _isNegative(l['status_detail'])).length;
-
-    int visited = (pos + neg > 0) ? (pos + neg) : catLogs.where((l) {
+    final visitedLogs = catLogs.where((l) {
       final r = (l['visitation_reason'] ?? '').toString().trim();
       final s = (l['status_detail'] ?? '').toString().trim();
       return r.isNotEmpty || s.isNotEmpty;
-    }).length;
+    }).toList();
+    int pos = CompPeriod.distinctMembers(visitedLogs.where((l) => _isPositive(l['status_detail'])));
+    int neg = CompPeriod.distinctMembers(visitedLogs.where((l) => _isNegative(l['status_detail'])));
+    int visited = CompPeriod.distinctMembers(visitedLogs);
+    if (pos + neg > visited) neg = (visited - pos).clamp(0, visited).toInt();
 
     int couns = logsList.where((l) {
       final r = (l['visitation_reason'] ?? '').toString();
@@ -218,6 +219,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
 
   @override
   Widget build(BuildContext context) {
+    _capRows.clear();
     final Map<String, dynamic> totS = _calc(
       widget.logs,
       officialMembers: _effectiveMembers.isNotEmpty ? _effectiveMembers : null,
@@ -247,8 +249,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
   Widget _buildToolbar() => Row(
     mainAxisAlignment: MainAxisAlignment.start,
     children: [
-      IconButton(onPressed: _printReport, icon: Icon(Icons.print, color: AppPalette.fg(Colors.blueGrey), size: 18)),
-      IconButton(onPressed: () {}, icon: Icon(Icons.download, color: AppPalette.fg(Colors.green), size: 18)),
+      TableExport.buttons(context, _exportTable),
     ],
   );
 
@@ -401,7 +402,33 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     _dataRow(c2, d, b: b),
   ]);
 
+  // Each table row is also recorded as text for Excel / PDF / Print.
+  List<String>? _capRow;
+  final List<List<String>> _capRows = [];
+
   Widget _dataRow(String label, Map<String, dynamic> d, {bool b = false}) {
+    final row = <String>[];
+    _capRow = row;
+    try {
+      return _dataRowRaw(label, d, b: b);
+    } finally {
+      _capRow = null;
+      _capRows.add(row);
+    }
+  }
+
+  ExportTable _exportTable() {
+    final unit = (widget.activeUnitLabel).isNotEmpty ? widget.activeUnitLabel : CompLevel.unitTitle(widget.level);
+    final heads = <String>[unit, ...['Saints', 'Visited', 'Visited %', 'Counselled', 'Positive', 'Positive %', 'Negative', 'Negative %']];
+    return ExportTable(
+      title: "Visitations and Counselling – $unit",
+      subtitle: "Period: ${widget.timePeriod} · Level: ${widget.level}",
+      headers: heads,
+      rows: [for (final r in _capRows) r],
+    );
+  }
+
+  Widget _dataRowRaw(String label, Map<String, dynamic> d, {bool b = false}) {
     return Row(children: [
       _cell(label, w: lw, h: rh, b: b, a: Alignment.center),
       _cell("${d['n']}", a: Alignment.center),
@@ -424,6 +451,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     Color? bg,
     Alignment a = Alignment.center,
   }) {
+    _capRow?.add(t);
     return Container(
       width: w ?? cw,
       height: h,
@@ -600,11 +628,6 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     ],
   );
 
-  Future<void> _printReport() async {
-    final pdf = pw.Document();
-    pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Text("Care and Visitations Report - $_activeCategory"))));
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-  }
 
   Widget _section(String title, Widget content, BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 6),

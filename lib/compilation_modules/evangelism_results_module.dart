@@ -3,10 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
 
@@ -708,43 +707,15 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
   }
 
   // --- PDF REPORT EXPORT ---
-  Future<void> _exportPdf(List<_EvangelismResultUnitStat> stats, _EvangelismResultUnitStat totalStat) async {
-    final pdf = pw.Document();
-    final font = await PdfGoogleFonts.merriweatherRegular();
-    final fontBold = await PdfGoogleFonts.merriweatherBold();
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(24),
-        build: (pw.Context context) {
-          return [
-            pw.Header(
-              level: 0,
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('Evangelism Results & Bible Study Progress Report',
-                      style: pw.TextStyle(font: fontBold, fontSize: 15, color: PdfColors.purple900)),
-                  pw.Text(
-                    'Generated: ${DateTime.now().toLocal().toString().split(' ')[0]}',
-                    style: pw.TextStyle(font: font, fontSize: 9, color: PdfColors.grey700),
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 6),
-            pw.Text(
-              'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
+  // Excel / PDF / Print for the summary table (same rows as the old PDF)
+  ExportTable _exportTable(List<_EvangelismResultUnitStat> stats, _EvangelismResultUnitStat totalStat) => ExportTable(
+        title: "Evangelism Results – ${widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : widget.level}",
+        subtitle: 'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
               '${widget.selectedLocation.isNotEmpty ? ' | Loc: ${widget.selectedLocation}' : ''}'
               '${widget.selectedSubLocation.isNotEmpty ? ' | Sub: ${widget.selectedSubLocation}' : ''}'
               '${widget.selectedDepartment.isNotEmpty ? ' | Dept: ${widget.selectedDepartment}' : ''}'
               '${widget.selectedTeam.isNotEmpty ? ' | Team: ${widget.selectedTeam}' : ''}',
-              style: pw.TextStyle(font: font, fontSize: 8.5, color: PdfColors.grey800),
-            ),
-            pw.SizedBox(height: 10),
-            pw.TableHelper.fromTextArray(
-              headers: [
+        headers: <String>[
                 widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : 'Unit',
                 'Total',
                 'Chakki',
@@ -755,7 +726,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
                 'Offline',
                 'Online',
               ],
-              data: [
+        rows: <List<String>>[
                 [
                   'General Total',
                   '${totalStat.total}',
@@ -779,20 +750,10 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
                       '${u.online}',
                     ]),
               ],
-              headerStyle: pw.TextStyle(font: fontBold, fontSize: 8.0, color: PdfColors.white),
-              headerDecoration: const pw.BoxDecoration(color: PdfColors.purple900),
-              cellStyle: pw.TextStyle(font: font, fontSize: 8.0),
-              cellAlignment: pw.Alignment.center,
-              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
-              rowDecoration: const pw.BoxDecoration(),
-            ),
-          ];
-        },
-      ),
-    );
+      );
 
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-  }
+  Future<void> _exportPdf(List<_EvangelismResultUnitStat> stats, _EvangelismResultUnitStat totalStat) =>
+      TableExport.showMenu(context, () => _exportTable(stats, totalStat));
 
   // --- CELL HELPERS ---
   Widget _cellText(String text, double height, {
@@ -859,8 +820,8 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
                 ),
                 if (onPdf != null)
                   IconButton(
-                    icon: Icon(Icons.picture_as_pdf_outlined, size: 20, color: AppPalette.fg(pPurple)),
-                    tooltip: 'Export PDF Report',
+                    icon: Icon(Icons.download_rounded, size: 20, color: AppPalette.fg(pPurple)),
+                    tooltip: 'Excel / PDF / Print',
                     onPressed: onPdf,
                   ),
                 IconButton(

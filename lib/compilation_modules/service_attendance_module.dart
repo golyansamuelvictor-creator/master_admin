@@ -3,11 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:printing/printing.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
 
@@ -196,19 +194,60 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
   // [sessions] > 1 turns period totals into an average per service, so a
   // 5-Sunday period is compared with the headcount once, not 5 times.
+  // Sessions = the weeks THIS unit reported in (the chosen service day).
+  // Answers are matched loosely ("In person", "in-person", "Online",
+  // "on-line" ...), and percentages come from exact totals, not rounded averages.
   Map<String, dynamic> _calc(List<dynamic> logsList, {List<dynamic>? officialMembers, int sessions = 1}) {
-    int per(int v) => CompPeriod.perSession(v, sessions);
-    int n = officialMembers != null ? officialMembers.length : per(logsList.length);
+    logsList = CompPeriod.onePerMemberWeek(logsList); // a member counts once per service per week
+    sessions = widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(logsList);
+    num per(int v) => CompPeriod.avgPerSession(v, sessions);
+    num n = officialMembers != null ? officialMembers.length : per(logsList.length);
+    double pct(int raw) => officialMembers != null
+        ? CompPeriod.pctOf(raw, officialMembers.length, sessions)
+        : (logsList.isEmpty ? 0.0 : raw / logsList.length * 100);
 
-    int ip = per(logsList.where((x) => (x['attendance_realtime'] ?? '').toString().toLowerCase() == "in-person").length);
-    int onl = per(logsList.where((x) => (x['attendance_realtime'] ?? '').toString().toLowerCase() == "on-line").length);
-    int call = per(logsList.where((x) => (x['attendance_realtime'] ?? '').toString().toLowerCase() == "call").length);
-    int meet = per(logsList.where((x) => (x['attendance_realtime'] ?? '').toString().toLowerCase() == "meet").length);
-    int sum = per(logsList.where((x) => (x['attendance_realtime'] ?? '').toString().toLowerCase() == "summary").length);
-    int att = ip + onl + call + meet + sum;
+    String flat(dynamic v) => CompStatus.norm(v).replaceAll(RegExp(r'[\s_\-]'), '');
+    bool isKind(dynamic v, String kind) {
+      final f = flat(v);
+      switch (kind) {
+        case 'in-person':
+          return f == 'inperson' || f == 'ip' || f == 'present' || f == 'attended';
+        case 'on-line':
+          return f == 'online';
+        case 'call':
+          return f == 'call' || f == 'phonecall';
+        case 'meet':
+          return f == 'meet' || f == 'meeting';
+        case 'summary':
+          return f == 'summary';
+        case 'absentee':
+          return CompStatus.isNegative(v);
+      }
+      return f == flat(kind);
+    }
 
-    int regCount(String r, String field, String val) => 
-        per(logsList.where((x) => (x['geo_category'] ?? '').toString().toLowerCase() == r.toLowerCase() && (x[field] ?? '').toString().toLowerCase() == val.toLowerCase()).length);
+    final rows = logsList.map((x) => x['attendance_realtime']).toList();
+    final rIp = rows.where((v) => isKind(v, 'in-person')).length;
+    final rOnl = rows.where((v) => isKind(v, 'on-line')).length;
+    final rCall = rows.where((v) => isKind(v, 'call')).length;
+    final rMeet = rows.where((v) => isKind(v, 'meet')).length;
+    final rSum = rows.where((v) => isKind(v, 'summary')).length;
+    // any other filled-in, non-"no" answer still means the member attended
+    final rOther = rows.where((v) => CompStatus.isPositive(v) &&
+        !['in-person', 'on-line', 'call', 'meet', 'summary'].any((k) => isKind(v, k))).length;
+    final rAtt = rIp + rOnl + rCall + rMeet + rSum + rOther;
+    num ip = per(rIp);
+    num onl = per(rOnl);
+    num call = per(rCall);
+    num meet = per(rMeet);
+    num sum = per(rSum);
+    num att = per(rAtt);
+    final attP = pct(rAtt);
+    // keep the per-type counts adding up to the attended total after rounding
+    if (onl + call + meet + sum + ip > att) ip = (att - onl - call - meet - sum).clamp(0, att);
+
+    num regCount(String r, String field, String val) =>
+        per(logsList.where((x) => (x['geo_category'] ?? '').toString().toLowerCase() == r.toLowerCase() && isKind(x[field], val)).length);
 
     Map<String, dynamic> regData(String r) => {
       "act": {
@@ -228,18 +267,18 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       "abs": per(logsList.where((x) => (x['geo_category'] ?? '').toString().toLowerCase() == r.toLowerCase() && (x['attendance_realtime'] ?? '').toString().toLowerCase() == "absentee").length)
     };
 
-    int absentees = n > att ? (n - att) : per(logsList.where((x) => (x['attendance_realtime'] ?? '').toString().toLowerCase() == "absentee").length);
+    num absentees = n > att ? (n - att) : 0;
 
     return {
-      "n": n, 
-      "att": att, 
-      "pct": n > 0 ? (att / n * 100) : 0.0,
-      "ip": ip, 
-      "ipp": n > 0 ? (ip / n * 100) : 0.0,
-      "ot": att - ip, 
-      "otp": n > 0 ? ((att - ip) / n * 100) : 0.0,
-      "ab": absentees, 
-      "abp": n > 0 ? (absentees / n * 100) : 0.0,
+      "n": n,
+      "att": att,
+      "pct": attP,
+      "ip": ip,
+      "ipp": pct(rIp),
+      "ot": att - ip,
+      "otp": pct(rAtt - rIp),
+      "ab": absentees,
+      "abp": attP >= 100 ? 0.0 : 100 - attP,
       "hm": logsList.where((x) => x['is_hm'] == true).length, 
       "lt": logsList.where((x) => x['is_lta'] == true).length,
       "kla": regData("Kampala"), 
@@ -250,6 +289,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
   @override
   Widget build(BuildContext context) {
+    _capRows.clear();
     final activeLogs = _filteredLogs;
     final members = _effectiveMembers;
 
@@ -263,11 +303,11 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     final Map<String, dynamic> hqS = _calc(hqLogs, officialMembers: hqMembers.isNotEmpty ? hqMembers : null, sessions: sessions); 
     final Map<String, dynamic> enS = _calc(enLogs, officialMembers: enMembers.isNotEmpty ? enMembers : null, sessions: sessions);
     
-    int totN = members.isNotEmpty ? members.length : (hqS['n'] + enS['n']);
-    int totAtt = hqS['att'] + enS['att'];
-    int totIp = hqS['ip'] + enS['ip'];
-    int totOt = hqS['ot'] + enS['ot'];
-    int totAb = totN > totAtt ? (totN - totAtt) : 0;
+    num totN = members.isNotEmpty ? members.length : (hqS['n'] + enS['n']);
+    num totAtt = hqS['att'] + enS['att'];
+    num totIp = hqS['ip'] + enS['ip'];
+    num totOt = hqS['ot'] + enS['ot'];
+    num totAb = totN > totAtt ? (totN - totAtt) : 0;
 
     final Map<String, dynamic> totS = {
       "n": totN, 
@@ -302,8 +342,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     mainAxisAlignment: MainAxisAlignment.spaceBetween,
     children: [
       Row(children: [
-        IconButton(onPressed: _printReport, icon: Icon(Icons.print, color: AppPalette.fg(Colors.blueGrey), size: 18)),
-        IconButton(onPressed: () {}, icon: Icon(Icons.download, color: AppPalette.fg(Colors.green), size: 18)),
+        TableExport.buttons(context, _exportTable),
         const SizedBox(width: 8),
 
         if (widget.timePeriod != "Current status")
@@ -477,19 +516,45 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     _dataRow(c2, d, b: b),
   ]);
 
+  // Each table row is also recorded as text for Excel / PDF / Print.
+  List<String>? _capRow;
+  final List<List<String>> _capRows = [];
+
   Widget _dataRow(String label, Map<String, dynamic> d, {bool b = false}) {
+    final row = <String>[];
+    _capRow = row;
+    try {
+      return _dataRowRaw(label, d, b: b);
+    } finally {
+      _capRow = null;
+      _capRows.add(row);
+    }
+  }
+
+  ExportTable _exportTable() {
+    final unit = (widget.activeUnitLabel ?? '').isNotEmpty ? widget.activeUnitLabel! : CompLevel.unitTitle(widget.level);
+    final heads = <String>[unit, ...['Num', 'Attended', 'Att %', 'In-person', 'In-person %', 'Other', 'Other %', 'Absentees', 'Absent %', 'HM', 'LTA'], if (_isExpanded) ...['Kampala In-person', 'Kampala Online', 'Kampala Call', 'Kampala Meet', 'Kampala Summary', 'Kampala MU In-person', 'Kampala MU Online', 'Kampala MU Call', 'Kampala MU Meet', 'Kampala MU Summary', 'Kampala Absent', 'Village In-person', 'Village Online', 'Village Call', 'Village Meet', 'Village Summary', 'Village MU In-person', 'Village MU Online', 'Village MU Call', 'Village MU Meet', 'Village MU Summary', 'Village Absent', 'Abroad In-person', 'Abroad Online', 'Abroad Call', 'Abroad Meet', 'Abroad Summary', 'Abroad MU In-person', 'Abroad MU Online', 'Abroad MU Call', 'Abroad MU Meet', 'Abroad MU Summary', 'Abroad Absent']];
+    return ExportTable(
+      title: "Service Attendance Status – $unit",
+      subtitle: "Period: ${widget.timePeriod} · Level: ${widget.level}",
+      headers: heads,
+      rows: [for (final r in _capRows) r],
+    );
+  }
+
+  Widget _dataRowRaw(String label, Map<String, dynamic> d, {bool b = false}) {
     Widget reg(Map<String, dynamic> r) => Row(children: [
-      _cell("${r['act']?['ip'] ?? 0}"), _cell("${r['act']?['on'] ?? 0}"), _cell("${r['act']?['cl'] ?? 0}"), _cell("${r['act']?['mt'] ?? 0}"), _cell("${r['act']?['sm'] ?? 0}"),
-      _cell("${r['mu']?['ip'] ?? 0}"), _cell("${r['mu']?['on'] ?? 0}"), _cell("${r['mu']?['cl'] ?? 0}"), _cell("${r['mu']?['mt'] ?? 0}"), _cell("${r['mu']?['sm'] ?? 0}"),
-      _cell("${r['abs'] ?? 0}"),
+      _cell(CompPeriod.fmt(r['act']?['ip'])), _cell(CompPeriod.fmt(r['act']?['on'])), _cell(CompPeriod.fmt(r['act']?['cl'])), _cell(CompPeriod.fmt(r['act']?['mt'])), _cell(CompPeriod.fmt(r['act']?['sm'])),
+      _cell(CompPeriod.fmt(r['mu']?['ip'])), _cell(CompPeriod.fmt(r['mu']?['on'])), _cell(CompPeriod.fmt(r['mu']?['cl'])), _cell(CompPeriod.fmt(r['mu']?['mt'])), _cell(CompPeriod.fmt(r['mu']?['sm'])),
+      _cell(CompPeriod.fmt(r['abs'])),
     ]);
     return Row(children: [
       _cell(label, w: lw, h: rh, b: b, a: Alignment.center),
-      _cell("${d['n']}"), _cell("${d['att']}"), _cell("${d['pct'].toStringAsFixed(1)}%", b: true),
-      _cell("${d['ip']}"), _cell("${d['ipp'].toStringAsFixed(1)}%"),
-      _cell("${d['ot']}"), _cell("${d['otp'].toStringAsFixed(1)}%"),
-      _cell("${d['ab']}"), _cell("${d['abp'].toStringAsFixed(1)}%"),
-      _cell("${d['hm']}"), _cell("${d['lt']}"),
+      _cell(CompPeriod.fmt(d['n'])), _cell(CompPeriod.fmt(d['att'])), _cell("${d['pct'].toStringAsFixed(1)}%", b: true),
+      _cell(CompPeriod.fmt(d['ip'])), _cell("${d['ipp'].toStringAsFixed(1)}%"),
+      _cell(CompPeriod.fmt(d['ot'])), _cell("${d['otp'].toStringAsFixed(1)}%"),
+      _cell(CompPeriod.fmt(d['ab'])), _cell("${d['abp'].toStringAsFixed(1)}%"),
+      _cell(CompPeriod.fmt(d['hm'])), _cell(CompPeriod.fmt(d['lt'])),
       if (_isExpanded) ...[reg(d['kla'] ?? {}), reg(d['vil'] ?? {}), reg(d['abr'] ?? {})],
     ]);
   }
@@ -503,6 +568,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     Color? bg, 
     Alignment a = Alignment.center
   }) {
+    _capRow?.add(t);
     return Container(
       width: w ?? cw, 
       height: h, 
@@ -608,7 +674,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
               spacing: 16,
               runSpacing: 6,
               alignment: WrapAlignment.center,
-              children: metrics.map((m) => _lgItem("${m.label}: ${m.val.toInt()}", m.color)).toList(),
+              children: metrics.map((m) => _lgItem("${m.label}: ${CompPeriod.fmt(m.val)}", m.color)).toList(),
             ),
           ),
         ]);
@@ -926,11 +992,6 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     ],
   );
 
-  Future<void> _printReport() async {
-    final pdf = pw.Document();
-    pdf.addPage(pw.Page(build: (pw.Context context) => pw.Center(child: pw.Text("Attendance Report"))));
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-  }
 
   Widget _section(String title, Widget content, BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 6),

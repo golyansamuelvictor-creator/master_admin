@@ -3,23 +3,21 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:printing/printing.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import '../core/compilation_rules.dart';
+import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 class _EvangelismUnitStat {
   final String unitName;
   final int totalSaints;
-  final int mon;
-  final int tue;
-  final int wed;
-  final int thu;
-  final int fri;
-  final int sat;
-  final int sun;
+  final num mon;
+  final num tue;
+  final num wed;
+  final num thu;
+  final num fri;
+  final num sat;
+  final num sun;
 
   _EvangelismUnitStat({
     required this.unitName,
@@ -267,19 +265,19 @@ class _EvangelismModuleState extends State<EvangelismModule> {
         saints = distinctIds.isNotEmpty ? distinctIds.length : uLogs.length;
       }
 
-      // Per-week averages over the period (one week for "Current status")
-      final int sessions = _sessions;
-      int per(int v) => CompPeriod.perSession(v, sessions);
-      int mon = per(uLogs.where((l) => _isDayEvangelised(l, 'Mon', 'mon_part')).length);
-      int tue = per(uLogs.where((l) => _isDayEvangelised(l, 'Tue', 'tue_part')).length);
-      int wed = per(uLogs.where((l) => _isDayEvangelised(l, 'Wed', 'wed_part')).length);
-      int thu = per(uLogs.where((l) => _isDayEvangelised(l, 'Thu', 'thu_part')).length);
-      int fri = per(uLogs.where((l) => _isDayEvangelised(l, 'Fri', 'fri_part')).length);
-      int sat = per(uLogs.where((l) => _isDayEvangelised(l, 'Sat', 'sat_part')).length);
-      int sun = per(uLogs.where((l) => _isDayEvangelised(l, 'Sun', 'sun_part')).length);
+      // Per-week averages over the weeks THIS unit reported in (one week for "Current status")
+      final int sessions = widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(uLogs);
+      num per(int v) => CompPeriod.avgPerSession(v, sessions);
+      num mon = per(uLogs.where((l) => _isDayEvangelised(l, 'Mon', 'mon_part')).length);
+      num tue = per(uLogs.where((l) => _isDayEvangelised(l, 'Tue', 'tue_part')).length);
+      num wed = per(uLogs.where((l) => _isDayEvangelised(l, 'Wed', 'wed_part')).length);
+      num thu = per(uLogs.where((l) => _isDayEvangelised(l, 'Thu', 'thu_part')).length);
+      num fri = per(uLogs.where((l) => _isDayEvangelised(l, 'Fri', 'fri_part')).length);
+      num sat = per(uLogs.where((l) => _isDayEvangelised(l, 'Sat', 'sat_part')).length);
+      num sun = per(uLogs.where((l) => _isDayEvangelised(l, 'Sun', 'sun_part')).length);
 
-      int maxDay = math.max(mon, math.max(tue, math.max(wed, math.max(thu, math.max(fri, math.max(sat, sun))))));
-      saints = math.max(saints, maxDay);
+      num maxDay = math.max(mon, math.max(tue, math.max(wed, math.max(thu, math.max(fri, math.max(sat, sun))))));
+      saints = math.max(saints, maxDay.ceil());
 
       stats.add(_EvangelismUnitStat(
         unitName: u,
@@ -301,17 +299,17 @@ class _EvangelismModuleState extends State<EvangelismModule> {
     int totalSaints = allMembers.isNotEmpty ? allMembers.length : 0;
 
     final int sessions = _sessions;
-    int per(int v) => CompPeriod.perSession(v, sessions);
-    int mon = per(allLogs.where((l) => _isDayEvangelised(l, 'Mon', 'mon_part')).length);
-    int tue = per(allLogs.where((l) => _isDayEvangelised(l, 'Tue', 'tue_part')).length);
-    int wed = per(allLogs.where((l) => _isDayEvangelised(l, 'Wed', 'wed_part')).length);
-    int thu = per(allLogs.where((l) => _isDayEvangelised(l, 'Thu', 'thu_part')).length);
-    int fri = per(allLogs.where((l) => _isDayEvangelised(l, 'Fri', 'fri_part')).length);
-    int sat = per(allLogs.where((l) => _isDayEvangelised(l, 'Sat', 'sat_part')).length);
-    int sun = per(allLogs.where((l) => _isDayEvangelised(l, 'Sun', 'sun_part')).length);
+    num per(int v) => CompPeriod.avgPerSession(v, sessions);
+    num mon = per(allLogs.where((l) => _isDayEvangelised(l, 'Mon', 'mon_part')).length);
+    num tue = per(allLogs.where((l) => _isDayEvangelised(l, 'Tue', 'tue_part')).length);
+    num wed = per(allLogs.where((l) => _isDayEvangelised(l, 'Wed', 'wed_part')).length);
+    num thu = per(allLogs.where((l) => _isDayEvangelised(l, 'Thu', 'thu_part')).length);
+    num fri = per(allLogs.where((l) => _isDayEvangelised(l, 'Fri', 'fri_part')).length);
+    num sat = per(allLogs.where((l) => _isDayEvangelised(l, 'Sat', 'sat_part')).length);
+    num sun = per(allLogs.where((l) => _isDayEvangelised(l, 'Sun', 'sun_part')).length);
 
-    int maxDay = math.max(mon, math.max(tue, math.max(wed, math.max(thu, math.max(fri, math.max(sat, sun))))));
-    totalSaints = math.max(totalSaints, maxDay);
+    num maxDay = math.max(mon, math.max(tue, math.max(wed, math.max(thu, math.max(fri, math.max(sat, sun))))));
+    totalSaints = math.max(totalSaints, maxDay.ceil());
 
     return _EvangelismUnitStat(
       unitName: 'General total',
@@ -408,19 +406,19 @@ class _EvangelismModuleState extends State<EvangelismModule> {
               _cellText("General total", 26.0, isBold: true, color: pPurple),
               _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
               _cellText(totalStat.weeklyAvg.toStringAsFixed(1), 26.0, isBold: true, color: pPurple),
-              _cellText("${totalStat.mon}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.mon), 26.0, isBold: true),
               _cellPercent(totalStat.monPct, 26.0, pPurple, isBold: true),
-              _cellText("${totalStat.tue}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.tue), 26.0, isBold: true),
               _cellPercent(totalStat.tuePct, 26.0, pPurple, isBold: true),
-              _cellText("${totalStat.wed}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.wed), 26.0, isBold: true),
               _cellPercent(totalStat.wedPct, 26.0, pPurple, isBold: true),
-              _cellText("${totalStat.thu}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.thu), 26.0, isBold: true),
               _cellPercent(totalStat.thuPct, 26.0, pPurple, isBold: true),
-              _cellText("${totalStat.fri}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.fri), 26.0, isBold: true),
               _cellPercent(totalStat.friPct, 26.0, pPurple, isBold: true),
-              _cellText("${totalStat.sat}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.sat), 26.0, isBold: true),
               _cellPercent(totalStat.satPct, 26.0, Colors.blue[900]!, isBold: true),
-              _cellText("${totalStat.sun}", 26.0, isBold: true),
+              _cellText(CompPeriod.fmt(totalStat.sun), 26.0, isBold: true),
               _cellPercent(totalStat.sunPct, 26.0, Colors.blue[900]!, isBold: true),
             ],
           ),
@@ -439,19 +437,19 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                 _cellText(u.unitName, rh, isBold: true),
                 _cellText("${u.totalSaints}", rh),
                 _cellText(u.weeklyAvg.toStringAsFixed(1), rh, color: pPurple, isBold: true),
-                _cellText("${u.mon}", rh),
+                _cellText(CompPeriod.fmt(u.mon), rh),
                 _cellPercent(u.monPct, rh, pPurple),
-                _cellText("${u.tue}", rh),
+                _cellText(CompPeriod.fmt(u.tue), rh),
                 _cellPercent(u.tuePct, rh, pPurple),
-                _cellText("${u.wed}", rh),
+                _cellText(CompPeriod.fmt(u.wed), rh),
                 _cellPercent(u.wedPct, rh, pPurple),
-                _cellText("${u.thu}", rh),
+                _cellText(CompPeriod.fmt(u.thu), rh),
                 _cellPercent(u.thuPct, rh, pPurple),
-                _cellText("${u.fri}", rh),
+                _cellText(CompPeriod.fmt(u.fri), rh),
                 _cellPercent(u.friPct, rh, pPurple),
-                _cellText("${u.sat}", rh),
+                _cellText(CompPeriod.fmt(u.sat), rh),
                 _cellPercent(u.satPct, rh, Colors.blue[800]!),
-                _cellText("${u.sun}", rh),
+                _cellText(CompPeriod.fmt(u.sun), rh),
                 _cellPercent(u.sunPct, rh, Colors.blue[800]!),
               ],
             );
@@ -571,7 +569,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
       active.sunPct,
     ];
 
-    final List<int> counts = [
+    final List<num> counts = [
       active.mon,
       active.tue,
       active.wed,
@@ -717,43 +715,15 @@ class _EvangelismModuleState extends State<EvangelismModule> {
   }
 
   // --- PDF REPORT EXPORT ---
-  Future<void> _exportPdf(List<_EvangelismUnitStat> stats, _EvangelismUnitStat totalStat) async {
-    final pdf = pw.Document();
-    final font = await PdfGoogleFonts.merriweatherRegular();
-    final fontBold = await PdfGoogleFonts.merriweatherBold();
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(24),
-        build: (pw.Context context) {
-          return [
-            pw.Header(
-              level: 0,
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('Evangelism Daily Participation Report (All Saints)',
-                      style: pw.TextStyle(font: fontBold, fontSize: 15, color: PdfColors.purple900)),
-                  pw.Text(
-                    'Generated: ${DateTime.now().toLocal().toString().split(' ')[0]}',
-                    style: pw.TextStyle(font: font, fontSize: 9, color: PdfColors.grey700),
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 6),
-            pw.Text(
-              'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
+  // Excel / PDF / Print for the summary table (same rows as the old PDF)
+  ExportTable _exportTable(List<_EvangelismUnitStat> stats, _EvangelismUnitStat totalStat) => ExportTable(
+        title: "Evangelism Participation – ${widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : widget.level}",
+        subtitle: 'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
               '${widget.selectedLocation.isNotEmpty ? ' | Loc: ${widget.selectedLocation}' : ''}'
               '${widget.selectedSubLocation.isNotEmpty ? ' | Sub: ${widget.selectedSubLocation}' : ''}'
               '${widget.selectedDepartment.isNotEmpty ? ' | Dept: ${widget.selectedDepartment}' : ''}'
               '${widget.selectedTeam.isNotEmpty ? ' | Team: ${widget.selectedTeam}' : ''}',
-              style: pw.TextStyle(font: font, fontSize: 8.5, color: PdfColors.grey800),
-            ),
-            pw.SizedBox(height: 10),
-            pw.TableHelper.fromTextArray(
-              headers: [
+        headers: <String>[
                 widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : 'Unit',
                 'Saints',
                 'Wkly Avg',
@@ -772,60 +742,50 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                 'Sun',
                 'Sun %',
               ],
-              data: [
+        rows: <List<String>>[
                 [
                   'General Total',
                   '${totalStat.totalSaints}',
                   totalStat.weeklyAvg.toStringAsFixed(1),
-                  '${totalStat.mon}',
+                  CompPeriod.fmt(totalStat.mon),
                   '${totalStat.monPct.toStringAsFixed(0)}%',
-                  '${totalStat.tue}',
+                  CompPeriod.fmt(totalStat.tue),
                   '${totalStat.tuePct.toStringAsFixed(0)}%',
-                  '${totalStat.wed}',
+                  CompPeriod.fmt(totalStat.wed),
                   '${totalStat.wedPct.toStringAsFixed(0)}%',
-                  '${totalStat.thu}',
+                  CompPeriod.fmt(totalStat.thu),
                   '${totalStat.thuPct.toStringAsFixed(0)}%',
-                  '${totalStat.fri}',
+                  CompPeriod.fmt(totalStat.fri),
                   '${totalStat.friPct.toStringAsFixed(0)}%',
-                  '${totalStat.sat}',
+                  CompPeriod.fmt(totalStat.sat),
                   '${totalStat.satPct.toStringAsFixed(0)}%',
-                  '${totalStat.sun}',
+                  CompPeriod.fmt(totalStat.sun),
                   '${totalStat.sunPct.toStringAsFixed(0)}%',
                 ],
                 ...stats.map((u) => [
                       u.unitName,
                       '${u.totalSaints}',
                       u.weeklyAvg.toStringAsFixed(1),
-                      '${u.mon}',
+                      CompPeriod.fmt(u.mon),
                       '${u.monPct.toStringAsFixed(0)}%',
-                      '${u.tue}',
+                      CompPeriod.fmt(u.tue),
                       '${u.tuePct.toStringAsFixed(0)}%',
-                      '${u.wed}',
+                      CompPeriod.fmt(u.wed),
                       '${u.wedPct.toStringAsFixed(0)}%',
-                      '${u.thu}',
+                      CompPeriod.fmt(u.thu),
                       '${u.thuPct.toStringAsFixed(0)}%',
-                      '${u.fri}',
+                      CompPeriod.fmt(u.fri),
                       '${u.friPct.toStringAsFixed(0)}%',
-                      '${u.sat}',
+                      CompPeriod.fmt(u.sat),
                       '${u.satPct.toStringAsFixed(0)}%',
-                      '${u.sun}',
+                      CompPeriod.fmt(u.sun),
                       '${u.sunPct.toStringAsFixed(0)}%',
                     ]),
               ],
-              headerStyle: pw.TextStyle(font: fontBold, fontSize: 7.0, color: PdfColors.white),
-              headerDecoration: const pw.BoxDecoration(color: PdfColors.purple900),
-              cellStyle: pw.TextStyle(font: font, fontSize: 7.0),
-              cellAlignment: pw.Alignment.center,
-              border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
-              rowDecoration: const pw.BoxDecoration(),
-            ),
-          ];
-        },
-      ),
-    );
+      );
 
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-  }
+  Future<void> _exportPdf(List<_EvangelismUnitStat> stats, _EvangelismUnitStat totalStat) =>
+      TableExport.showMenu(context, () => _exportTable(stats, totalStat));
 
   // --- CELL HELPERS ---
   Widget _cellText(String text, double height, {
@@ -908,8 +868,8 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                 ),
                 if (onPdf != null)
                   IconButton(
-                    icon: Icon(Icons.picture_as_pdf_outlined, size: 20, color: AppPalette.fg(pPurple)),
-                    tooltip: 'Export PDF Report',
+                    icon: Icon(Icons.download_rounded, size: 20, color: AppPalette.fg(pPurple)),
+                    tooltip: 'Excel / PDF / Print',
                     onPressed: onPdf,
                   ),
                 IconButton(

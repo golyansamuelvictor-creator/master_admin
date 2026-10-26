@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:crypto/crypto.dart';
+import '../services/evidence_service.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 class EvidenceGalleryDialog extends StatefulWidget {
@@ -30,6 +30,7 @@ class EvidenceGalleryDialog extends StatefulWidget {
 class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
   final supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _photos = [];
+  Map<String, ({String? thumb, String? full})> _links = {}; // private photo links
   bool _isLoading = true;
   bool _isUploading = false;
 
@@ -56,9 +57,12 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
           .eq('report_date', dateStr)
           .order('created_at', ascending: false);
 
+      final rows = List<Map<String, dynamic>>.from(res);
+      final links = await EvidenceService.signedUrls(rows);
       if (mounted) {
         setState(() {
-          _photos = List<Map<String, dynamic>>.from(res);
+          _photos = rows;
+          _links = links;
           _isLoading = false;
         });
       }
@@ -89,43 +93,52 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.reportDate);
 
     int uploadedCount = 0;
-    int duplicateCount = 0;
+    int flaggedCount = 0;
+    final List<String> rejected = []; // "photo name: reason"
+    final List<String> batchHashes = [];
 
     for (var file in result.files) {
       if (file.bytes == null) continue;
 
-      // 1. Calculate SHA-256 hash to detect exact duplicates
-      final fileHash = sha256.convert(file.bytes!).toString();
-
-      // 2. Check if this exact file hash already exists in DB
-      final existing = await supabase
-          .from('report_evidence')
-          .select('id')
-          .eq('sheet_name', widget.sheetName)
-          .eq('unit_name', widget.unitName)
-          .eq('report_date', dateStr)
-          .eq('file_hash', fileHash)
-          .maybeSingle();
-
-      if (existing != null) {
-        duplicateCount++;
-        continue; // Skip duplicate!
+      // 1. Has this picture been used before (any unit, any date)?
+      final check = await EvidenceService.check(
+        bytes: file.bytes!,
+        dutyName: widget.sheetName,
+        unitName: widget.unitName,
+        reportDate: widget.reportDate,
+        batchHashes: batchHashes,
+      );
+      if (check.blocked) {
+        rejected.add("${file.name}: ${check.reason}");
+        continue;
       }
+      if (check.fingerprint != null) batchHashes.add(check.fingerprint!.hash);
 
-      final ext = file.extension ?? 'jpg';
+      final ext = (file.extension ?? 'jpg').toLowerCase();
       final fileName = "${DateTime.now().millisecondsSinceEpoch}_$uploadedCount.$ext";
       // The report-evidence bucket only accepts files inside the uploader's own folder (<uid>/...)
       final storagePath = "${user?.id ?? 'anonymous'}/${widget.sheetName}/${widget.unitName}/$dateStr/$fileName";
-      final contentType = (ext.toLowerCase() == 'jpg' || ext.toLowerCase() == 'jpeg') ? 'image/jpeg' : 'image/${ext.toLowerCase()}';
+      final thumbPath = "$storagePath.thumb.png";
+      final contentType = (ext == 'jpg' || ext == 'jpeg') ? 'image/jpeg' : 'image/$ext';
 
       try {
-        await supabase.storage.from('report-evidence').uploadBinary(
+        await supabase.storage.from(EvidenceService.bucket).uploadBinary(
               storagePath,
               file.bytes!,
               fileOptions: FileOptions(contentType: contentType, upsert: true),
             );
-
-        final publicUrl = supabase.storage.from('report-evidence').getPublicUrl(storagePath);
+        final thumb = check.fingerprint?.thumbnailPng;
+        bool thumbSaved = false;
+        if (thumb != null) {
+          try {
+            await supabase.storage.from(EvidenceService.bucket).uploadBinary(
+                  thumbPath,
+                  thumb,
+                  fileOptions: const FileOptions(contentType: 'image/png', upsert: true),
+                );
+            thumbSaved = true;
+          } catch (_) {}
+        }
 
         await supabase.from('report_evidence').insert({
           'duty_name': widget.sheetName, // required column (the insert failed without it)
@@ -133,52 +146,90 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
           'sheet_name': widget.sheetName,
           'unit_name': widget.unitName,
           'report_date': dateStr,
-          'image_url': publicUrl,
+          // The bucket is private: photos open through short-lived links made from storage_path
+          'image_url': storagePath,
           'storage_path': storagePath,
-          'file_hash': fileHash, // Saved to guard against duplicates
+          'thumb_path': thumbSaved ? thumbPath : null,
+          'file_hash': check.sha,
+          'phash': check.fingerprint?.hash,
           'uploader_id': user?.id,
         });
 
         uploadedCount++;
+        if (check.flaggedForReview) flaggedCount++;
       } catch (e) {
         debugPrint("Upload error: $e");
+        rejected.add("${file.name}: couldn't be uploaded. Check your connection and try again.");
       }
     }
 
     widget.onEvidenceChanged();
     await _fetchPhotos();
-    if (mounted) {
-      setState(() => _isUploading = false);
+    if (!mounted) return;
+    setState(() => _isUploading = false);
 
-      if (duplicateCount > 0 && uploadedCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.orange[800],
-            content: Text("Uploaded $uploadedCount photos. $duplicateCount duplicate photo(s) rejected."),
+    if (rejected.isNotEmpty) {
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(children: [
+            Icon(Icons.report_gmailerrorred_rounded, color: AppPalette.fg(Colors.red.shade700)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                rejected.length == 1 ? "1 photo was not uploaded" : "${rejected.length} photos were not uploaded",
+                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15),
+              ),
+            ),
+          ]),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ...rejected.map((r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text("• $r", style: GoogleFonts.merriweather(fontSize: 12.5, height: 1.4)),
+                    )),
+                const SizedBox(height: 6),
+                Text(
+                  "Please upload the correct photos taken for this report. Reused photos are not accepted as evidence, "
+                  "and your reviewers can see that these were blocked.",
+                  style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.blueGrey[700]), fontStyle: FontStyle.italic),
+                ),
+                if (uploadedCount > 0) ...[
+                  const SizedBox(height: 8),
+                  Text("$uploadedCount other photo(s) were uploaded.",
+                      style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.green[800]), fontWeight: FontWeight.bold)),
+                ],
+              ]),
+            ),
           ),
-        );
-      } else if (duplicateCount > 0 && uploadedCount == 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.red[800],
-            content: const Text("Rejected: Selected photo(s) have already been uploaded!"),
-          ),
-        );
-      } else if (uploadedCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.green[800],
-            content: Text("Uploaded $uploadedCount photo(s) successfully!"),
-          ),
-        );
-      }
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(widget.pPurple), foregroundColor: AppPalette.fg(Colors.white)),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+    } else if (uploadedCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.green[800],
+          content: Text(flaggedCount > 0
+              ? "Uploaded $uploadedCount photo(s). $flaggedCount look similar to older photos and were marked for your reviewer."
+              : "Uploaded $uploadedCount photo(s) successfully!"),
+        ),
+      );
     }
   }
 
-  Future<void> _deletePhoto(String id, String storagePath) async {
+  Future<void> _deletePhoto(String id, String storagePath, String? thumbPath) async {
     if (!_isEditable) return;
     try {
-      await supabase.storage.from('report-evidence').remove([storagePath]);
+      await supabase.storage.from(EvidenceService.bucket).remove([storagePath, if (thumbPath != null && thumbPath.isNotEmpty) thumbPath]);
       await supabase.from('report_evidence').delete().eq('id', id);
       widget.onEvidenceChanged();
       _fetchPhotos();
@@ -236,13 +287,13 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
                   child: Icon(Icons.photo_library_rounded, color: AppPalette.fg(widget.pPurple)),
                 ),
                 const SizedBox(width: 12),
-                Column(
+                Expanded(child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text("Evidence Album", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: AppPalette.fg(widget.pPurple))),
                     Text("$dateDisplay  •  ${widget.unitName}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
                   ],
-                ),
+                )),
                 const Spacer(),
                 if (_isEditable)
                   ElevatedButton.icon(
@@ -291,9 +342,11 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
                           itemCount: _photos.length,
                           itemBuilder: (ctx, i) {
                             final photo = _photos[i];
-                            final url = photo['image_url'] as String;
                             final id = photo['id'].toString();
-                            final storagePath = photo['storage_path'] as String;
+                            final storagePath = (photo['storage_path'] ?? '').toString();
+                            final thumbPath = photo['thumb_path']?.toString();
+                            final link = _links[id];
+                            final mine = photo['uploaded_by'] == supabase.auth.currentUser?.id;
 
                             return ClipRRect(
                               borderRadius: BorderRadius.circular(10),
@@ -301,15 +354,27 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
                                 fit: StackFit.expand,
                                 children: [
                                   GestureDetector(
-                                    onTap: () => _openFullScreenViewer(url),
-                                    child: Image.network(url, fit: BoxFit.cover),
+                                    onTap: link?.full == null ? null : () => _openFullScreenViewer(link!.full!),
+                                    child: link?.thumb == null
+                                        ? Container(
+                                            color: AppPalette.bg(Colors.grey.shade200),
+                                            child: Icon(Icons.image_not_supported_outlined, color: AppPalette.fg(Colors.grey.shade500)),
+                                          )
+                                        : Image.network(
+                                            link!.thumb!,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => Container(
+                                              color: AppPalette.bg(Colors.grey.shade200),
+                                              child: Icon(Icons.broken_image_outlined, color: AppPalette.fg(Colors.grey.shade500)),
+                                            ),
+                                          ),
                                   ),
-                                  if (_isEditable)
+                                  if (_isEditable && mine)
                                     Positioned(
                                       top: 4,
                                       right: 4,
                                       child: GestureDetector(
-                                        onTap: () => _deletePhoto(id, storagePath),
+                                        onTap: () => _deletePhoto(id, storagePath, thumbPath),
                                         child: CircleAvatar(
                                           radius: 13,
                                           backgroundColor: AppPalette.bg(Colors.black),
