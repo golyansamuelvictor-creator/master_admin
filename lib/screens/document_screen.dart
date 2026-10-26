@@ -576,7 +576,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
   }
 
   void _clearFormatting() {
-    for (final a in [Attribute.bold, Attribute.italic, Attribute.underline, Attribute.strikeThrough, Attribute.color, Attribute.background, Attribute.size, Attribute.font, Attribute.link]) {
+    for (final Attribute a in <Attribute>[Attribute.bold, Attribute.italic, Attribute.underline, Attribute.strikeThrough, Attribute.color, Attribute.background, Attribute.size, Attribute.font, Attribute.link]) {
       if (_has(a.key)) _controller.formatSelection(Attribute.clone(a, null));
     }
     _focus.requestFocus();

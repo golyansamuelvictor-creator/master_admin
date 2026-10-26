@@ -15,7 +15,6 @@ class _ChatPrefs {
   static bool enterToSend = true;
   static String wallpaper = 'default';
   static bool typing = true;
-  static bool readReceipts = true;
   static String lastSeenRule = 'everyone';
   static final ValueNotifier<int> changed = ValueNotifier(0);
 
@@ -25,7 +24,6 @@ class _ChatPrefs {
     enterToSend = p['enter_to_send'] != false;
     wallpaper = (p['wallpaper'] ?? 'default').toString();
     typing = row['typing'] != false;
-    readReceipts = row['read_receipts'] != false;
     lastSeenRule = (row['last_seen'] ?? 'everyone').toString();
     changed.value++;
   }
@@ -1029,8 +1027,8 @@ class _PollCardState extends State<_PollCard> {
 class _MapPreview extends StatelessWidget {
   final double lat, lng;
   final double width, height;
-  final int zoom;
-  const _MapPreview({required this.lat, required this.lng, this.width = 260, this.height = 150, this.zoom = 15});
+  static const int zoom = 15;
+  const _MapPreview({required this.lat, required this.lng, this.width = 260, this.height = 150});
 
   @override
   Widget build(BuildContext context) {

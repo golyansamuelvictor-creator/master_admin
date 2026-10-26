@@ -251,7 +251,6 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     return await query.order('english_name');
   }
 
-  @override
   void _openMember(dynamic member) => Navigator.push(
         context,
         MaterialPageRoute(builder: (c) => MemberDetailScreen(member: member, userRole: widget.userRole)),
@@ -273,6 +272,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     ]);
   }
 
+  @override
   Widget build(BuildContext context) {
     if (_loadingRole) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));

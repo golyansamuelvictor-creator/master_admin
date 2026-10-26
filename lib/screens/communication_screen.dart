@@ -1,7 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';

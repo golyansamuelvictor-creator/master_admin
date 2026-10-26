@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
 import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';

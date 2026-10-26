@@ -822,8 +822,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
         physics: const NeverScrollableScrollPhysics(),
         buildDefaultDragHandles: false,
         itemCount: _qs.length,
-        onReorder: (oldIdx, newIdx) {
-          if (newIdx > oldIdx) newIdx -= 1;
+        onReorderItem: (oldIdx, newIdx) {
           setState(() {
             final item = _qs.removeAt(oldIdx);
             _qs.insert(newIdx, item);
@@ -1469,24 +1468,29 @@ class _FormQuestionInputState extends State<FormQuestionInput> {
         ]);
       case 'multiple_choice':
         final otherSel = hasOther && v != null && !opts.contains(v);
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        return RadioGroup<String>(
+          groupValue: otherSel ? '__other' : v?.toString(),
+          onChanged: (x) {
+            if (x == null) return;
+            widget.onChanged(x == '__other' ? (_otherC.text.isEmpty ? 'Other' : _otherC.text) : x);
+          },
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           for (final o in opts)
             RadioListTile<String>(
               dense: true,
               contentPadding: EdgeInsets.zero,
               activeColor: widget.color,
               value: o,
-              groupValue: otherSel ? null : v?.toString(),
               title: Text(o),
-              onChanged: (x) => widget.onChanged(x),
             ),
           if (hasOther)
             Row(children: [
-              Radio<String>(value: '__other', groupValue: otherSel ? '__other' : null, activeColor: widget.color, onChanged: (_) => widget.onChanged(_otherC.text.isEmpty ? 'Other' : _otherC.text)),
+              Radio<String>(value: '__other', activeColor: widget.color),
               const Text("Other: "),
               Expanded(child: TextField(controller: _otherC, decoration: const InputDecoration(isDense: true), onChanged: (s) => widget.onChanged(s.isEmpty ? 'Other' : s))),
             ]),
-        ]);
+        ]),
+        );
       case 'checkboxes':
         final list = v is List ? v.map((e) => e.toString()).toList() : <String>[];
         final other = list.where((e) => !opts.contains(e)).toList();
