@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:master_admin/screens/forms_studio.dart';
 
-/// "New form" from the home menu: opens the forms studio and asks for a
-/// template straight away. (The old basic builder is replaced by
-/// forms_studio.dart; forms made with it still open there.)
+/// Forms / Surveys from the dashboard: each person's own forms, like
+/// Google Forms (build, publish, collect answers). Kept apart from the
+/// administration surveys on the Home › Survey tab.
 class FormsScreen extends StatelessWidget {
   final String title;
   final String userEmail;
@@ -17,5 +17,5 @@ class FormsScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => const FormsHub(startNew: true);
+  Widget build(BuildContext context) => const FormsHub(kind: 'personal');
 }

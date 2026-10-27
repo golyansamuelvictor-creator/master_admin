@@ -1,5 +1,7 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
+import '../core/group_scope.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -119,6 +121,13 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   String get _grouping => (_roleMetadata?['Grouping'] ?? '').toString();
+  List<String> _subDeptNames = const [];
+
+  /// Church-wide group this user leads (Men's, Women's, Young Adults,
+  /// New Saints, Theology, MOU), or null. Group leaders are saved with
+  /// department 내무부, so the department text alone made them look like
+  /// Internal Affairs (with the Church / Department toggle).
+  String? get _groupDept => GroupScope.detect(grouping: _grouping, role: widget.role, subDeptNames: _subDeptNames);
 
   // ---------------------------------------------------------------------
   // Speed: results are kept for 5 minutes (shared by every compilation
@@ -184,6 +193,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       (_isGroupLeader && CompLevel.of(_currentLevel) == CompLevel.group) ? 'Dept status' : _currentLevel;
 
   bool get _isGroupLeader {
+    if (_groupDept != null) return true;
     String r = widget.role.toLowerCase();
     if (r.contains('cell') || r.contains('team') || r.startsWith('dept_') || r.startsWith('sub_loc') || r.startsWith('loc_')) {
       return false;
@@ -205,6 +215,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   String get _groupLeaderCleanDept {
+    final g = _groupDept;
+    if (g != null) return g;
     final r = widget.role.toLowerCase();
     if (_grouping == '24-Dept MG' || r.startsWith('mg_group')) return '장년회';
     if (_grouping == '24-Dept WG' || r.startsWith('wg_group')) return '부녀회';
@@ -217,6 +229,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   bool get _isInternalAffairs {
     String r = widget.role.toLowerCase();
+    if (_groupDept != null) return false;
     String d = widget.dept.trim().toLowerCase();
     return r.contains('internal_affairs') || 
            r.startsWith('ia_') || 
@@ -338,10 +351,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
           .select('role_key, approval_scope, display_name_ko, "Grouping", official_dept_id')
           .eq('role_key', widget.role)
           .maybeSingle();
+      final subNames = await GroupScope.myDeptNames();
 
-      if (mounted && res != null) {
+      if (mounted) {
         setState(() {
-          _roleMetadata = res;
+          if (res != null) _roleMetadata = res;
+          _subDeptNames = subNames;
         });
       }
     } catch (e) {
@@ -359,7 +374,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
     } else if (_isSubLocationLeader) {
       _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isLocationLeader) {
-      _hierarchy = ['Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
+      // Group status = the location's members by Book of Life group (교역자, 자문회, 장년회 ...)
+      _hierarchy = ['Location status', 'Group status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isGroupLeader) {
       _hierarchy = ['Group status', 'Location status', 'Sub location status', 'Team status', 'Cell status'];
     } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
@@ -1179,7 +1195,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: AppPalette.bg(Colors.black), height: 1.0)),
         actions: [
           IconButton(
-            tooltip: "Refresh data",
+            tooltip: tr("Refresh data"),
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _isLoading ? null : _refreshData,
           ),
@@ -2984,6 +3000,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
       return _infoText("Displaying summary for ${widget.dept.isNotEmpty ? widget.dept : 'your department'} at Church");
     } else if (_isLocationLeader) {
+      if (lv == CompLevel.group) return _infoText("Displaying ${widget.loc} by Book of Life group (교역자, 자문회, 장년회, 부녀회, 청년회)");
       if (lv == CompLevel.location) return _infoText("Displaying summary for your location (${widget.loc})");
       if (lv == CompLevel.subLocation) return _infoText("Displaying all sub-locations under ${widget.loc}");
     } else if (_isSubLocationLeader) {
@@ -3171,7 +3188,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           maxLines: 5, 
           style: GoogleFonts.merriweather(fontSize: 13), 
           decoration: InputDecoration(
-            hintText: "Enter analysis, unit status observations, or remarks here...", 
+            hintText: tr("Enter analysis, unit status observations, or remarks here..."), 
             hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.black38)),
             filled: true, 
             fillColor: AppPalette.bg(const Color(0xFFFBFBFE)), 

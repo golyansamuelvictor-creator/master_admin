@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -465,7 +466,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
         maxLines: 3, 
         style: GoogleFonts.merriweather(fontSize: 14), 
         decoration: InputDecoration(
-          hintText: "Enter unit status observations...", 
+          hintText: tr("Enter unit status observations..."), 
           filled: true, 
           fillColor: AppPalette.bg(const Color(0xFFFBFBFE)), 
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppPalette.line(Colors.black38), width: 0.8))

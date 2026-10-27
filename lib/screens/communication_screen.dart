@@ -5,7 +5,8 @@ import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
@@ -18,6 +19,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/chat_service.dart';
+import '../services/app_sounds.dart';
 import '../widgets/app_menus.dart';
 import 'package:master_admin/core/app_palette.dart';
 
@@ -145,7 +147,16 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     // Any new message or read update in my chats refreshes the list (the database only sends my chats)
     _listChannel = _db
         .channel('chat-list-${ChatService.myId}')
-        .onPostgresChanges(event: PostgresChangeEvent.insert, schema: 'public', table: 'chat_messages', callback: (_) => _scheduleRefresh())
+        .onPostgresChanges(
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'chat_messages',
+            callback: (p) {
+              // message sound (Settings › Notifications & Sounds) for others' messages
+              final from = (p.newRecord['sender_id'] ?? '').toString();
+              if (from.isNotEmpty && from != ChatService.myId) AppSounds.message();
+              _scheduleRefresh();
+            })
         .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'chat_members', callback: (_) => _scheduleRefresh())
         .subscribe();
   }
@@ -539,9 +550,9 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
                 decoration: BoxDecoration(color: AppPalette.bg(_kBlue), borderRadius: BorderRadius.circular(10)),
                 child: Text('$unreadTotal', style: TextStyle(color: AppPalette.fg(Colors.white), fontSize: 11, fontWeight: FontWeight.bold)),
               ),
-            IconButton(tooltip: "Contacts", icon: Icon(Icons.contacts_outlined, color: AppPalette.fg(_kPurple)), onPressed: _openContacts),
+            IconButton(tooltip: tr("Contacts"), icon: Icon(Icons.contacts_outlined, color: AppPalette.fg(_kPurple)), onPressed: _openContacts),
             PopupMenuButton<String>(
-              tooltip: "New",
+              tooltip: tr("New"),
               icon: Icon(Icons.edit_square, color: AppPalette.fg(_kPurple)),
               onSelected: (v) {
                 if (v == 'chat') _newChat();
@@ -565,7 +576,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
           child: TextField(
             onChanged: (v) => setState(() => _search = v),
             decoration: InputDecoration(
-              hintText: "Search chats",
+              hintText: tr("Search chats"),
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: AppPalette.bg(Colors.white),
@@ -999,6 +1010,15 @@ class _ConversationViewState extends State<_ConversationView> {
   }
 
   Future<void> _sendLocation() async {
+    // Settings › Privacy & Security › Location sharing
+    await AppSounds.load();
+    if (AppSounds.prefs.value['location_sharing'] == false) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Location sharing is off. Turn it on in Settings › Privacy & Security.")));
+      }
+      return;
+    }
+    if (!mounted) return;
     final loc = await _pickLocation(context);
     if (loc == null) return;
     try {
@@ -1134,7 +1154,7 @@ class _ConversationViewState extends State<_ConversationView> {
                     ? TextField(
                         autofocus: true,
                         onChanged: (v) => setState(() => _searchText = v),
-                        decoration: const InputDecoration(hintText: "Search in this chat", border: InputBorder.none, isDense: true),
+                        decoration: InputDecoration(hintText: tr("Search in this chat"), border: InputBorder.none, isDense: true),
                       )
                     : InkWell(
                         onTap: widget.onToggleInfo,
@@ -1160,7 +1180,7 @@ class _ConversationViewState extends State<_ConversationView> {
                 }),
               ),
               IconButton(
-                tooltip: "Chat info",
+                tooltip: tr("Chat info"),
                 icon: Icon(widget.infoOpen ? Icons.info_rounded : Icons.info_outline_rounded, color: AppPalette.fg(Colors.grey.shade700)),
                 onPressed: widget.onToggleInfo,
               ),
@@ -1475,13 +1495,13 @@ class _ConversationViewState extends State<_ConversationView> {
             padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
             child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
               IconButton(
-                tooltip: "Emoji",
+                tooltip: tr("Emoji"),
                 icon: Icon(Icons.emoji_emotions_outlined, color: AppPalette.fg(Colors.grey.shade600)),
                 onPressed: _pickEmoji,
               ),
               if (_editing == null)
                 PopupMenuButton<String>(
-                  tooltip: "Attach",
+                  tooltip: tr("Attach"),
                   icon: Icon(Icons.attach_file_rounded, color: AppPalette.fg(Colors.grey.shade600)),
                   onSelected: (v) {
                     if (v == 'photo' || v == 'file') _attach(images: v == 'photo');
@@ -1518,7 +1538,7 @@ class _ConversationViewState extends State<_ConversationView> {
                       setState(() {});
                     },
                     decoration: InputDecoration(
-                      hintText: "Message",
+                      hintText: tr("Message"),
                       filled: true,
                       fillColor: AppPalette.bg(_kBg),
                       isDense: true,
@@ -1531,14 +1551,14 @@ class _ConversationViewState extends State<_ConversationView> {
               const SizedBox(width: 6),
               if (empty && !_sending) ...[
                 IconButton(
-                  tooltip: "Video message",
+                  tooltip: tr("Video message"),
                   icon: Icon(Icons.videocam_outlined, color: AppPalette.fg(Colors.grey.shade600)),
                   onPressed: _sendVideoNote,
                 ),
                 CircleAvatar(
                   backgroundColor: AppPalette.bg(_kPurple),
                   child: IconButton(
-                    tooltip: "Record a voice message",
+                    tooltip: tr("Record a voice message"),
                     icon: const Icon(Icons.mic_rounded, color: Colors.white, size: 20),
                     onPressed: () => setState(() => _recordingVoice = true),
                   ),
@@ -1635,9 +1655,9 @@ class _ChatInfoPanelState extends State<_ChatInfoPanel> {
         content: SizedBox(
           width: 400,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: nameC, decoration: const InputDecoration(labelText: "Group name", border: OutlineInputBorder())),
+            TextField(controller: nameC, decoration: InputDecoration(labelText: tr("Group name"), border: OutlineInputBorder())),
             const SizedBox(height: 10),
-            TextField(controller: descC, maxLines: 3, decoration: const InputDecoration(labelText: "Description", border: OutlineInputBorder())),
+            TextField(controller: descC, maxLines: 3, decoration: InputDecoration(labelText: tr("Description"), border: OutlineInputBorder())),
           ]),
         ),
         actions: [
@@ -1915,7 +1935,7 @@ class _PeoplePickerState extends State<_PeoplePicker> {
                 _debounce = Timer(const Duration(milliseconds: 300), () => _search(v));
               },
               decoration: InputDecoration(
-                hintText: "Search by name, location or department",
+                hintText: tr("Search by name, location or department"),
                 prefixIcon: const Icon(Icons.search),
                 isDense: true,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -2009,10 +2029,10 @@ class _NewGroupDialogState extends State<_NewGroupDialog> {
               controller: _name,
               autofocus: true,
               onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(labelText: "Group name", border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: tr("Group name"), border: OutlineInputBorder()),
             ),
             const SizedBox(height: 10),
-            TextField(controller: _desc, maxLines: 2, decoration: const InputDecoration(labelText: "Description (optional)", border: OutlineInputBorder())),
+            TextField(controller: _desc, maxLines: 2, decoration: InputDecoration(labelText: tr("Description (optional)"), border: OutlineInputBorder())),
             const SizedBox(height: 12),
             Row(children: [
               Expanded(child: Text("${_people.length} people added", style: const TextStyle(fontWeight: FontWeight.bold))),

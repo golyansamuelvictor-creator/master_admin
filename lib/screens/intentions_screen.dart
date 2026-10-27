@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
@@ -42,14 +43,16 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
 
   // Which card a category belongs to, and who sees it:
   //   Headquarters / Tribe / Church -> everyone (Internal Affairs Dept Sec)
-  //   Regions                       -> the author's location (Location Sec)
+  //   Region (shown as "Location")  -> the author's location (location leaders)
   //   Department                    -> the author's location + sub-location + department (Dept Sec)
+  static String _catLabel(String c) => (c == 'Region' || c == 'Regions') ? 'Location' : c;
+
   static String _levelOf(String category) =>
-      category == 'Regions' ? 'location' : (category == 'Department' ? 'department' : 'church');
+      (category == 'Region' || category == 'Regions') ? 'location' : (category == 'Department' ? 'department' : 'church');
 
   List<String> get _allowedCategories => [
         if (_perm.can(NoticePermissions.churchIntentions)) ...['Headquarters', 'Tribe', 'Church'],
-        if (_perm.can(NoticePermissions.locationIntentions)) 'Regions',
+        if (_perm.can(NoticePermissions.locationIntentions)) 'Region',
         if (_perm.can(NoticePermissions.departmentIntentions)) 'Department',
       ];
 
@@ -118,22 +121,22 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                   DropdownButtonFormField<String>(
                     initialValue: category,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: "Category", border: OutlineInputBorder()),
-                    items: cats.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    decoration: InputDecoration(labelText: tr("Category"), border: OutlineInputBorder()),
+                    items: cats.map((c) => DropdownMenuItem(value: c, child: Text(_catLabel(c)))).toList(),
                     onChanged: (v) => setD(() => category = v ?? category),
                   ),
                 const SizedBox(height: 6),
-                Text(existing == null ? _perm.audienceFor(level) : "Category: $category",
+                Text(existing == null ? _perm.audienceFor(level) : "Category: ${_catLabel(category)}",
                     style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.blueGrey[700]), fontStyle: FontStyle.italic)),
                 const SizedBox(height: 12),
                 TextField(
                   controller: textC,
                   minLines: 3,
                   maxLines: 6,
-                  decoration: const InputDecoration(labelText: "Intention / directive", border: OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: tr("Intention / directive"), border: OutlineInputBorder()),
                 ),
                 const SizedBox(height: 10),
-                TextField(controller: subjectC, decoration: const InputDecoration(labelText: "Subject (optional)", border: OutlineInputBorder())),
+                TextField(controller: subjectC, decoration: InputDecoration(labelText: tr("Subject (optional)"), border: OutlineInputBorder())),
                 const SizedBox(height: 10),
                 Row(children: [
                   Expanded(
@@ -160,7 +163,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                   child: TextField(
                     controller: orderC,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: "Order", border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: tr("Order"), border: OutlineInputBorder()),
                   ),
                 ),
                 if (error != null) ...[
@@ -234,7 +237,8 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
           _hqPoints = res.where((i) => i['category'] == 'Headquarters').toList();
           _tribePoints = res.where((i) => i['category'] == 'Tribe').toList();
           _churchPoints = res.where((i) => i['category'] == 'Church').toList();
-          _regionPoints = res.where((i) => i['category'] == 'Regions').toList();
+          // Saved as 'Region' (older app versions wrote 'Regions')
+          _regionPoints = res.where((i) => i['category'] == 'Region' || i['category'] == 'Regions').toList();
           _deptPoints = res.where((i) => i['category'] == 'Department').toList();
           _isLoading = false;
         });
@@ -262,7 +266,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
       _buildIntentCard("Headquarters", Icons.account_balance_rounded, Colors.orange[900]!, _hqPoints),
       _buildIntentCard("Tribe", Icons.hub_rounded, const Color(0xFF0D47A1), _tribePoints),
       _buildIntentCard("Church", Icons.church_rounded, Colors.green[800]!, _churchPoints),
-      _buildIntentCard("Regions", Icons.map_rounded, Colors.teal[800]!, _regionPoints),
+      _buildIntentCard("Location", Icons.map_rounded, Colors.teal[800]!, _regionPoints),
       _buildIntentCard("Department", Icons.business_center_rounded, Colors.deepPurple[600]!, _deptPoints),
     ];
 
@@ -519,7 +523,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
   }
 
   // ==========================================
-  // 2. REFINED INTENT CARD (NO BULK PURPLE OUTLINES)
+  // 2. ELEVATED INTENT CARD
   // ==========================================
   Widget _buildIntentCard(
     String title,
@@ -527,84 +531,56 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
     Color accentColor,
     List<dynamic> points,
   ) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppPalette.bg(Colors.white),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppPalette.line(pPurple.withValues(alpha: 0.08)),
-          width: 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    final dark = Color.lerp(accentColor, Colors.black, 0.25)!;
+    return _HoverLift(
+      shadow: accentColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // SPANNING SUB-TITLE HEADER
+          // GRADIENT HEADER
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.fromLTRB(16, 16, 14, 16),
             decoration: BoxDecoration(
-              color: AppPalette.bg(accentColor.withValues(alpha: 0.06)),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-              border: Border(
-                bottom: BorderSide(
-                  color: AppPalette.line(accentColor.withValues(alpha: 0.12)),
-                  width: 1.0,
-                ),
-              ),
+              gradient: LinearGradient(colors: [dark, accentColor], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.45), width: 1.4),
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: AppPalette.bg(accentColor.withValues(alpha: 0.12)),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(icon, color: AppPalette.fg(accentColor), size: 18),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white, letterSpacing: 0.2),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.merriweather(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 17,
-                            color: AppPalette.fg(pPurple),
-                          ),
-                        ),
+                      const SizedBox(height: 2),
+                      Text(
+                        points.isEmpty ? "Nothing yet" : "${points.length} intention${points.length == 1 ? '' : 's'}",
+                        style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.85)),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                // Count Tag
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppPalette.bg(Colors.white),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppPalette.line(accentColor.withValues(alpha: 0.25))),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
                   child: Text(
-                    "${points.length} Directives",
-                    style: GoogleFonts.merriweather(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: AppPalette.fg(accentColor),
-                    ),
+                    "${points.length}",
+                    style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: accentColor),
                   ),
                 ),
               ],
@@ -613,82 +589,79 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
 
           // CARD BODY
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
             child: points.isEmpty
                 ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Center(
-                      child: Text(
+                    padding: const EdgeInsets.symmetric(vertical: 22),
+                    child: Column(children: [
+                      Icon(Icons.auto_awesome_outlined, color: AppPalette.fg(accentColor.withValues(alpha: 0.5)), size: 30),
+                      const SizedBox(height: 8),
+                      Text(
                         "No active intentions found.",
-                        style: GoogleFonts.merriweather(
-                          color: AppPalette.fg(Colors.blueGrey[400]),
-                          fontSize: 13,
-                          fontStyle: FontStyle.italic,
-                        ),
+                        style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.blueGrey[400]), fontSize: 13, fontStyle: FontStyle.italic),
                       ),
-                    ),
+                    ]),
                   )
                 : Column(
                     children: points.asMap().entries.map((entry) {
-                      int idx = entry.key + 1;
-                      var p = entry.value;
-                      bool isLast = entry.key == points.length - 1;
-
+                      final int idx = entry.key + 1;
+                      final p = entry.value;
+                      final subject = (p['subject'] ?? '').toString().trim();
+                      final deadline = DateTime.tryParse((p['deadline'] ?? '').toString());
                       return Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        margin: const EdgeInsets.only(bottom: 10),
                         decoration: BoxDecoration(
-                          border: isLast
-                              ? null
-                              : Border(
-                                  bottom: BorderSide(
-                                    color: AppPalette.line(Colors.grey.withValues(alpha: 0.10)),
-                                    width: 1.0,
-                                  ),
-                                ),
+                          color: AppPalette.bg(Color.lerp(accentColor, Colors.white, 0.95)!),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border(left: BorderSide(color: AppPalette.line(accentColor), width: 4)),
+                          boxShadow: [BoxShadow(color: accentColor.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 3))],
                         ),
+                        padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // NUMBER BADGE
                             Container(
-                              width: 24,
-                              height: 24,
+                              width: 28,
+                              height: 28,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color: AppPalette.bg(accentColor.withValues(alpha: 0.1)),
+                                gradient: LinearGradient(colors: [accentColor, dark]),
                                 shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: AppPalette.line(accentColor.withValues(alpha: 0.25)),
-                                  width: 1,
-                                ),
+                                boxShadow: [BoxShadow(color: accentColor.withValues(alpha: 0.35), blurRadius: 6, offset: const Offset(0, 2))],
                               ),
-                              child: Text(
-                                "$idx",
-                                style: GoogleFonts.merriweather(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppPalette.fg(accentColor),
-                                ),
-                              ),
+                              child: Text("$idx", style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: Colors.white)),
                             ),
                             const SizedBox(width: 12),
-
-                            // DIRECTIVE TEXT
                             Expanded(
-                              child: Text(
-                                p['point_text'] ?? "",
-                                style: GoogleFonts.merriweather(
-                                  fontSize: 14,
-                                  color: AppPalette.fg(const Color(0xFF212121)),
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.5,
-                                  letterSpacing: 0.1,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    p['point_text'] ?? "",
+                                    style: GoogleFonts.merriweather(
+                                      fontSize: 14.5,
+                                      color: AppPalette.fg(const Color(0xFF1F1B2E)),
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                  if (subject.isNotEmpty || deadline != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: Wrap(spacing: 6, runSpacing: 6, children: [
+                                        if (subject.isNotEmpty) _intentChip(Icons.label_outline_rounded, subject, accentColor),
+                                        if (deadline != null)
+                                          _intentChip(Icons.event_outlined, "By ${DateFormat('d MMM yyyy').format(deadline)}",
+                                              deadline.isBefore(DateTime.now()) ? Colors.red.shade700 : accentColor),
+                                      ]),
+                                    ),
+                                ],
                               ),
                             ),
                             if (_canManage(p))
                               PopupMenuButton<String>(
-                                tooltip: "Edit or remove",
+                                tooltip: tr("Edit or remove"),
                                 icon: Icon(Icons.more_vert_rounded, size: 18, color: AppPalette.fg(Colors.blueGrey[400])),
                                 onSelected: (v) => v == 'edit' ? _openIntentionForm(existing: p) : _deleteIntention(p),
                                 itemBuilder: (_) => const [
@@ -703,6 +676,54 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _intentChip(IconData icon, String text, Color c) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppPalette.bg(c.withValues(alpha: 0.10)),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppPalette.line(c.withValues(alpha: 0.25))),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 13, color: AppPalette.fg(c)),
+          const SizedBox(width: 4),
+          Flexible(child: Text(text, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppPalette.fg(c)))),
+        ]),
+      );
+}
+
+/// White card that rises a little (bigger, tinted shadow) under the mouse.
+class _HoverLift extends StatefulWidget {
+  final Widget child;
+  final Color shadow;
+  const _HoverLift({required this.child, required this.shadow});
+  @override
+  State<_HoverLift> createState() => _HoverLiftState();
+}
+
+class _HoverLiftState extends State<_HoverLift> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hover ? -4 : 0, 0),
+        decoration: BoxDecoration(
+          color: AppPalette.bg(Colors.white),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(color: widget.shadow.withValues(alpha: _hover ? 0.28 : 0.16), blurRadius: _hover ? 28 : 18, offset: Offset(0, _hover ? 14 : 8)),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1)),
+          ],
+        ),
+        child: widget.child,
       ),
     );
   }

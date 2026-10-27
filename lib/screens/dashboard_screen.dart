@@ -1,6 +1,7 @@
 // ignore_for_file: depend_on_referenced_packages, use_build_context_synchronously, unused_element, curly_braces_in_flow_control_structures
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -919,7 +920,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Text("Switch account", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17)),
             IconButton(
               icon: Icon(Icons.person_add_alt_1_rounded, size: 20, color: AppPalette.fg(Color(0xFF4A148C))),
-              tooltip: "Add Account",
+              tooltip: tr("Add Account"),
               onPressed: () {
                 Navigator.pop(dialogCtx);
                 _showAddAccountDialog(context);
@@ -1063,7 +1064,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     keyboardType: TextInputType.emailAddress,
                     style: GoogleFonts.merriweather(fontSize: 13),
                     decoration: InputDecoration(
-                      hintText: "example@domain.com",
+                      hintText: tr("example@domain.com"),
                       hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey)),
                       prefixIcon: Icon(Icons.mail_outline_rounded, size: 18, color: AppPalette.fg(Color(0xFF4A148C))),
                       filled: true,
@@ -1083,7 +1084,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     obscureText: obscurePassword,
                     style: GoogleFonts.merriweather(fontSize: 13),
                     decoration: InputDecoration(
-                      hintText: "Enter account password",
+                      hintText: tr("Enter account password"),
                       hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey)),
                       prefixIcon: Icon(Icons.lock_outline_rounded, size: 18, color: AppPalette.fg(Color(0xFF4A148C))),
                       suffixIcon: IconButton(
@@ -1109,7 +1110,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       keyboardType: TextInputType.phone,
                       style: GoogleFonts.merriweather(fontSize: 13),
                       decoration: InputDecoration(
-                        hintText: "+256 7XX XXX XXX",
+                        hintText: tr("+256 7XX XXX XXX"),
                         hintStyle: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey)),
                         prefixIcon: Icon(Icons.phone_android_rounded, size: 18, color: AppPalette.fg(Color(0xFF4A148C))),
                         filled: true,

@@ -1,5 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, avoid_print
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
+import '../core/group_scope.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -125,6 +127,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
             .eq('role_key', widget.userRole!)
             .maybeSingle();
         _roleMetadata = res;
+        _subDeptNames = await GroupScope.myDeptNames();
       } catch (e) {
         debugPrint("Error fetching role metadata: $e");
       }
@@ -132,7 +135,14 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     await _loadInitialData();
   }
 
+  List<String> _subDeptNames = const [];
+
+  /// Church-wide group this user leads (see core/group_scope.dart).
+  String? get _groupDept => GroupScope.detect(
+      grouping: (_roleMetadata?['Grouping'] ?? '').toString(), role: widget.userRole ?? '', subDeptNames: _subDeptNames);
+
   bool get _isInternalAffairs {
+    if (_groupDept != null) return false;
     final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
     final role = (widget.userRole ?? '').toLowerCase();
     final d = widget.dept.trim().toLowerCase();
@@ -397,7 +407,10 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
               .neq('location', 'Church');
         }
 
-        if (grouping == '24-Dept MG' || role.startsWith('mg_group')) {
+        final group = _groupDept;
+        if (group != null) {
+          query = GroupScope.filter(query, group);
+        } else if (grouping == '24-Dept MG' || role.startsWith('mg_group')) {
           query = query.eq('department', '장년회').neq('location', 'Mou').neq('location', 'New Saints');
           excludeChurchWorkers();
         } else if (grouping == '24-Dept WG' || role.startsWith('wg_group')) {
@@ -1009,14 +1022,14 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       IconButton(
                         icon: const Icon(Icons.undo, size: 20),
                         onPressed: _undo,
-                        tooltip: "Undo (Ctrl+Z)",
+                        tooltip: tr("Undo (Ctrl+Z)"),
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         constraints: const BoxConstraints(),
                       ),
                       IconButton(
                         icon: const Icon(Icons.redo, size: 20),
                         onPressed: _redo,
-                        tooltip: "Redo",
+                        tooltip: tr("Redo"),
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         constraints: const BoxConstraints(),
                       ),
@@ -1100,7 +1113,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                   IconButton(
                     icon: const Icon(Icons.print_outlined, size: 20),
                     onPressed: () {},
-                    tooltip: "Print",
+                    tooltip: tr("Print"),
                     padding: const EdgeInsets.symmetric(horizontal: 6),
                     constraints: const BoxConstraints(),
                   ),
@@ -1108,7 +1121,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                   IconButton(
                     icon: Icon(Icons.delete_sweep_outlined, size: 22, color: AppPalette.fg(Colors.red)),
                     onPressed: _clearGrid,
-                    tooltip: "Clear table",
+                    tooltip: tr("Clear table"),
                     padding: const EdgeInsets.symmetric(horizontal: 6),
                     constraints: const BoxConstraints(),
                   ),
@@ -1179,7 +1192,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                                   IconButton(
                                     icon: const Icon(Icons.undo, size: 19),
                                     onPressed: _undo,
-                                    tooltip: "Undo",
+                                    tooltip: tr("Undo"),
                                     padding: const EdgeInsets.all(4),
                                     constraints: const BoxConstraints(),
                                   ),
@@ -1187,7 +1200,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                                   IconButton(
                                     icon: const Icon(Icons.redo, size: 19),
                                     onPressed: _redo,
-                                    tooltip: "Redo",
+                                    tooltip: tr("Redo"),
                                     padding: const EdgeInsets.all(4),
                                     constraints: const BoxConstraints(),
                                   ),

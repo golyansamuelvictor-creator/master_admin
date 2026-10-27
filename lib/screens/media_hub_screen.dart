@@ -1,7 +1,8 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/media_playback.dart';
@@ -157,14 +158,14 @@ class _MediaHubScreenState extends State<MediaHubScreen> {
         actions: [
           if (_canManage)
             IconButton(
-              tooltip: "Manage categories",
+              tooltip: tr("Manage categories"),
               icon: Icon(Icons.category_rounded, color: AppPalette.fg(_kBlue)),
               onPressed: () async {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => const MediaCategoryManager()));
                 _load();
               },
             ),
-          IconButton(tooltip: "Refresh", icon: const Icon(Icons.refresh_rounded), onPressed: _load),
+          IconButton(tooltip: tr("Refresh"), icon: const Icon(Icons.refresh_rounded), onPressed: _load),
         ],
       ),
       floatingActionButton: _canManage
@@ -247,7 +248,7 @@ class _MediaHubScreenState extends State<MediaHubScreen> {
           onChanged: _runSearch,
           style: GoogleFonts.merriweather(fontSize: 14),
           decoration: InputDecoration(
-            hintText: "Search songs, videos, artists...",
+            hintText: tr("Search songs, videos, artists..."),
             hintStyle: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontSize: 13),
             prefixIcon: Icon(Icons.search, color: AppPalette.fg(_kBlue)),
             border: InputBorder.none,
@@ -633,7 +634,7 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
         ]),
         actions: [
           PopupMenuButton<String>(
-            tooltip: "Sort",
+            tooltip: tr("Sort"),
             icon: const Icon(Icons.sort_rounded),
             initialValue: _sort,
             onSelected: (v) => setState(() => _sort = v),
@@ -645,7 +646,7 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
           ),
           if (widget.canManage)
             IconButton(
-              tooltip: "Upload to this category",
+              tooltip: tr("Upload to this category"),
               icon: const Icon(Icons.upload_rounded),
               onPressed: () async {
                 final saved = await Navigator.push<bool>(
@@ -674,7 +675,7 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
             TextField(
               onChanged: (v) => setState(() => _search = v),
               decoration: InputDecoration(
-                hintText: "Search in ${cat?.name ?? 'all media'}",
+                hintText: tr("Search in ${cat?.name ?? 'all media'}"),
                 prefixIcon: Icon(Icons.search, color: AppPalette.fg(bright)),
                 filled: true,
                 fillColor: AppPalette.bg(Colors.white),
@@ -734,7 +735,7 @@ class _MediaCategoryScreenState extends State<MediaCategoryScreen> {
                       onTap: () => playMediaList(context, items, i),
                       trailing: widget.canManage
                           ? PopupMenuButton<String>(
-                              tooltip: "Edit or delete",
+                              tooltip: tr("Edit or delete"),
                               onSelected: (v) => v == 'edit' ? _edit(items[i]) : _delete(items[i]),
                               itemBuilder: (_) => const [
                                 PopupMenuItem(value: 'edit', child: Text("Edit details")),

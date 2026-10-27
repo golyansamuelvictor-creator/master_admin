@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, use_build_context_synchronously
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -337,10 +338,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         // Preferred: roles linked to a department by id (app_roles.official_dept_id).
         data = await _supabase
             .from('app_roles')
-            .select('role_key, display_name, category, Grouping, official_dept_id');
+            .select('role_key, display_name, category, Grouping, official_dept_id, approval_scope');
       } catch (_) {
         // That column doesn't exist (yet): use the original select + name matching.
-        data = await _supabase.from('app_roles').select('role_key, display_name, category, Grouping');
+        data = await _supabase.from('app_roles').select('role_key, display_name, category, Grouping, approval_scope');
       }
       if (!mounted) return;
       setState(() {
@@ -665,22 +666,49 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   // ==========================================
   // VALIDATION
   // ==========================================
+  /// Every account must be complete: no account without its role and
+  /// the units that role belongs to.
   String? _validateSelections() {
     if (dynamicRoles.isNotEmpty && selectedChurchRole == null) {
       return "Please select your assigned role.";
     }
+    if (selectedAccountType == "Worker" && dynamicRoles.isEmpty) {
+      return "No role matches the unit you selected. Check your unit, or ask the administration to add the role.";
+    }
 
     if (_isChurchWorker) {
       if (selectedOfficialDeptId == null) return "Please select your 24 Department.";
+
       if (_isKoreanWorkerRole) {
         final n = _selectedPortfolioDeptIds.length;
         if (n < _minPortfolio || n > _maxPortfolio) {
           return "Please select $_minPortfolio–$_maxPortfolio overseeing departments (selected: $n).";
         }
       }
-    } else if (!_isPrefilledMember) {
-      if (selectedLocation == null || selectedSubLocation == null || selectedDept == null) {
-        return "Please select your location, sub-location and department.";
+    } else {
+      // Saints and cell-level roles down to the cell; other location roles
+      // down to the level of their role (location, sub-location, department, team).
+      String eff(String? sel, String key) {
+        final v = (sel ?? _str(widget.memberData?[key])).trim();
+        return v.toLowerCase() == 'n/a' ? '' : v;
+      }
+      final role = _roleDataMap.firstWhere((r) => r['display_name'] == selectedChurchRole, orElse: () => const {});
+      final scope = (role['approval_scope'] ?? '').toString();
+      final depth = selectedAccountType == "Saint"
+          ? 5
+          : switch (scope) { 'location' => 1, 'sub_location' => 2, 'department' => 3, 'team' => 4, _ => 5 };
+      final needed = <(String, String?, String)>[
+        ('location', selectedLocation, "location"),
+        ('sub_location', selectedSubLocation, "sub-location"),
+        ('department', selectedDept, "department"),
+        ('team', selectedTeam, "team"),
+        ('cell_group', selectedCell, "cell group"),
+      ].take(depth);
+      final missing = [for (final n in needed) if (eff(n.$2, n.$1).isEmpty) n.$3];
+      if (missing.isNotEmpty) {
+        return _isPrefilledMember
+            ? "Your member record has no ${missing.join(', ')}. Ask the administration to complete it, then register again."
+            : "Please select your ${missing.join(', ')}.";
       }
     }
     return null;
@@ -834,7 +862,11 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
           : "Please enter a valid phone number.");
       return;
     }
-    if (username.isNotEmpty && !_usernameRe.hasMatch(username)) {
+    if (username.isEmpty) {
+      _showSnack("Please choose a user name.");
+      return;
+    }
+    if (!_usernameRe.hasMatch(username)) {
       _showSnack("User name must be 3–30 characters: letters, numbers, dot or underscore.");
       return;
     }

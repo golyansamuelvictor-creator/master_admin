@@ -326,7 +326,7 @@ class _VoiceRecorderBarState extends State<_VoiceRecorderBar> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
       child: Row(children: [
-        IconButton(tooltip: "Cancel", icon: Icon(Icons.delete_outline_rounded, color: AppPalette.fg(Colors.red.shade600)), onPressed: _cancel),
+        IconButton(tooltip: tr("Cancel"), icon: Icon(Icons.delete_outline_rounded, color: AppPalette.fg(Colors.red.shade600)), onPressed: _cancel),
         const SizedBox(width: 4),
         _Blink(child: Icon(Icons.fiber_manual_record_rounded, color: Colors.red.shade600, size: 16)),
         const SizedBox(width: 8),
@@ -337,7 +337,7 @@ class _VoiceRecorderBarState extends State<_VoiceRecorderBar> {
         ),
         CircleAvatar(
           backgroundColor: AppPalette.bg(_kPurple),
-          child: IconButton(tooltip: "Send", icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20), onPressed: _started ? _finish : null),
+          child: IconButton(tooltip: tr("Send"), icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20), onPressed: _started ? _finish : null),
         ),
       ]),
     );
@@ -607,7 +607,7 @@ class _VideoNoteRecorderState extends State<_VideoNoteRecorder> {
               child: Icon(_recording ? Icons.stop_rounded : Icons.fiber_manual_record_rounded, color: Colors.white),
             ),
             IconButton(
-              tooltip: "Switch camera",
+              tooltip: tr("Switch camera"),
               onPressed: _recording || _cams.length < 2
                   ? null
                   : () => _init(prefer: c?.description.lensDirection == CameraLensDirection.front ? CameraLensDirection.back : CameraLensDirection.front),
@@ -780,7 +780,7 @@ class _PollCreatorState extends State<_PollCreator> {
               autofocus: true,
               maxLines: 2,
               onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(labelText: "Question", border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: tr("Question"), border: OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
             Text("Options", style: TextStyle(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[700]))),
@@ -793,7 +793,7 @@ class _PollCreatorState extends State<_PollCreator> {
                     child: TextField(
                       controller: _opts[i],
                       onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(isDense: true, hintText: "Option ${i + 1}", border: const OutlineInputBorder()),
+                      decoration: InputDecoration(isDense: true, hintText: tr("Option ${i + 1}"), border: const OutlineInputBorder()),
                     ),
                   ),
                   if (_opts.length > 2)
@@ -1128,7 +1128,7 @@ Future<(double, double, String)?> _pickLocation(BuildContext context) async {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             _MapPreview(lat: pos.latitude, lng: pos.longitude, width: 280, height: 170),
             const SizedBox(height: 10),
-            TextField(controller: label, decoration: const InputDecoration(labelText: "Place name (optional)", border: OutlineInputBorder(), isDense: true)),
+            TextField(controller: label, decoration: InputDecoration(labelText: tr("Place name (optional)"), border: OutlineInputBorder(), isDense: true)),
             const SizedBox(height: 4),
             Text("Accuracy about ${pos.accuracy.round()} m", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
           ]),
@@ -1209,7 +1209,7 @@ class _ContactsScreenState extends State<_ContactsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text("Add ${p.name}"),
-        content: TextField(controller: nick, decoration: const InputDecoration(labelText: "Name in my contacts (optional)", border: OutlineInputBorder())),
+        content: TextField(controller: nick, decoration: InputDecoration(labelText: tr("Name in my contacts (optional)"), border: OutlineInputBorder())),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
           ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Add")),
@@ -1267,8 +1267,8 @@ class _ContactsScreenState extends State<_ContactsScreen> {
           style: TextStyle(color: AppPalette.fg(online ? const Color(0xFF16A34A) : Colors.grey.shade600), fontSize: 12),
         ),
         trailing: p.isContact
-            ? IconButton(tooltip: "Message", icon: Icon(Icons.chat_bubble_outline, color: AppPalette.fg(_kPurple)), onPressed: () => Navigator.pop(context, p))
-            : IconButton(tooltip: "Add to contacts", icon: Icon(Icons.person_add_alt_1_outlined, color: AppPalette.fg(_kPurple)), onPressed: () => _add(p)),
+            ? IconButton(tooltip: tr("Message"), icon: Icon(Icons.chat_bubble_outline, color: AppPalette.fg(_kPurple)), onPressed: () => Navigator.pop(context, p))
+            : IconButton(tooltip: tr("Add to contacts"), icon: Icon(Icons.person_add_alt_1_outlined, color: AppPalette.fg(_kPurple)), onPressed: () => _add(p)),
         onTap: () => Navigator.pop(context, p),
       ),
     );
@@ -1298,7 +1298,7 @@ class _ContactsScreenState extends State<_ContactsScreen> {
                     child: TextField(
                       onChanged: _searchDirectory,
                       decoration: InputDecoration(
-                        hintText: "Search contacts, names or @username",
+                        hintText: tr("Search contacts, names or @username"),
                         prefixIcon: const Icon(Icons.search),
                         isDense: true,
                         filled: true,
@@ -1529,7 +1529,7 @@ class _ChatSettingsScreenState extends State<_ChatSettingsScreen> {
                         child: CircleAvatar(
                           radius: 17,
                           backgroundColor: AppPalette.bg(_kPurple),
-                          child: IconButton(padding: EdgeInsets.zero, tooltip: "Change photo", icon: const Icon(Icons.photo_camera_rounded, color: Colors.white, size: 17), onPressed: _changePhoto),
+                          child: IconButton(padding: EdgeInsets.zero, tooltip: tr("Change photo"), icon: const Icon(Icons.photo_camera_rounded, color: Colors.white, size: 17), onPressed: _changePhoto),
                         ),
                       ),
                     ]),
@@ -1543,7 +1543,7 @@ class _ChatSettingsScreenState extends State<_ChatSettingsScreen> {
                     leading: const Icon(Icons.alternate_email_rounded),
                     title: TextField(
                       controller: _username,
-                      decoration: const InputDecoration(labelText: "Username", prefixText: "@", hintText: "e.g. john_k", isDense: true),
+                      decoration: InputDecoration(labelText: tr("Username"), prefixText: "@", hintText: tr("e.g. john_k"), isDense: true),
                       onSubmitted: (_) => _saveUsername(),
                     ),
                     trailing: TextButton(onPressed: _saveUsername, child: const Text("Save")),
@@ -1551,7 +1551,7 @@ class _ChatSettingsScreenState extends State<_ChatSettingsScreen> {
                   ),
                   ListTile(
                     leading: const Icon(Icons.info_outline_rounded),
-                    title: TextField(controller: _bio, maxLines: 2, decoration: const InputDecoration(labelText: "Bio", isDense: true)),
+                    title: TextField(controller: _bio, maxLines: 2, decoration: InputDecoration(labelText: tr("Bio"), isDense: true)),
                     trailing: TextButton(
                       onPressed: () async {
                         try {

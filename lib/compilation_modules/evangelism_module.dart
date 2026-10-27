@@ -1,6 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, unused_element
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../core/compilation_rules.dart';
@@ -869,12 +870,12 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                 if (onPdf != null)
                   IconButton(
                     icon: Icon(Icons.download_rounded, size: 20, color: AppPalette.fg(pPurple)),
-                    tooltip: 'Excel / PDF / Print',
+                    tooltip: tr('Excel / PDF / Print'),
                     onPressed: onPdf,
                   ),
                 IconButton(
                   icon: Icon(Icons.open_in_full_rounded, size: 19, color: AppPalette.fg(Colors.blueGrey)),
-                  tooltip: 'Fullscreen View',
+                  tooltip: tr('Fullscreen View'),
                   onPressed: () => _showFull(context, title, content),
                 ),
               ],

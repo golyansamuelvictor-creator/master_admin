@@ -41,11 +41,14 @@ dependencies:
   pdf: ^3.12.0
   printing: ^5.14.3
   crypto: ^3.0.7
-  video_player: ^2.9.2
-  url_launcher: ^6.3.1
-  camera: ^0.12.1
-  geolocator: ^14.0.2
-  record: ^7.1.2
+  video_player: ^2.9.2      # Media Hub player (audio + video, web and mobile)
+  url_launcher: ^6.3.1      # open chat attachments
+  record: ^6.0.0            # My Home voice notes
+  camera: ^0.11.1           # My Home round video messages
+  geolocator: ^14.0.0       # My Home location sharing
+  device_info_plus: '>=11.0.0 <13.0.0'  # Settings › Devices (device name)
+  qr_flutter: ^4.1.0        # Settings › Two-step verification QR code
+  http: ^1.2.2              # Settings › Devices (approximate place)
 
 dev_dependencies:
   flutter_test:
@@ -54,6 +57,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/sounds/
 
 dependency_overrides:
   intl: ^0.20.2

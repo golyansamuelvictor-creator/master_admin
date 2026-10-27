@@ -1,7 +1,8 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:intl/intl.dart';
@@ -897,8 +898,8 @@ class _DocumentScreenState extends State<DocumentScreen> {
                   subtitleColor: status.$3,
                   onClose: _close,
                   actions: [
-                    IconButton(tooltip: "Save now (Ctrl+S)", icon: Icon(status.$2, color: AppPalette.fg(status.$3)), onPressed: _save),
-                    if (!mobile) IconButton(tooltip: "Print preview (Ctrl+P)", icon: Icon(Icons.print_outlined, color: AppPalette.fg(Colors.blueGrey)), onPressed: _print),
+                    IconButton(tooltip: tr("Save now (Ctrl+S)"), icon: Icon(status.$2, color: AppPalette.fg(status.$3)), onPressed: _save),
+                    if (!mobile) IconButton(tooltip: tr("Print preview (Ctrl+P)"), icon: Icon(Icons.print_outlined, color: AppPalette.fg(Colors.blueGrey)), onPressed: _print),
                   ],
                 ),
                 if (_view != 'read')

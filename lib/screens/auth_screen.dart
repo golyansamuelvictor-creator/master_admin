@@ -2,7 +2,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
+import '../widgets/language_screens.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -844,6 +846,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
     return Scaffold(
       backgroundColor: AppPalette.bg(const Color(0xFFF7F8FC)),
+      // System language, before signing in
+      floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
+      floatingActionButton: const LanguageQuickButton(),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(vertical: 24),
@@ -973,7 +978,7 @@ class _AuthScreenState extends State<AuthScreen> {
             style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.blueGrey[700])),
           ),
           const SizedBox(height: 16),
-          _scjIdField(hint: 'Enter SCJ ID', tooltip: 'Lookup Member'),
+          _scjIdField(hint: 'Enter SCJ ID', tooltip: tr('Lookup Member')),
           _lookupStatus(),
           const SizedBox(height: 12),
           _nameField(),
@@ -1028,7 +1033,7 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _scjIdField(hint: 'Enter SCJ ID to auto-fill details', tooltip: 'Look up church records'),
+          _scjIdField(hint: 'Enter SCJ ID to auto-fill details', tooltip: tr('Look up church records')),
           _lookupStatus(),
           const SizedBox(height: 12),
           _nameField(),
@@ -1172,7 +1177,7 @@ class _AuthScreenState extends State<AuthScreen> {
               keyboardType: TextInputType.phone,
               style: GoogleFonts.merriweather(fontSize: 13),
               decoration: InputDecoration(
-                labelText: 'WhatsApp Phone Number',
+                labelText: tr('WhatsApp Phone Number'),
                 labelStyle: GoogleFonts.merriweather(fontSize: 12),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

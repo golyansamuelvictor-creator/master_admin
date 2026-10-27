@@ -1,18 +1,22 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'package:master_admin/screens/forms_studio.dart';
 
-/// Surveys tab: forms to answer, my forms, and the admin feedback form.
+/// Home › Survey: surveys made by the church administration (admin /
+/// Internal Affairs) or a location administration (Location Sec) for
+/// workers or members to fill, plus the original administrative feedback
+/// form. Personal Google-Forms-style forms live in the dashboard (Forms).
 class SurveyScreen extends StatelessWidget {
   final double s;
   final bool isFullPage;
   const SurveyScreen({super.key, this.s = 1.0, this.isFullPage = false});
 
   @override
-  Widget build(BuildContext context) => FormsHub(fullPage: false, legacyFeedback: (_) => const AdminFeedbackForm(isFullPage: true));
+  Widget build(BuildContext context) => FormsHub(kind: 'admin', fullPage: false, legacyFeedback: (_) => const AdminFeedbackForm(isFullPage: true));
 }
 
 class AdminFeedbackForm extends StatefulWidget {
@@ -190,7 +194,7 @@ class _SurveyScreenState extends State<AdminFeedbackForm> {
             controller: _controllers[q['id'].toString()],
             maxLines: 3,
             decoration: InputDecoration(
-              hintText: "Type your response here...",
+              hintText: tr("Type your response here..."),
               hintStyle: const TextStyle(fontSize: 13),
               filled: true,
               fillColor: AppPalette.bg(Colors.white),

@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/app_lock_manager.dart';
 import 'package:master_admin/core/app_palette.dart';

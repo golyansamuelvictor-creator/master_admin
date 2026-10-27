@@ -9,7 +9,8 @@
 //  * OfficeRulerPainter, OfficeZoomPill, OfficeViewIcon: status bar pieces
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -359,7 +360,7 @@ class OfficeHub extends StatelessWidget {
                       onTap: () => onOpen(f),
                       trailing: Builder(
                         builder: (bctx) => IconButton(
-                          tooltip: "Options",
+                          tooltip: tr("Options"),
                           icon: const Icon(Icons.more_vert_rounded),
                           onPressed: () {
                             final box = bctx.findRenderObject() as RenderBox?;
@@ -423,7 +424,7 @@ class OfficeHub extends StatelessWidget {
         backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(accent))),
-        actions: [IconButton(tooltip: "Refresh", onPressed: onRefresh, icon: const Icon(Icons.refresh_rounded))],
+        actions: [IconButton(tooltip: tr("Refresh"), onPressed: onRefresh, icon: const Icon(Icons.refresh_rounded))],
       ),
       body: LayoutBuilder(builder: (context, c) {
         if (c.maxWidth > 1000) {
@@ -494,7 +495,7 @@ class OfficeHeaderCard extends StatelessWidget {
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
       ),
       child: Row(children: [
-        IconButton(tooltip: "Close (back to the hub)", icon: Icon(Icons.close, color: AppPalette.fg(Colors.red), size: 20), onPressed: onClose),
+        IconButton(tooltip: tr("Close (back to the hub)"), icon: Icon(Icons.close, color: AppPalette.fg(Colors.red), size: 20), onPressed: onClose),
         Expanded(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             TextField(
@@ -503,7 +504,7 @@ class OfficeHeaderCard extends StatelessWidget {
               textAlign: TextAlign.center,
               maxLines: 1,
               style: GoogleFonts.merriweather(fontSize: 17, fontWeight: FontWeight.w900, color: AppPalette.fg(accent)),
-              decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4), hintText: "Title"),
+              decoration: InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4), hintText: tr("Title")),
             ),
             Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 9.5, color: AppPalette.fg(subtitleColor), fontWeight: FontWeight.bold)),
           ]),

@@ -1,7 +1,8 @@
 // ignore_for_file: unnecessary_to_list_in_spreads, curly_braces_in_flow_control_structures
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -326,7 +327,7 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
               child: Column(
                 children: [
                   TextField(
-                    decoration: InputDecoration(hintText: "Search...", isDense: true, prefixIcon: const Icon(Icons.search, size: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                    decoration: InputDecoration(hintText: tr("Search..."), isDense: true, prefixIcon: const Icon(Icons.search, size: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
                     onChanged: (q) => setDialogState(() => query = q),
                   ),
                   const SizedBox(height: 6),
@@ -606,8 +607,8 @@ class _EvangelismEntryState extends State<EvangelismEntry> {
           initialValue: val,
           textAlign: TextAlign.center,
           style: GoogleFonts.merriweather(fontSize: 10.5),
-          decoration: const InputDecoration(
-            hintText: "Enter schedule...",
+          decoration: InputDecoration(
+            hintText: tr("Enter schedule..."),
             border: InputBorder.none,
             isDense: true,
             contentPadding: EdgeInsets.symmetric(vertical: 4),

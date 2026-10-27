@@ -1,6 +1,7 @@
 // ignore_for_file: unused_element, curly_braces_in_flow_control_structures
 import 'dart:math';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -275,8 +276,12 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       "pct": attP,
       "ip": ip,
       "ipp": pct(rIp),
-      "ot": att - ip,
-      "otp": pct(rAtt - rIp),
+      // Online has its own column; "other methods" are call, meet, summary
+      // and any other positive answer (it used to include online too).
+      "on": onl,
+      "onp": pct(rOnl),
+      "ot": (att - ip - onl).clamp(0, att),
+      "otp": pct(rAtt - rIp - rOnl),
       "ab": absentees,
       "abp": attP >= 100 ? 0.0 : 100 - attP,
       "hm": logsList.where((x) => x['is_hm'] == true).length, 
@@ -306,6 +311,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     num totN = members.isNotEmpty ? members.length : (hqS['n'] + enS['n']);
     num totAtt = hqS['att'] + enS['att'];
     num totIp = hqS['ip'] + enS['ip'];
+    num totOn = hqS['on'] + enS['on'];
     num totOt = hqS['ot'] + enS['ot'];
     num totAb = totN > totAtt ? (totN - totAtt) : 0;
 
@@ -315,6 +321,8 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       "pct": totN > 0 ? (totAtt / totN * 100) : 0.0,
       "ip": totIp, 
       "ipp": totN > 0 ? (totIp / totN * 100) : 0.0,
+      "on": totOn,
+      "onp": totN > 0 ? (totOn / totN * 100) : 0.0,
       "ot": totOt, 
       "otp": totN > 0 ? (totOt / totN * 100) : 0.0,
       "ab": totAb, 
@@ -471,12 +479,13 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       _cell("Unit", w: lw, h: totalHeaderHeight, b: true, bg: const Color(0xFFF8FAFC)),
       Column(children: [
         Row(children: [
-          _cell("Summary", w: cw * 11, h: hh, b: true, bg: const Color(0xFFF8FAFC)),
+          _cell("Summary", w: cw * 13, h: hh, b: true, bg: const Color(0xFFF8FAFC)),
           if (_isExpanded) ...["Kampala", "Village", "Abroad"].map((r) => _cell(r, w: cw * 11, h: hh, b: true, bg: const Color(0xFFF8FAFC))),
         ]),
         Row(children: [
           _cell("Overall metrics", w: cw * 3, h: hh, b: true),
           _cell("In-person", w: cw * 2, h: hh, b: true),
+          _cell("Online", w: cw * 2, h: hh, b: true),
           _cell("Other methods", w: cw * 2, h: hh, b: true),
           _cell("Absentees", w: cw * 2, h: hh, b: true),
           _cell("Special", w: cw * 2, h: hh, b: true),
@@ -488,6 +497,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         ]),
         Row(children: [
           _cell("Num", w: cw, h: sh), _cell("Att", w: cw, h: sh), _cell("%", w: cw, h: sh),
+          _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
           _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
           _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
           _cell("Total", w: cw, h: sh), _cell("%", w: cw, h: sh),
@@ -533,7 +543,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
   ExportTable _exportTable() {
     final unit = (widget.activeUnitLabel ?? '').isNotEmpty ? widget.activeUnitLabel! : CompLevel.unitTitle(widget.level);
-    final heads = <String>[unit, ...['Num', 'Attended', 'Att %', 'In-person', 'In-person %', 'Other', 'Other %', 'Absentees', 'Absent %', 'HM', 'LTA'], if (_isExpanded) ...['Kampala In-person', 'Kampala Online', 'Kampala Call', 'Kampala Meet', 'Kampala Summary', 'Kampala MU In-person', 'Kampala MU Online', 'Kampala MU Call', 'Kampala MU Meet', 'Kampala MU Summary', 'Kampala Absent', 'Village In-person', 'Village Online', 'Village Call', 'Village Meet', 'Village Summary', 'Village MU In-person', 'Village MU Online', 'Village MU Call', 'Village MU Meet', 'Village MU Summary', 'Village Absent', 'Abroad In-person', 'Abroad Online', 'Abroad Call', 'Abroad Meet', 'Abroad Summary', 'Abroad MU In-person', 'Abroad MU Online', 'Abroad MU Call', 'Abroad MU Meet', 'Abroad MU Summary', 'Abroad Absent']];
+    final heads = <String>[unit, ...['Num', 'Attended', 'Att %', 'In-person', 'In-person %', 'Online', 'Online %', 'Other methods', 'Other %', 'Absentees', 'Absent %', 'HM', 'LTA'], if (_isExpanded) ...['Kampala In-person', 'Kampala Online', 'Kampala Call', 'Kampala Meet', 'Kampala Summary', 'Kampala MU In-person', 'Kampala MU Online', 'Kampala MU Call', 'Kampala MU Meet', 'Kampala MU Summary', 'Kampala Absent', 'Village In-person', 'Village Online', 'Village Call', 'Village Meet', 'Village Summary', 'Village MU In-person', 'Village MU Online', 'Village MU Call', 'Village MU Meet', 'Village MU Summary', 'Village Absent', 'Abroad In-person', 'Abroad Online', 'Abroad Call', 'Abroad Meet', 'Abroad Summary', 'Abroad MU In-person', 'Abroad MU Online', 'Abroad MU Call', 'Abroad MU Meet', 'Abroad MU Summary', 'Abroad Absent']];
     return ExportTable(
       title: "Service Attendance Status – $unit",
       subtitle: "Period: ${widget.timePeriod} · Level: ${widget.level}",
@@ -552,6 +562,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       _cell(label, w: lw, h: rh, b: b, a: Alignment.center),
       _cell(CompPeriod.fmt(d['n'])), _cell(CompPeriod.fmt(d['att'])), _cell("${d['pct'].toStringAsFixed(1)}%", b: true),
       _cell(CompPeriod.fmt(d['ip'])), _cell("${d['ipp'].toStringAsFixed(1)}%"),
+      _cell(CompPeriod.fmt(d['on'])), _cell("${((d['onp'] ?? 0) as num).toStringAsFixed(1)}%"),
       _cell(CompPeriod.fmt(d['ot'])), _cell("${d['otp'].toStringAsFixed(1)}%"),
       _cell(CompPeriod.fmt(d['ab'])), _cell("${d['abp'].toStringAsFixed(1)}%"),
       _cell(CompPeriod.fmt(d['hm'])), _cell(CompPeriod.fmt(d['lt'])),
@@ -611,6 +622,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         final double nVal = (totSummary['n'] as num?)?.toDouble() ?? 0.0;
         final double attVal = (totSummary['att'] as num?)?.toDouble() ?? 0.0;
         final double ipVal = (totSummary['ip'] as num?)?.toDouble() ?? 0.0;
+        final double onVal = (totSummary['on'] as num?)?.toDouble() ?? 0.0;
         final double otVal = (totSummary['ot'] as num?)?.toDouble() ?? 0.0;
         final double abVal = (totSummary['ab'] as num?)?.toDouble() ?? 0.0;
 
@@ -620,7 +632,8 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
           _BarMetric("Saints (N)", nVal, Colors.grey.shade500),
           _BarMetric("Attended", attVal, pPurple),
           _BarMetric("In-person", ipVal, Colors.blue.shade700),
-          _BarMetric("Online", otVal, Colors.teal.shade600),
+          _BarMetric("Online", onVal, Colors.teal.shade600),
+          _BarMetric("Other methods", otVal, Colors.orange.shade700),
           _BarMetric("Absentees", abVal, Colors.red.shade400),
         ];
 

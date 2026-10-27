@@ -1,6 +1,7 @@
 // ignore_for_file: unused_element, curly_braces_in_flow_control_structures
 import 'dart:math';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../core/compilation_rules.dart';

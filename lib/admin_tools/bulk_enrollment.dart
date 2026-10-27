@@ -1,5 +1,6 @@
 // lib/screens/bulk_enrollment_screen.dart
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -104,13 +105,13 @@ class _BulkEnrollmentScreenState extends State<BulkEnrollmentScreen> {
           children: [
             CircleAvatar(backgroundColor: AppPalette.bg(pPurple), child: Text("${index + 1}", style: TextStyle(color: AppPalette.fg(Colors.white)))),
             const SizedBox(width: 15),
-            Expanded(flex: 3, child: TextField(decoration: const InputDecoration(labelText: "Full Name"), 
+            Expanded(flex: 3, child: TextField(decoration: InputDecoration(labelText: tr("Full Name")), 
               onChanged: (v) => _memberList[index]['name'] = v)),
             const SizedBox(width: 10),
-            Expanded(flex: 2, child: TextField(decoration: const InputDecoration(labelText: "SCJ ID"), 
+            Expanded(flex: 2, child: TextField(decoration: InputDecoration(labelText: tr("SCJ ID")), 
               onChanged: (v) => _memberList[index]['id_num'] = v)),
             const SizedBox(width: 10),
-            Expanded(flex: 1, child: TextField(decoration: const InputDecoration(labelText: "Cell #"), 
+            Expanded(flex: 1, child: TextField(decoration: InputDecoration(labelText: tr("Cell #")), 
               onChanged: (v) => _memberList[index]['cell'] = v)),
             IconButton(icon: Icon(Icons.delete_outline, color: AppPalette.fg(Colors.red)), onPressed: () => _removeRow(index)),
           ],

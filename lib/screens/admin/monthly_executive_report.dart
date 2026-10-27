@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
@@ -578,7 +579,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
             children: [
               IconButton(
                 icon: Icon(Icons.picture_as_pdf_rounded, color: AppPalette.fg(Colors.red), size: 20),
-                tooltip: "Download PDF",
+                tooltip: tr("Download PDF"),
                 constraints: const BoxConstraints(),
                 padding: const EdgeInsets.all(6),
                 onPressed: () => ExportLogic.generateExecutivePDF(
@@ -590,14 +591,14 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
               ),
               IconButton(
                 icon: Icon(Icons.table_view_rounded, color: AppPalette.fg(Colors.green), size: 20),
-                tooltip: "Export Excel",
+                tooltip: tr("Export Excel"),
                 constraints: const BoxConstraints(),
                 padding: const EdgeInsets.all(6),
                 onPressed: () => ExportLogic.exportToExcel(_logs, "Monthly_Report_${DateFormat('yyyy_MM_dd').format(_curStart)}"),
               ),
               IconButton(
                 icon: Icon(Icons.print_rounded, color: AppPalette.fg(Colors.blueGrey), size: 20),
-                tooltip: "Print report",
+                tooltip: tr("Print report"),
                 constraints: const BoxConstraints(),
                 padding: const EdgeInsets.all(6),
                 onPressed: () {},

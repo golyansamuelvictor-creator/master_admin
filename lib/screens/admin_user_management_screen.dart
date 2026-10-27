@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -102,7 +103,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           children: [
             Text("Reason for rejecting ${user['full_name'] ?? user['email']}:"),
             const SizedBox(height: 10),
-            TextField(controller: reasonCtrl, decoration: const InputDecoration(labelText: "Reason", border: OutlineInputBorder())),
+            TextField(controller: reasonCtrl, decoration: InputDecoration(labelText: tr("Reason"), border: OutlineInputBorder())),
           ],
         ),
         actions: [
@@ -482,7 +483,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           padding: const EdgeInsets.all(14),
           child: TextField(
             decoration: InputDecoration(
-              hintText: "Search Name, Email, or SCJ ID...",
+              hintText: tr("Search Name, Email, or SCJ ID..."),
               prefixIcon: const Icon(Icons.search),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -515,8 +516,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 if (isApprovalView) ...[
-                                  IconButton(icon: Icon(Icons.check_circle_rounded, color: AppPalette.fg(Colors.green)), tooltip: "Approve", onPressed: () => _approveUser(u)),
-                                  IconButton(icon: Icon(Icons.cancel_rounded, color: AppPalette.fg(Colors.red)), tooltip: "Reject", onPressed: () => _rejectUser(u)),
+                                  IconButton(icon: Icon(Icons.check_circle_rounded, color: AppPalette.fg(Colors.green)), tooltip: tr("Approve"), onPressed: () => _approveUser(u)),
+                                  IconButton(icon: Icon(Icons.cancel_rounded, color: AppPalette.fg(Colors.red)), tooltip: tr("Reject"), onPressed: () => _rejectUser(u)),
                                 ],
                                 if (isRoleChangeView)
                                   ElevatedButton.icon(
@@ -526,7 +527,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                                     onPressed: () => _openChangeRoleDialog(u),
                                   ),
                                 if (isRemoveView)
-                                  IconButton(icon: Icon(Icons.delete_forever_rounded, color: AppPalette.fg(Colors.red)), tooltip: "Delete", onPressed: () => _removeUser(u)),
+                                  IconButton(icon: Icon(Icons.delete_forever_rounded, color: AppPalette.fg(Colors.red)), tooltip: tr("Delete"), onPressed: () => _removeUser(u)),
                               ],
                             ),
                           ),

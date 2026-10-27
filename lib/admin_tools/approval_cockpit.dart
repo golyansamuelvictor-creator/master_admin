@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, use_build_context_synchronously
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
@@ -1243,7 +1244,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           decoration: InputDecoration(
             isDense: true,
             prefixIcon: const Icon(Icons.search, size: 18),
-            hintText: "Search name or SCJ ID",
+            hintText: tr("Search name or SCJ ID"),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
@@ -1449,7 +1450,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         content: TextField(
           controller: ctrl,
           maxLines: 3,
-          decoration: const InputDecoration(hintText: "Enter reason for rejection (e.g., photo mismatch)"),
+          decoration: InputDecoration(hintText: tr("Enter reason for rejection (e.g., photo mismatch)")),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("Cancel")),

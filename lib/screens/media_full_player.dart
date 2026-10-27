@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:video_player/video_player.dart';
@@ -111,7 +112,7 @@ class _MediaFullPlayerState extends State<MediaFullPlayer> {
                 foregroundColor: Colors.white,
                 elevation: 0,
                 leading: IconButton(
-                  tooltip: "Minimise (keeps playing)",
+                  tooltip: tr("Minimise (keeps playing)"),
                   icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -119,7 +120,7 @@ class _MediaFullPlayerState extends State<MediaFullPlayer> {
                 centerTitle: true,
                 actions: [
                   IconButton(
-                    tooltip: "Stop and close",
+                    tooltip: tr("Stop and close"),
                     icon: const Icon(Icons.close_rounded),
                     onPressed: () async {
                       await pb.stop();
@@ -391,7 +392,7 @@ class _MediaFullPlayerState extends State<MediaFullPlayer> {
   }
 
   Widget _speedMenu() => _chipMenu<double>(
-        tooltip: "Playback speed",
+        tooltip: tr("Playback speed"),
         label: "${pb.speed == pb.speed.roundToDouble() ? pb.speed.toStringAsFixed(0) : pb.speed}×",
         icon: Icons.speed_rounded,
         current: pb.speed,
@@ -400,7 +401,7 @@ class _MediaFullPlayerState extends State<MediaFullPlayer> {
       );
 
   Widget _aspectMenu() => _chipMenu<String>(
-        tooltip: "Picture size / aspect ratio",
+        tooltip: tr("Picture size / aspect ratio"),
         label: switch (pb.aspect) { 'fit' => 'Fit', 'fill' => 'Fill', 'stretch' => 'Stretch', _ => pb.aspect },
         icon: Icons.aspect_ratio_rounded,
         current: pb.aspect,
@@ -411,7 +412,7 @@ class _MediaFullPlayerState extends State<MediaFullPlayer> {
   Widget _sleepMenu() {
     final left = pb.sleepAt?.difference(DateTime.now());
     return _chipMenu<int>(
-      tooltip: "Sleep timer",
+      tooltip: tr("Sleep timer"),
       label: left == null ? "Sleep" : "${left.inMinutes + 1} min",
       icon: Icons.bedtime_outlined,
       current: left == null ? 0 : -1,

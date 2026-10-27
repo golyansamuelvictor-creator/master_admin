@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/workflow_logic.dart';
@@ -417,7 +418,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
         controller: _searchController,
         onChanged: (val) => setState(() => _searchQuery = val),
         decoration: InputDecoration(
-          hintText: "Search by keyword or date (e.g. John, Oct 24)...",
+          hintText: tr("Search by keyword or date (e.g. John, Oct 24)..."),
           hintStyle: TextStyle(fontSize: 13, color: AppPalette.fg(Colors.grey.shade500)),
           prefixIcon: Icon(Icons.search, color: AppPalette.fg(pPurple), size: 20),
           suffixIcon: Row(
@@ -433,7 +434,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                 ),
               IconButton(
                 icon: Icon(Icons.calendar_today_outlined, size: 18, color: AppPalette.fg(pPurple)),
-                tooltip: "Filter by date",
+                tooltip: tr("Filter by date"),
                 onPressed: _pickDateFilter,
               ),
             ],

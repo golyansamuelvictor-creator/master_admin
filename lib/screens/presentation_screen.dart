@@ -1,7 +1,8 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -961,7 +962,7 @@ class _PresentationScreenState extends State<PresentationScreen> {
             a(Icons.close, "Close", _close),
           ]),
       OfficeRibbonTab("Home", () => [
-            OfficeMenuAction<String>(Icons.add_box_outlined, "New slide", layoutChoices, _addSlide, accent: _kOrange, tooltip: "Ctrl+M"),
+            OfficeMenuAction<String>(Icons.add_box_outlined, "New slide", layoutChoices, _addSlide, accent: _kOrange, tooltip: tr("Ctrl+M")),
             a(Icons.copy_all_rounded, "Duplicate", _duplicateSlide, tip: "Ctrl+D"),
             a(Icons.delete_outline_rounded, "Delete", _slides.length > 1 ? _deleteSlide : null),
             a(Icons.arrow_upward_rounded, "Move up", _current > 0 ? () => _move(-1) : null),
@@ -1172,9 +1173,9 @@ class _PresentationScreenState extends State<PresentationScreen> {
                   subtitleColor: status.$3,
                   onClose: _close,
                   actions: [
-                    IconButton(tooltip: "Save now (Ctrl+S)", icon: Icon(status.$2, color: AppPalette.fg(status.$3)), onPressed: _save),
+                    IconButton(tooltip: tr("Save now (Ctrl+S)"), icon: Icon(status.$2, color: AppPalette.fg(status.$3)), onPressed: _save),
                     IconButton(
-                      tooltip: "Present (F5 from the start)",
+                      tooltip: tr("Present (F5 from the start)"),
                       icon: Icon(Icons.play_circle_fill, color: AppPalette.fg(_kOrange), size: 30),
                       onPressed: () => _present(_current),
                     ),
@@ -1216,7 +1217,7 @@ class _PresentationScreenState extends State<PresentationScreen> {
                           controller: notesC,
                           maxLines: wide ? 2 : 1,
                           style: const TextStyle(fontSize: 12.5),
-                          decoration: const InputDecoration(border: InputBorder.none, isDense: true, hintText: "Speaker notes for this slide"),
+                          decoration: InputDecoration(border: InputBorder.none, isDense: true, hintText: tr("Speaker notes for this slide")),
                         ),
                       ),
                     ]),

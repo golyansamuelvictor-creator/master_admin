@@ -1,6 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -14,12 +15,19 @@ class UniversalInterventionScreen extends StatefulWidget {
   final String duty;
   final String unitName;
   final String? buttonTitle;
+  /// The leader's unit path ({location, sub_location, department, team,
+  /// cell_group}, only the role's levels); {} = whole church.
+  final Map<String, String>? scope;
+  /// Church-wide group (장년회, 부녀회 ...) for group leaders.
+  final String? group;
 
   const UniversalInterventionScreen({
     super.key,
     required this.duty,
     required this.unitName,
     this.buttonTitle,
+    this.scope,
+    this.group,
   });
 
   @override
@@ -159,6 +167,8 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       final res = await AbsenteeLogic.getDetailedInterventionList(
         duty: widget.duty,
         unitName: widget.unitName,
+        scope: widget.scope,
+        group: widget.group,
         startDate: _startDate,
         endDate: _endDate,
       );
@@ -310,12 +320,12 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
         ),
         actions: [
           IconButton(
-            tooltip: "Columns",
+            tooltip: tr("Columns"),
             icon: Icon(Icons.view_column_outlined, color: AppPalette.fg(Color(0xFF1E2D4A)), size: 20),
             onPressed: _showColumnVisibilityDialog,
           ),
           IconButton(
-            tooltip: "Export Excel",
+            tooltip: tr("Export Excel"),
             icon: Icon(Icons.file_download_outlined, color: AppPalette.fg(Color(0xFF1E2D4A)), size: 20),
             onPressed: _exportAsExcelCsv,
           ),
@@ -410,7 +420,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                     height: 32,
                     child: TextField(
                       decoration: InputDecoration(
-                        hintText: "Search name...",
+                        hintText: tr("Search name..."),
                         hintStyle: const TextStyle(fontSize: 11),
                         prefixIcon: const Icon(Icons.search, size: 15),
                         isDense: true,
@@ -892,12 +902,12 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
             children: [
               DropdownButtonFormField<String>(
                 initialValue: selectedOutcome,
-                decoration: const InputDecoration(labelText: "Outcome", border: OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr("Outcome"), border: OutlineInputBorder()),
                 items: ['Recovered', 'Sick', 'Working', 'Travelled', 'Unresolved'].map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13)))).toList(),
                 onChanged: (v) => setST(() => selectedOutcome = v!),
               ),
               const SizedBox(height: 12),
-              TextField(controller: noteCtrl, decoration: const InputDecoration(hintText: "Notes...", border: OutlineInputBorder()), maxLines: 2),
+              TextField(controller: noteCtrl, decoration: InputDecoration(hintText: tr("Notes..."), border: OutlineInputBorder()), maxLines: 2),
             ],
           ),
           actions: [

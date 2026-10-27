@@ -1,6 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:math';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -254,7 +255,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
               initialValue: _selectedLevel,
               isExpanded: true,
               decoration: InputDecoration(
-                labelText: "Level to Compare",
+                labelText: tr("Level to Compare"),
                 labelStyle: TextStyle(fontSize: 11, color: AppPalette.fg(pPurple), fontWeight: FontWeight.bold),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -285,7 +286,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
               initialValue: _selectedPeriod,
               isExpanded: true,
               decoration: InputDecoration(
-                labelText: "Period",
+                labelText: tr("Period"),
                 labelStyle: TextStyle(fontSize: 11, color: AppPalette.fg(pPurple), fontWeight: FontWeight.bold),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),

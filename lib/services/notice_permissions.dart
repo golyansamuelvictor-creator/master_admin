@@ -12,6 +12,8 @@ class NoticePermissions {
   static const String locationIntentions = 'Manage Location Intentions';
   static const String departmentIntentions = 'Manage Department Intentions';
   static const String quotes = 'Manage Quotes';
+  static const String churchSurveys = 'Manage Church Surveys';
+  static const String locationSurveys = 'Manage Location Surveys';
 
   final Set<String> actions;
   final bool isAdmin;
@@ -35,6 +37,7 @@ class NoticePermissions {
   bool get canAddEvents => can(churchEvents) || can(locationEvents);
   bool get canAddIntentions => can(churchIntentions) || can(locationIntentions) || can(departmentIntentions);
   bool get canAddQuotes => can(quotes);
+  bool get canAddSurveys => can(churchSurveys) || can(locationSurveys);
 
   static Future<NoticePermissions> load() async {
     final client = Supabase.instance.client;

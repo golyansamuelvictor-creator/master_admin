@@ -1,6 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -237,7 +238,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
             if (isMobile) ...[
               TextField(
                 decoration: InputDecoration(
-                  hintText: "Search student...",
+                  hintText: tr("Search student..."),
                   prefixIcon: const Icon(Icons.search, size: 16),
                   isDense: true,
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -253,7 +254,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                       initialValue: _centers.contains(_selectedCenter) ? _selectedCenter : "All",
                       isDense: true,
                       decoration: InputDecoration(
-                        labelText: "Center",
+                        labelText: tr("Center"),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       ),
@@ -279,7 +280,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                     flex: 2,
                     child: TextField(
                       decoration: InputDecoration(
-                        hintText: "Search student...",
+                        hintText: tr("Search student..."),
                         prefixIcon: const Icon(Icons.search, size: 16),
                         isDense: true,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -295,7 +296,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                       initialValue: _centers.contains(_selectedCenter) ? _selectedCenter : "All",
                       isDense: true,
                       decoration: InputDecoration(
-                        labelText: "Center",
+                        labelText: tr("Center"),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       ),

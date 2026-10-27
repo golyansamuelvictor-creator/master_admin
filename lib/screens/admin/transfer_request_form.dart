@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -666,7 +667,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             onChanged: _searchIndividual,
             style: GoogleFonts.merriweather(fontSize: 16),
             decoration: InputDecoration(
-              hintText: "Type member name or SCJ ID to search...",
+              hintText: tr("Type member name or SCJ ID to search..."),
               hintStyle: GoogleFonts.merriweather(fontSize: 15, color: AppPalette.fg(Colors.grey.shade500)),
               prefixIcon: const Icon(Icons.search, size: 24),
               suffixIcon: _isLoadingSearch
@@ -1235,7 +1236,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
             maxLines: 3,
             style: GoogleFonts.merriweather(fontSize: 15),
             decoration: InputDecoration(
-              hintText: "Provide context for the internal affairs department...",
+              hintText: tr("Provide context for the internal affairs department..."),
               hintStyle: GoogleFonts.merriweather(fontSize: 14, color: AppPalette.fg(Colors.grey.shade500)),
               contentPadding: const EdgeInsets.all(16),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

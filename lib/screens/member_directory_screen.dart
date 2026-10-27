@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'member_detail_screen.dart';
@@ -7,6 +8,7 @@ import 'package:master_admin/core/app_palette.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_menus.dart';
+import '../core/group_scope.dart';
 
 class MemberDirectoryScreen extends StatefulWidget {
   final String userRole, userLoc, userSub, userDept, userTeam, userCell;
@@ -33,6 +35,20 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
   Map<String, dynamic>? _roleMetadata;
   bool _loadingRole = true;
   bool _dualModeChurchView = false;
+  List<String> _subDeptNames = const [];
+
+  // Loaded once per scope; search and unit filters work on this list, so
+  // typing no longer reloads every member from the server.
+  Future<List<dynamic>>? _membersFuture;
+  final Map<String, String?> _filters = {'book_of_life': null, 'location': null, 'sub_location': null, 'department': null, 'team': null, 'cell_group': null};
+  static const Map<String, String> _filterLabels = {
+    'book_of_life': 'Group',
+    'location': 'Location',
+    'sub_location': 'Sub-location',
+    'department': 'Department',
+    'team': 'Team',
+    'cell_group': 'Cell group',
+  };
 
   @override
   void initState() {
@@ -42,28 +58,46 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
 
   Future<void> _fetchRoleMetadata() async {
     try {
-      final res = await _supabase
-          .from('app_roles')
-          .select('role_key, approval_scope, display_name_ko, "Grouping", official_dept_id')
-          .eq('role_key', widget.userRole)
-          .maybeSingle();
-
+      final results = await Future.wait<dynamic>([
+        _supabase
+            .from('app_roles')
+            .select('role_key, approval_scope, display_name_ko, "Grouping", official_dept_id')
+            .eq('role_key', widget.userRole)
+            .maybeSingle(),
+        GroupScope.myDeptNames(),
+      ]);
       if (mounted) {
         setState(() {
-          _roleMetadata = res;
+          _roleMetadata = results[0] as Map<String, dynamic>?;
+          _subDeptNames = results[1] as List<String>;
           _loadingRole = false;
+          _membersFuture = _getFilteredMembers();
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _loadingRole = false);
+      if (mounted) {
+        setState(() {
+          _loadingRole = false;
+          _membersFuture = _getFilteredMembers();
+        });
+      }
     }
   }
+
+  /// Men's, Women's, Young Adults, New Saints, Theology or MOU leader:
+  /// sees their own group across the church, with no Church / Department toggle.
+  String? get _groupDept => GroupScope.detect(
+        grouping: (_roleMetadata?['Grouping'] ?? '').toString(),
+        role: widget.userRole,
+        subDeptNames: _subDeptNames,
+      );
 
   // --- DUAL MODE DETERMINATION ---
   bool get _isInternalAffairs {
     final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
     final r = widget.userRole.toLowerCase();
     final d = widget.userDept.toLowerCase();
+    if (_groupDept != null) return false;
     return r.contains('internal_affairs') || r.startsWith('ia_') || d.contains('내무') || grouping.startsWith('24-Dept 3');
   }
 
@@ -91,6 +125,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
   }
 
   bool get _hasDualMode {
+    if (_groupDept != null) return false;
     return _isInternalAffairs || _isAdministrationDept;
   }
 
@@ -108,11 +143,6 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
       introduced_by:introduced_by_id(english_name)
     ''');
 
-    // 1. Search Query
-    if (_searchQuery.trim().isNotEmpty) {
-      query = query.or('english_name.ilike.%$_searchQuery%,scj_id.ilike.%$_searchQuery%');
-    }
-
     final scope = _roleMetadata?['approval_scope'] ?? '';
     final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
     final role = widget.userRole.toLowerCase();
@@ -124,6 +154,13 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
          (widget.userSub.isNotEmpty && widget.userSub != 'N/A') ||
          (widget.userTeam.isNotEmpty && widget.userTeam != 'N/A') ||
          (widget.userCell.isNotEmpty && widget.userCell != 'N/A'));
+
+    // Church-wide group leaders (Men's, Women's, Young Adults, New Saints,
+    // Theology, MOU): their own group across the church.
+    final group = _groupDept;
+    if (!isLocWorker && group != null) {
+      return await GroupScope.filter(query, group).order('english_name');
+    }
 
     // ==============================================================
     // A. CHURCH-WIDE ADMIN / DUAL-MODE WORKERS IN CHURCH MODE
@@ -258,7 +295,8 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
 
   void _memberMenu(Offset pos, dynamic member) {
     final name = (member['english_name'] ?? '').toString();
-    final phone = (member['phone'] ?? '').toString().replaceAll(' ', '');
+    final rawPhone = member['phone'] ?? member['phone_numbers'];
+    final phone = (rawPhone is List ? (rawPhone.isEmpty ? '' : rawPhone.first) : (rawPhone ?? '')).toString().replaceAll(' ', '');
     final id = (member['scj_id'] ?? '').toString();
     showOfficeMenu(context, pos, [
       OfficeMenuItem("Open profile", icon: Icons.person_outline, onTap: () => _openMember(member)),
@@ -272,11 +310,59 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     ]);
   }
 
+  String _v(dynamic m, String k) => (m[k] ?? '').toString().trim();
+
+  /// Members matching the search and every chosen filter, except [skip]
+  /// (used to work out the choices still possible in that filter).
+  List<dynamic> _apply(List<dynamic> all, {String? skip}) {
+    final q = _searchQuery.trim().toLowerCase();
+    return all.where((m) {
+      if (q.isNotEmpty) {
+        final hay = '${_v(m, 'english_name')} ${_v(m, 'korean_name')} ${_v(m, 'scj_id')}'.toLowerCase();
+        if (!hay.contains(q)) return false;
+      }
+      for (final e in _filters.entries) {
+        if (e.key == skip || e.value == null) continue;
+        if (_v(m, e.key) != e.value) return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  Widget _filterChip(String key, List<dynamic> all) {
+    final selected = _filters[key];
+    final options = _apply(all, skip: key).map((m) => _v(m, key)).where((v) => v.isNotEmpty && v.toLowerCase() != 'n/a').toSet().toList()..sort();
+    if (options.length <= 1 && selected == null) return const SizedBox.shrink();
+    const purple = Color(0xFF4A148C);
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: PopupMenuButton<String>(
+        tooltip: tr("Filter by ${_filterLabels[key]}"),
+        onSelected: (v) => setState(() => _filters[key] = v == '__all' ? null : v),
+        itemBuilder: (_) => [
+          PopupMenuItem(value: '__all', child: Text("All ${_filterLabels[key]!.toLowerCase()}s")),
+          const PopupMenuDivider(),
+          for (final o in options) CheckedPopupMenuItem(value: o, checked: o == selected, child: Text(o)),
+        ],
+        child: Chip(
+          avatar: Icon(selected == null ? Icons.filter_list_rounded : Icons.check_circle_rounded, size: 18, color: AppPalette.fg(selected == null ? purple : Colors.white)),
+          label: Text(selected == null ? _filterLabels[key]! : "${_filterLabels[key]}: $selected",
+              style: TextStyle(fontWeight: FontWeight.w600, color: AppPalette.fg(selected == null ? purple : Colors.white))),
+          backgroundColor: AppPalette.bg(selected == null ? purple.withValues(alpha: 0.07) : purple),
+          side: BorderSide(color: AppPalette.line(purple.withValues(alpha: 0.25))),
+          deleteIcon: selected == null ? null : const Icon(Icons.close, size: 16, color: Colors.white),
+          onDeleted: selected == null ? null : () => setState(() => _filters[key] = null),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loadingRole) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    final group = _groupDept;
 
     return Scaffold(
       backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
@@ -288,10 +374,32 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
         backgroundColor: AppPalette.bg(Colors.white),
         foregroundColor: AppPalette.fg(Colors.black),
         elevation: 0.5,
+        actions: [
+          IconButton(
+            tooltip: tr("Reload"),
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () => setState(() => _membersFuture = _getFilteredMembers()),
+          ),
+        ],
       ),
       body: Column(
         children: [
-          // Dual Mode Switcher for IA, Evangelism, Education, Administration
+          if (group != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppPalette.bg(Colors.purple.shade50),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
+                ),
+                child: Text("${GroupScope.label(group)}: members across the church",
+                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w600, fontSize: 13, color: AppPalette.fg(const Color(0xFF4A148C)))),
+              ),
+            ),
+          // Dual Mode Switcher for Internal Affairs and Administration (not group leaders)
           if (_hasDualMode)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -303,23 +411,22 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                   border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      _dualModeChurchView 
-                          ? "${_getDualModeTitle()}: Church-Wide" 
-                          : "${_getDualModeTitle()}: Department Only",
-                      style: GoogleFonts.merriweather(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: AppPalette.fg(const Color(0xFF4A148C)),
+                    Expanded(
+                      child: Text(
+                        _dualModeChurchView ? "${_getDualModeTitle()}: Church-Wide" : "${_getDualModeTitle()}: Department Only",
+                        style: GoogleFonts.merriweather(fontWeight: FontWeight.w600, fontSize: 13, color: AppPalette.fg(const Color(0xFF4A148C))),
                       ),
                     ),
                     Switch(
                       value: _dualModeChurchView,
                       activeThumbColor: const Color(0xFF4A148C),
                       onChanged: (val) {
-                        setState(() => _dualModeChurchView = val);
+                        setState(() {
+                          _dualModeChurchView = val;
+                          _filters.updateAll((_, __) => null);
+                          _membersFuture = _getFilteredMembers();
+                        });
                       },
                     ),
                   ],
@@ -328,84 +435,116 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
             ),
 
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: TextField(
               controller: _controller,
               onChanged: (v) => setState(() => _searchQuery = v),
               decoration: InputDecoration(
-                hintText: "Search by name or SCJ ID...",
-                prefixIcon: Icon(Icons.search, color: AppPalette.fg(Color(0xFF4A148C))),
+                hintText: tr("Search by name or SCJ ID..."),
+                prefixIcon: Icon(Icons.search, color: AppPalette.fg(const Color(0xFF4A148C))),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => setState(() {
+                          _controller.clear();
+                          _searchQuery = '';
+                        }),
+                      ),
                 filled: true,
                 fillColor: AppPalette.bg(Colors.white),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
             ),
           ),
           Expanded(
             child: FutureBuilder<List<dynamic>>(
-              future: _getFilteredMembers(),
+              future: _membersFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return Center(
-                    child: Text("Error loading data: ${snapshot.error}"),
-                  );
+                  return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text("Error loading data: ${snapshot.error}", textAlign: TextAlign.center)));
                 }
 
-                final members = snapshot.data ?? [];
-                if (members.isEmpty) {
-                  return Center(
-                    child: Text(
-                      "No members found in your authorized unit",
-                      style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey)),
+                final all = snapshot.data ?? [];
+                final members = _apply(all);
+                final anyFilter = _filters.values.any((v) => v != null);
+                return Column(children: [
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      children: [
+                        for (final k in _filters.keys) _filterChip(k, all),
+                        if (anyFilter)
+                          TextButton.icon(
+                            onPressed: () => setState(() => _filters.updateAll((_, __) => null)),
+                            icon: const Icon(Icons.clear_all_rounded, size: 18),
+                            label: const Text("Clear filters"),
+                          ),
+                      ],
                     ),
-                  );
-                }
-
-                return ListView.builder(
-                  itemCount: members.length,
-                  itemBuilder: (context, index) {
-                    final member = members[index];
-                    final recruiter = member['introduced_by']?['english_name'] ?? "Direct Enrollment";
-
-                    return OfficeRightClick(longPress: true, onMenu: (p) => _memberMenu(p, member), child: Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
-                          child: Text(
-                            (member['english_name'] != null && member['english_name'].isNotEmpty)
-                                ? member['english_name'][0]
-                                : "?",
-                            style: TextStyle(color: AppPalette.fg(Colors.white)),
-                          ),
-                        ),
-                        title: Text(
-                          member['english_name'] ?? "No Name",
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          "ID: ${member['scj_id'] ?? '-'} • Dept: ${member['department'] ?? '-'} • Loc: ${member['location'] ?? '-'}\nIntro: $recruiter",
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (c) => MemberDetailScreen(
-                              member: member,
-                              userRole: widget.userRole,
-                            ),
-                          ),
-                        ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        members.length == all.length ? "${all.length} members" : "${members.length} of ${all.length} members",
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppPalette.fg(Colors.grey.shade700)),
                       ),
-                    ));
-                  },
-                );
+                    ),
+                  ),
+                  Expanded(
+                    child: members.isEmpty
+                        ? Center(
+                            child: Text(
+                              all.isEmpty ? "No members found in your authorized unit" : "No members match these filters",
+                              style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey)),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: members.length,
+                            itemBuilder: (context, index) {
+                              final member = members[index];
+                              final recruiter = member['introduced_by']?['english_name'] ?? "Direct Enrollment";
+                              final unit = [
+                                _v(member, 'sub_location'),
+                                _v(member, 'team'),
+                                _v(member, 'cell_group'),
+                              ].where((x) => x.isNotEmpty && x.toLowerCase() != 'n/a').join(' › ');
+
+                              return OfficeRightClick(
+                                longPress: true,
+                                onMenu: (p) => _memberMenu(p, member),
+                                child: Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
+                                      child: Text(
+                                        _v(member, 'english_name').isNotEmpty ? _v(member, 'english_name')[0] : "?",
+                                        style: TextStyle(color: AppPalette.fg(Colors.white)),
+                                      ),
+                                    ),
+                                    title: Text(member['english_name'] ?? "No Name", style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    subtitle: Text(
+                                      "ID: ${member['scj_id'] ?? '-'} • Dept: ${member['department'] ?? '-'} • Loc: ${member['location'] ?? '-'}"
+                                      "${unit.isEmpty ? '' : '\n$unit'}\nIntro: $recruiter",
+                                    ),
+                                    isThreeLine: true,
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: () => _openMember(member),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ]);
               },
             ),
           ),

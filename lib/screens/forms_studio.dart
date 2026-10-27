@@ -2,7 +2,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +13,7 @@ import '../core/app_palette.dart';
 import '../core/table_export.dart';
 import '../widgets/app_menus.dart';
 import '../widgets/office_shell.dart' show OfficeTemplate, OfficeTemplateGrid;
+import '../services/notice_permissions.dart';
 
 /// Surveys & forms (Tally / Google Forms style): build a form with many
 /// question types, sections and "show only if" logic, publish it to the
@@ -109,13 +111,21 @@ String formatAnswer(FormQ q, dynamic v) {
   return v.toString();
 }
 
+/// "Whole church · Workers" for an administration survey.
+String formAudienceText(Map f) {
+  final where = f['audience_level'] == 'location' ? (f['audience_location'] ?? 'Location').toString() : 'Whole church';
+  final who = switch (f['audience_type']) { 'workers' => 'Workers', 'saints' => 'Members', _ => 'Everyone' };
+  return "$where · $who";
+}
+
 class FormsService {
   FormsService._();
   static SupabaseClient get _db => Supabase.instance.client;
   static String? get myId => _db.auth.currentUser?.id;
 
-  static Future<List<Map<String, dynamic>>> overview() async {
-    final r = await _db.rpc('forms_overview');
+  /// [kind]: 'personal' (dashboard forms) or 'admin' (Home › Survey).
+  static Future<List<Map<String, dynamic>>> overview({String kind = 'personal'}) async {
+    final r = await _db.rpc('forms_overview', params: {'p_kind': kind});
     return List<Map<String, dynamic>>.from((r as List).map((e) => Map<String, dynamic>.from(e as Map)));
   }
 
@@ -126,11 +136,23 @@ class FormsService {
     return (r as List).map((m) => FormQ.fromRow(m as Map)).toList();
   }
 
-  static Future<String> create(String title, String description, List<FormQ> qs, {String theme = 'FF673AB7'}) async {
+  static Future<String> create(String title, String description, List<FormQ> qs,
+      {String theme = 'FF673AB7', String kind = 'personal', String audienceLevel = 'church', String? audienceLocation, String audienceType = 'all'}) async {
     final email = _db.auth.currentUser?.email ?? '';
     final row = await _db
         .from('user_forms')
-        .insert({'title': title, 'description': description, 'owner_email': email, 'owner_id': myId, 'theme_hex': theme, 'confirmation': 'Thank you! Your answers were sent.'})
+        .insert({
+          'title': title,
+          'description': description,
+          'owner_email': email,
+          'owner_id': myId,
+          'theme_hex': theme,
+          'confirmation': 'Thank you! Your answers were sent.',
+          'kind': kind,
+          'audience_level': audienceLevel,
+          'audience_location': audienceLevel == 'location' ? audienceLocation : null,
+          'audience_type': audienceType,
+        })
         .select('id')
         .single();
     final id = row['id'].toString();
@@ -268,7 +290,12 @@ class FormsHub extends StatefulWidget {
   final Widget Function(BuildContext)? legacyFeedback;
   final bool startNew;
   final bool fullPage;
-  const FormsHub({super.key, this.legacyFeedback, this.startNew = false, this.fullPage = true});
+
+  /// 'personal': the dashboard's forms, like Google Forms (anyone builds
+  /// their own). 'admin': Home › Survey: surveys from the church or a
+  /// location administration for workers / members to fill.
+  final String kind;
+  const FormsHub({super.key, this.legacyFeedback, this.startNew = false, this.fullPage = true, this.kind = 'personal'});
 
   @override
   State<FormsHub> createState() => _FormsHubState();
@@ -279,19 +306,27 @@ class _FormsHubState extends State<FormsHub> {
   bool _loading = true;
   String? _error;
   String _search = '';
+  NoticePermissions _perm = NoticePermissions.none;
 
   static const Color _accent = Color(0xFF673AB7);
+  bool get _admin => widget.kind == 'admin';
+  bool get _canCreate => !_admin || _perm.canAddSurveys;
 
   @override
   void initState() {
     super.initState();
     _load();
+    if (_admin) {
+      NoticePermissions.load().then((p) {
+        if (mounted) setState(() => _perm = p);
+      });
+    }
     if (widget.startNew) WidgetsBinding.instance.addPostFrameCallback((_) => _newForm());
   }
 
   Future<void> _load() async {
     try {
-      final f = await FormsService.overview();
+      final f = await FormsService.overview(kind: widget.kind);
       if (!mounted) return;
       setState(() {
         _forms = f;
@@ -303,7 +338,7 @@ class _FormsHubState extends State<FormsHub> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load forms. Ask the admin to run 08_round7.sql.";
+          _error = "Couldn't load forms. Ask the admin to run 08_round7.sql and 09_round8.sql.";
         });
       }
     }
@@ -333,6 +368,12 @@ class _FormsHubState extends State<FormsHub> {
     );
     if (t == null) return;
     final tpl = _formTemplates[t.key]!;
+    // Administration surveys: who should answer it
+    (String, String?, String)? audience;
+    if (_admin) {
+      audience = await _pickAudience();
+      if (audience == null) return;
+    }
     try {
       final qs = tpl.$3();
       // link "show only if" in the prayer template to the yes/no question
@@ -340,13 +381,65 @@ class _FormsHubState extends State<FormsHub> {
         final si = qs[i].settings['show_if'];
         if (si is Map && (si['key'] ?? '') == '' && i > 0) si['key'] = qs[i - 1].key;
       }
-      final id = await FormsService.create(tpl.$1, tpl.$2, qs);
+      final id = await FormsService.create(tpl.$1, tpl.$2, qs,
+          kind: widget.kind,
+          audienceLevel: audience?.$1 ?? 'church',
+          audienceLocation: audience?.$2,
+          audienceType: audience?.$3 ?? 'all');
       if (!mounted) return;
       await Navigator.push(context, MaterialPageRoute(builder: (_) => FormBuilderScreen(formId: id)));
       _load();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't create the form: ${e is PostgrestException ? e.message : e}")));
     }
+  }
+
+  /// (level, location, type) for a new administration survey.
+  Future<(String, String?, String)?> _pickAudience() async {
+    final canChurch = _perm.can(NoticePermissions.churchSurveys);
+    final canLoc = _perm.can(NoticePermissions.locationSurveys) && _perm.location.isNotEmpty;
+    String level = canChurch ? 'church' : 'location';
+    String type = 'all';
+    return showDialog<(String, String?, String)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
+        return AlertDialog(
+          title: const Text("Who should answer it?"),
+          content: SizedBox(
+            width: 380,
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text("Area", style: TextStyle(fontWeight: FontWeight.bold)),
+              RadioGroup<String>(
+                groupValue: level,
+                onChanged: (v) => setD(() => level = v ?? level),
+                child: Column(children: [
+                  if (canChurch) const RadioListTile<String>(dense: true, value: 'church', title: Text("The whole church")),
+                  if (canLoc) RadioListTile<String>(dense: true, value: 'location', title: Text("My location (${_perm.location})")),
+                ]),
+              ),
+              const SizedBox(height: 8),
+              const Text("People", style: TextStyle(fontWeight: FontWeight.bold)),
+              RadioGroup<String>(
+                groupValue: type,
+                onChanged: (v) => setD(() => type = v ?? type),
+                child: const Column(children: [
+                  RadioListTile<String>(dense: true, value: 'all', title: Text("Everyone (workers and members)")),
+                  RadioListTile<String>(dense: true, value: 'workers', title: Text("Workers only")),
+                  RadioListTile<String>(dense: true, value: 'saints', title: Text("Members (saints) only")),
+                ]),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, (level, level == 'location' ? _perm.location : null, type)),
+              child: const Text("Continue"),
+            ),
+          ],
+        );
+      }),
+    );
   }
 
   Future<void> _open(Map<String, dynamic> f, {String tab = 'edit'}) async {
@@ -364,7 +457,11 @@ class _FormsHubState extends State<FormsHub> {
       final form = await FormsService.form(f['id'].toString());
       final qs = await FormsService.questions(f['id'].toString());
       await FormsService.create("${form['title'] ?? 'Form'} (copy)", (form['description'] ?? '').toString(), qs,
-          theme: (form['theme_hex'] ?? 'FF673AB7').toString());
+          theme: (form['theme_hex'] ?? 'FF673AB7').toString(),
+          kind: (form['kind'] ?? 'personal').toString(),
+          audienceLevel: (form['audience_level'] ?? 'church').toString(),
+          audienceLocation: form['audience_location']?.toString(),
+          audienceType: (form['audience_type'] ?? 'all').toString());
       _load();
     } catch (_) {}
   }
@@ -435,6 +532,7 @@ class _FormsHubState extends State<FormsHub> {
                         if (!mine && (f['owner_name'] ?? '').toString().isNotEmpty) "by ${f['owner_name']}",
                         "${f['questions'] ?? 0} question${f['questions'] == 1 ? '' : 's'}",
                         if (mine) "${f['responses'] ?? 0} response${f['responses'] == 1 ? '' : 's'}",
+                        if (_admin) formAudienceText(f),
                       ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -487,23 +585,29 @@ class _FormsHubState extends State<FormsHub> {
           Row(children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text("Surveys & forms", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 20, color: AppPalette.fg(_accent))),
-                Text("Answer surveys from your church, or build your own like Google Forms.", style: TextStyle(fontSize: 12.5, color: AppPalette.fg(Colors.grey.shade700))),
+                Text(_admin ? "Church surveys" : "My forms & surveys", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 20, color: AppPalette.fg(_accent))),
+                Text(
+                    _admin
+                        ? "Surveys from the church and location administration for you to answer."
+                        : "Build your own forms like Google Forms, and answer forms other members share.",
+                    style: TextStyle(fontSize: 12.5, color: AppPalette.fg(Colors.grey.shade700))),
               ]),
             ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(_accent), foregroundColor: Colors.white, shape: const StadiumBorder()),
-              onPressed: _newForm,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text("New form"),
-            ),
+            if (_canCreate) ...[
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(_accent), foregroundColor: Colors.white, shape: const StadiumBorder()),
+                onPressed: _newForm,
+                icon: const Icon(Icons.add_rounded),
+                label: Text(_admin ? "New survey" : "New form"),
+              ),
+            ],
           ]),
           const SizedBox(height: 14),
           TextField(
             onChanged: (v) => setState(() => _search = v),
             decoration: InputDecoration(
-              hintText: "Search forms",
+              hintText: tr("Search forms"),
               prefixIcon: const Icon(Icons.search),
               isDense: true,
               filled: true,
@@ -517,7 +621,7 @@ class _FormsHubState extends State<FormsHub> {
           else if (_error != null)
             Padding(padding: const EdgeInsets.all(20), child: Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: AppPalette.fg(Colors.red.shade800))))
           else ...[
-            Text("To answer", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15)),
+            Text(_admin ? "To answer" : "Shared with me", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15)),
             const SizedBox(height: 10),
             if (widget.legacyFeedback != null && q.isEmpty)
               Padding(
@@ -540,13 +644,16 @@ class _FormsHubState extends State<FormsHub> {
               Padding(padding: const EdgeInsets.only(bottom: 8), child: Text("No open surveys right now.", style: TextStyle(color: AppPalette.fg(Colors.grey.shade600))))
             else
               _grid(toAnswer),
-            const SizedBox(height: 26),
-            Text("My forms", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15)),
-            const SizedBox(height: 10),
-            if (mine.isEmpty)
-              Text("You haven't made a form yet. Tap “New form” to start from a template.", style: TextStyle(color: AppPalette.fg(Colors.grey.shade600)))
-            else
-              _grid(mine),
+            if (_canCreate || mine.isNotEmpty) ...[
+              const SizedBox(height: 26),
+              Text(_admin ? "Surveys I manage" : "My forms", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15)),
+              const SizedBox(height: 10),
+              if (mine.isEmpty)
+                Text(_admin ? "No surveys yet. Tap “New survey” to start from a template." : "You haven't made a form yet. Tap “New form” to start from a template.",
+                    style: TextStyle(color: AppPalette.fg(Colors.grey.shade600)))
+              else
+                _grid(mine),
+            ],
           ],
         ]);
       }),
@@ -557,7 +664,7 @@ class _FormsHubState extends State<FormsHub> {
       appBar: AppBar(
         backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
-        title: Text("Forms", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(_accent))),
+        title: Text(_admin ? "Surveys" : "Forms", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(_accent))),
         actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh_rounded))],
       ),
       body: body,
@@ -648,6 +755,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
         'one_per_user': _form['one_per_user'] == true,
         'anonymous': _form['anonymous'] == true,
         'settings': _form['settings'] ?? {},
+        if (_form['kind'] == 'admin') 'audience_type': _form['audience_type'] ?? 'all',
       });
       await FormsService.saveQuestions(widget.formId, _qs);
       if (mounted) setState(() => _save = 'saved');
@@ -666,7 +774,11 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
     }
     await FormsService.saveForm(widget.formId, {'is_published': v});
     setState(() => _form['is_published'] = v);
-    _snack(v ? "Published: everyone in the app can answer it under Surveys." : "Unpublished: it's a draft again.");
+    _snack(v
+        ? (_form['kind'] == 'admin'
+            ? "Published: it shows under Home › Survey for ${formAudienceText(_form).toLowerCase()}."
+            : "Published: other members can answer it under Forms › Shared with me.")
+        : "Unpublished: it's a draft again.");
   }
 
   void _snack(String m) {
@@ -734,7 +846,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
           actions: [
             Tooltip(message: status.$1, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: Icon(status.$2, color: AppPalette.fg(status.$3), size: 20))),
             IconButton(
-              tooltip: "Preview",
+              tooltip: tr("Preview"),
               icon: const Icon(Icons.visibility_outlined),
               onPressed: () async {
                 await _flush();
@@ -758,7 +870,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
             controller: _tabs,
             labelColor: _color,
             indicatorColor: _color,
-            tabs: [const Tab(text: "Questions"), Tab(text: "Responses ($_responses)"), const Tab(text: "Settings")],
+            tabs: [Tab(text: tr("Questions")), Tab(text: tr("Responses ($_responses)")), Tab(text: tr("Settings"))],
           ),
         ),
         floatingActionButton: FloatingActionButton.extended(
@@ -806,13 +918,13 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
             controller: _title,
             onChanged: (_) => _dirty(),
             style: GoogleFonts.merriweather(fontSize: 24, fontWeight: FontWeight.w700),
-            decoration: const InputDecoration(hintText: "Form title", border: InputBorder.none),
+            decoration: InputDecoration(hintText: tr("Form title"), border: InputBorder.none),
           ),
           TextField(
             controller: _desc,
             onChanged: (_) => _dirty(),
             maxLines: null,
-            decoration: const InputDecoration(hintText: "Description (optional)", border: InputBorder.none),
+            decoration: InputDecoration(hintText: tr("Description (optional)"), border: InputBorder.none),
           ),
         ]),
       )),
@@ -1019,7 +1131,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
                 ),
               ),
               IconButton(
-                tooltip: "Remove",
+                tooltip: tr("Remove"),
                 icon: const Icon(Icons.close_rounded, size: 18),
                 onPressed: q.options.length <= 1
                     ? null
@@ -1054,7 +1166,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text("Paste options"),
-                  content: SizedBox(width: 380, child: TextField(controller: c, maxLines: 10, decoration: const InputDecoration(hintText: "One option per line", border: OutlineInputBorder()))),
+                  content: SizedBox(width: 380, child: TextField(controller: c, maxLines: 10, decoration: InputDecoration(hintText: tr("One option per line"), border: OutlineInputBorder()))),
                   actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")), ElevatedButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text("Use"))],
                 ),
               );
@@ -1093,7 +1205,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
             child: TextFormField(
               key: ValueKey('minl-${q.key}'),
               initialValue: (q.settings['min_label'] ?? '').toString(),
-              decoration: const InputDecoration(labelText: "Label for the lowest (optional)", isDense: true),
+              decoration: InputDecoration(labelText: tr("Label for the lowest (optional)"), isDense: true),
               onChanged: (v) {
                 q.settings['min_label'] = v;
                 _dirty();
@@ -1105,7 +1217,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
             child: TextFormField(
               key: ValueKey('maxl-${q.key}'),
               initialValue: (q.settings['max_label'] ?? '').toString(),
-              decoration: const InputDecoration(labelText: "Label for the highest (optional)", isDense: true),
+              decoration: InputDecoration(labelText: tr("Label for the highest (optional)"), isDense: true),
               onChanged: (v) {
                 q.settings['max_label'] = v;
                 _dirty();
@@ -1133,7 +1245,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
               key: ValueKey('nmin-${q.key}'),
               initialValue: q.settings['min']?.toString() ?? '',
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: "Smallest allowed", isDense: true),
+              decoration: InputDecoration(labelText: tr("Smallest allowed"), isDense: true),
               onChanged: (v) {
                 final n = num.tryParse(v);
                 if (n == null) {
@@ -1151,7 +1263,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
               key: ValueKey('nmax-${q.key}'),
               initialValue: q.settings['max']?.toString() ?? '',
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: "Largest allowed", isDense: true),
+              decoration: InputDecoration(labelText: tr("Largest allowed"), isDense: true),
               onChanged: (v) {
                 final n = num.tryParse(v);
                 if (n == null) {
@@ -1168,7 +1280,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
         TextFormField(
           key: ValueKey('ph-${q.key}'),
           initialValue: (q.settings['placeholder'] ?? '').toString(),
-          decoration: const InputDecoration(labelText: "Placeholder (optional)", isDense: true),
+          decoration: InputDecoration(labelText: tr("Placeholder (optional)"), isDense: true),
           onChanged: (v) {
             q.settings['placeholder'] = v;
             _dirty();
@@ -1223,10 +1335,10 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
       ],
       const Divider(height: 22),
       Row(children: [
-        IconButton(tooltip: "Duplicate", icon: const Icon(Icons.copy_rounded, size: 20), onPressed: () => _duplicateQ(i)),
-        IconButton(tooltip: "Delete", icon: const Icon(Icons.delete_outline, size: 20), onPressed: () => _deleteQ(i)),
-        IconButton(tooltip: "Move up", icon: const Icon(Icons.arrow_upward_rounded, size: 20), onPressed: i > 0 ? () => _moveQ(i, -1) : null),
-        IconButton(tooltip: "Move down", icon: const Icon(Icons.arrow_downward_rounded, size: 20), onPressed: i < _qs.length - 1 ? () => _moveQ(i, 1) : null),
+        IconButton(tooltip: tr("Duplicate"), icon: const Icon(Icons.copy_rounded, size: 20), onPressed: () => _duplicateQ(i)),
+        IconButton(tooltip: tr("Delete"), icon: const Icon(Icons.delete_outline, size: 20), onPressed: () => _deleteQ(i)),
+        IconButton(tooltip: tr("Move up"), icon: const Icon(Icons.arrow_upward_rounded, size: 20), onPressed: i > 0 ? () => _moveQ(i, -1) : null),
+        IconButton(tooltip: tr("Move down"), icon: const Icon(Icons.arrow_downward_rounded, size: 20), onPressed: i < _qs.length - 1 ? () => _moveQ(i, 1) : null),
         const Spacer(),
         if (_isInput(q.type)) ...[
           const Text("Required", style: TextStyle(fontSize: 12.5)),
@@ -1250,6 +1362,25 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
     return ListView(padding: const EdgeInsets.fromLTRB(12, 16, 12, 120), children: [
       _centered(Card(
         child: Column(children: [
+          if (_form['kind'] == 'admin')
+            ListTile(
+              leading: const Icon(Icons.groups_2_outlined),
+              title: const Text("Who answers it"),
+              subtitle: Text(_form['audience_level'] == 'location' ? "Location: ${_form['audience_location'] ?? ''}" : "The whole church"),
+              trailing: DropdownButton<String>(
+                value: (_form['audience_type'] ?? 'all').toString(),
+                underline: const SizedBox.shrink(),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text("Everyone")),
+                  DropdownMenuItem(value: 'workers', child: Text("Workers only")),
+                  DropdownMenuItem(value: 'saints', child: Text("Members only")),
+                ],
+                onChanged: (v) {
+                  setState(() => _form['audience_type'] = v);
+                  _dirty();
+                },
+              ),
+            ),
           SwitchListTile(
             secondary: const Icon(Icons.inbox_outlined),
             title: const Text("Accepting responses"),
@@ -1343,7 +1474,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
               controller: _confirm,
               onChanged: (_) => _dirty(),
               maxLines: 2,
-              decoration: const InputDecoration(labelText: "Message after submitting", hintText: "Thank you! Your answers were sent."),
+              decoration: InputDecoration(labelText: tr("Message after submitting"), hintText: tr("Thank you! Your answers were sent.")),
             ),
           ),
           ListTile(
@@ -2036,12 +2167,12 @@ class _FormResponsesViewState extends State<FormResponsesView> {
         selected: {_mode},
         onSelectionChanged: (s) => setState(() => _mode = s.first),
       ),
-      IconButton(tooltip: "Refresh", onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
-      IconButton(tooltip: "Download Excel / PDF / Print", onPressed: _subs.isEmpty ? null : () => TableExport.showMenu(context, _table), icon: const Icon(Icons.download_rounded)),
+      IconButton(tooltip: tr("Refresh"), onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
+      IconButton(tooltip: tr("Download Excel / PDF / Print"), onPressed: _subs.isEmpty ? null : () => TableExport.showMenu(context, _table), icon: const Icon(Icons.download_rounded)),
     ]);
     Widget body;
     if (_subs.isEmpty) {
-      body = Padding(padding: const EdgeInsets.all(30), child: Text("No responses yet. Publish the form so people can answer it under Surveys.", textAlign: TextAlign.center, style: TextStyle(color: AppPalette.fg(Colors.grey.shade600))));
+      body = Padding(padding: const EdgeInsets.all(30), child: Text("No responses yet. Publish the form so people can answer it.", textAlign: TextAlign.center, style: TextStyle(color: AppPalette.fg(Colors.grey.shade600))));
     } else if (_mode == 'summary') {
       body = Column(children: [for (final q in _inputs) _summaryFor(q)]);
     } else if (_mode == 'individual') {
@@ -2057,7 +2188,7 @@ class _FormResponsesViewState extends State<FormResponsesView> {
               IconButton(onPressed: _index < _subs.length - 1 ? () => setState(() => _index++) : null, icon: const Icon(Icons.chevron_right)),
               const Spacer(),
               IconButton(
-                tooltip: "Delete this response",
+                tooltip: tr("Delete this response"),
                 icon: Icon(Icons.delete_outline, color: AppPalette.fg(Colors.red.shade700)),
                 onPressed: () async {
                   await FormsService.deleteSubmission(s['id'].toString());

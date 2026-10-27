@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/notice_permissions.dart';
@@ -84,7 +85,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
                     controller: textC,
                     minLines: 3,
                     maxLines: 7,
-                    decoration: const InputDecoration(labelText: "Quote", border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: tr("Quote"), border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 12),
                   Text("Colour", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -116,7 +117,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
                     child: TextField(
                       controller: orderC,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: "Order", border: OutlineInputBorder()),
+                      decoration: InputDecoration(labelText: tr("Order"), border: OutlineInputBorder()),
                     ),
                   ),
                   if (error != null) ...[
@@ -352,7 +353,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
                 ),
                 if (item != null)
                   PopupMenuButton<String>(
-                    tooltip: "Edit or remove",
+                    tooltip: tr("Edit or remove"),
                     icon: Icon(Icons.more_vert_rounded, size: 18, color: AppPalette.fg(Colors.blueGrey[400])),
                     onSelected: (v) => v == 'edit' ? _openQuoteForm(existing: item) : _deleteQuote(item),
                     itemBuilder: (_) => const [

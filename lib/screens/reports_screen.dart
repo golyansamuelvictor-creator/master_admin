@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -10,7 +11,10 @@ import 'member_directory_screen.dart';
 import 'entry_form_screen.dart';
 import '../admin_tools/approval_cockpit.dart';
 import 'admin/transfer_request_form.dart';
-import 'admin/approval_inbox.dart';
+import 'admin/account_approvals_screen.dart';
+import 'notification_center_screen.dart';
+import 'service_photos_screen.dart';
+import 'admin_user_management_screen.dart';
 import 'admin/milestone_upload.dart';
 import 'admin/target_setter_screen.dart';
 import 'admin/monthly_executive_report.dart';
@@ -19,6 +23,7 @@ import '../admin_tools/member_sync_tool.dart';
 import '../admin_tools/task_manager_screen.dart';
 import 'admin/unit_growth_tracker_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../core/group_scope.dart';
 
 class ReportsScreen extends StatefulWidget {
   final String userEmail, userRole;
@@ -102,7 +107,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
               _showDutyActionDialog("All Saints Education");
             } else if (selectedRole != 'admin') {
               // Only one duty: skip the one-button grid and open that duty
-              final buttons = _getMainGridButtons();
+              // (the Notification Center added for every reporter doesn't count)
+              final buttons = _getMainGridButtons()
+                  .where((b) => b != "Notification Center" || _dynamicAdminActions.contains('Notification Center'))
+                  .toList();
               const nonDuty = ["Member Bio", "Strategic Analysis", "Notification Center"];
               if (buttons.length == 1 && !nonDuty.contains(buttons.first)) {
                 final only = buttons.first;
@@ -329,7 +337,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (!label.toLowerCase().contains('growth')) buttons.add(label);
     }
     if (_dynamicAdminActions.contains('Strategic Analysis')) buttons.add("Strategic Analysis");
-    if (_dynamicAdminActions.contains('Notification Center')) buttons.add("Notification Center");
+    // Everyone who saves reports can follow their status (Pending / Approved / Rejected)
+    if (_dynamicAdminActions.contains('Notification Center') || _dynamicDuties.isNotEmpty || _dynamicAdminActions.contains('Request Member Transfer')) {
+      buttons.add("Notification Center");
+    }
     return buttons.toSet().toList();
   }
 
@@ -393,11 +404,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (title == "Enter new offering data") _handleExcelUpload("Offering Status");
     else if (title == "Open offering dashboard") _goToCorrectDashboard("Offering Status");
     else if (title == _getInterventionLabel("Offering Status")) {
-       Navigator.push(context, MaterialPageRoute(builder: (c) => UniversalInterventionScreen(duty: "Offering Status", unitName: _getUnitNameByRole(), buttonTitle: title)));
+       _openAbsentees("Offering Status", title, _simulatedRole);
     }
     else if (title == "Member Bio") _showMemberBioDialog();
     else if (title == "Strategic Analysis") _showStrategicAnalysisDialog();
-    else if (title == "Notification Center") Navigator.push(context, MaterialPageRoute(builder: (c) => ApprovalInbox(userRole: _simulatedRole!)));
+    else if (title == "Notification Center") Navigator.push(context, MaterialPageRoute(builder: (c) => NotificationCenterScreen(
+          userRole: _simulatedRole,
+          // The transfer approvals inbox stays with the roles that had it
+          canReviewTransfers: _dynamicAdminActions.contains('Notification Center'),
+        )));
     else if (title == "Evangelism") _showEvangelismSubMenu();
     else _showDutyActionDialog(title);
   }
@@ -621,14 +636,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
             _compactActionBtn(Icons.dashboard_customize_rounded, "Open dashboard", Colors.teal[700]!, () { 
               _goToCorrectDashboard(duty); 
             }),
+            // Location Secretary: the general picture taken right after the service
+            if (duty == 'Service Attendance Status' &&
+                (_simulatedRole == 'admin' || _dynamicAdminActions.contains('Upload Service Photos')))
+              _compactActionBtn(Icons.photo_camera_back_rounded, "Final service picture", Colors.indigo[700]!, () {
+                Navigator.push(context, MaterialPageRoute(builder: (c) => const ServicePhotosScreen()));
+              }),
             _compactActionBtn(Icons.person_search_rounded, interventionLabel, Colors.blue[800]!, () { 
-              Navigator.push(context, MaterialPageRoute(
-                builder: (c) => UniversalInterventionScreen(
-                  duty: duty, 
-                  unitName: _getUnitNameByRole(_roleForDuty(duty)), 
-                  buttonTitle: interventionLabel
-                )
-              )); 
+              _openAbsentees(duty, interventionLabel, _roleForDuty(duty));
             }),
             if (!_roleForDuty(duty).contains('cell')) 
               _compactActionBtn(Icons.verified_user_rounded, "Approval cockpit", Colors.green[800]!, () { 
@@ -700,6 +715,62 @@ class _ReportsScreenState extends State<ReportsScreen> {
         selectedDate: dateToUse,
       )
     )); 
+  }
+
+  /// The absentee list of exactly the leader's unit. Only the unit name was
+  /// passed before, and it was matched against every level of the church, so
+  /// all cells / teams sharing that name (and placeholders such as
+  /// "Church Admin") gave the same, wrong list for everyone.
+  Future<void> _openAbsentees(String duty, String title, String? role) async {
+    final r = (role ?? _simulatedRole ?? '').toLowerCase();
+    String? group;
+    Map<String, String> scope;
+    final loc = {'location': userLoc};
+    final sub = {...loc, 'sub_location': userSub};
+    final dept = {...sub, 'department': userDept};
+    final team = {...dept, 'team': userTeam};
+    final byKey = GroupScope.detect(grouping: '', role: r);
+    if (r == 'admin' || r.startsWith('church_') || r.startsWith('korean_worker_')) {
+      scope = {};
+    } else if (byKey != null) {
+      group = byKey;
+      scope = {};
+    } else if (r.contains('cell')) {
+      scope = {...team, 'cell_group': userCell};
+    } else if (r.contains('team')) {
+      scope = team;
+    } else if (r.startsWith('dept_')) {
+      scope = dept;
+    } else if (r.startsWith('sub_loc_')) {
+      scope = sub;
+    } else if (r.startsWith('loc_')) {
+      scope = loc;
+    } else {
+      // Church-wide groups (장년회, 부녀회, 청년회, 새신자, 신학부 ...)
+      try {
+        final meta = await _supabase.from('app_roles').select('"Grouping"').eq('role_key', role ?? '').maybeSingle();
+        group = GroupScope.detect(
+          grouping: (meta?['Grouping'] ?? '').toString(),
+          role: r,
+          subDeptNames: await GroupScope.myDeptNames(),
+        );
+      } catch (_) {}
+      scope = group != null
+          ? {}
+          : (r.contains('group') || r.contains('_dept') || _roleApprovalScope == 'church_department') && userDept.isNotEmpty
+              ? {'department': userDept}
+              : {};
+    }
+    if (!mounted) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (c) => UniversalInterventionScreen(
+        duty: duty,
+        unitName: group != null ? GroupScope.label(group) : _getUnitNameByRole(role),
+        buttonTitle: title,
+        scope: scope,
+        group: group,
+      ),
+    ));
   }
 
   String _getUnitNameByRole([String? role]) { 
@@ -884,6 +955,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
               Navigator.push(context, MaterialPageRoute(builder: (c) => const TransferRequestForm())); 
             }),
           ],
+          // New accounts: roles with the "Approve Accounts" permission (app_roles)
+          if (r == 'admin' || _dynamicAdminActions.contains('Approve Accounts'))
+            _compactActionBtn(Icons.how_to_reg_rounded, "Account approvals", Colors.green[800]!, () {
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const AccountApprovalsScreen()));
+            }),
+          if (r == 'admin')
+            _compactActionBtn(Icons.manage_accounts_rounded, "User management (roles, remove)", Colors.blueGrey[700]!, () {
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminUserManagementScreen()));
+            }),
         ]))
       );
     });

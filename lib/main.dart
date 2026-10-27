@@ -1,7 +1,8 @@
 // ignore_for_file: deprecated_member_use, curly_braces_in_flow_control_structures
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -14,8 +15,11 @@ import 'screens/home_screen.dart';
 import 'services/app_lock_manager.dart';
 import 'services/profile_refresh.dart';
 import 'services/device_accounts.dart';
+import 'services/device_sessions.dart';
 import 'services/media_playback.dart';
 import 'widgets/media_mini_player.dart';
+import 'widgets/app_lock_settings.dart';
+import 'widgets/two_step.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 // ==========================================
@@ -36,11 +40,22 @@ void main() async {
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJib3R0a2h6Y3B6anN1ZmV5cnl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNTg1NTEsImV4cCI6MjA4NDkzNDU1MX0.EwHg23bzbS27WB6-F4lvp1VI2kZ3YmnENVw-OkvSsHk',
   );
 
-  await AppLockManager.instance.init();
+  // Reads the device copy right away; the account copy loads in the background.
+  unawaited(AppLockManager.instance.init());
 
   // Remember every account's sign-in on this device (email, Google, WhatsApp)
   // so Switch Account works without a password.
   DeviceAccounts.startTracking();
+  // Settings › Devices: this device's row, and sign-out when terminated elsewhere
+  DeviceSessions.start();
+  // System language: the device copy now (instant, offline), the account's
+  // choice after signing in
+  await I18n.init();
+  Supabase.instance.client.auth.onAuthStateChange.listen((st) {
+    if (st.event == AuthChangeEvent.signedIn || st.event == AuthChangeEvent.initialSession) {
+      if (st.session != null) unawaited(I18n.syncFromAccount());
+    }
+  });
 
   try {
     final prefs = await SharedPreferences.getInstance();
@@ -52,17 +67,22 @@ void main() async {
   // Merriweather a moment later (each weight was fetched the first time it
   // was drawn). Capped so a slow connection never blocks the app.
   try {
-    await GoogleFonts.pendingFonts([
-      GoogleFonts.merriweather(),
+    // The weights used most wait for at most 2.5 s (it was 9 weights and up
+    // to 6 s, which made every start feel slow on a weak connection); the
+    // rest load in the background.
+    GoogleFonts.pendingFonts([
       GoogleFonts.merriweather(fontWeight: FontWeight.w300),
       GoogleFonts.merriweather(fontWeight: FontWeight.w500),
       GoogleFonts.merriweather(fontWeight: FontWeight.w600),
-      GoogleFonts.merriweather(fontWeight: FontWeight.bold),
       GoogleFonts.merriweather(fontWeight: FontWeight.w800),
-      GoogleFonts.merriweather(fontWeight: FontWeight.w900),
       GoogleFonts.merriweather(fontStyle: FontStyle.italic),
       GoogleFonts.merriweather(fontStyle: FontStyle.italic, fontWeight: FontWeight.bold),
-    ]).timeout(const Duration(seconds: 6));
+    ]).catchError((_) => <void>[]);
+    await GoogleFonts.pendingFonts([
+      GoogleFonts.merriweather(),
+      GoogleFonts.merriweather(fontWeight: FontWeight.bold),
+      GoogleFonts.merriweather(fontWeight: FontWeight.w900),
+    ]).timeout(const Duration(milliseconds: 2500));
   } catch (_) {}
 
   runApp(const MasterAdminApp());
@@ -145,7 +165,11 @@ class MasterAdminApp extends StatelessWidget {
             }
             return MediaQuery(
               data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: 0.9, maxScaleFactor: 1.15)),
-              child: _AppShell(child: child ?? const SizedBox.shrink()),
+              // Right-to-left languages (Arabic, Hebrew ...) mirror the screens
+              child: Directionality(
+                textDirection: I18n.isRtl ? TextDirection.rtl : TextDirection.ltr,
+                child: _AppShell(child: child ?? const SizedBox.shrink()),
+              ),
             );
           },
           home: const AuthWrapper(),
@@ -173,12 +197,43 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_onKey);
+    AppLockManager.instance.addListener(_maybeAskForPin);
+  }
+
+  // Offer to create a PIN once per app start when the user has none.
+  static bool _askedForPin = false;
+  void _maybeAskForPin() {
+    final lock = AppLockManager.instance;
+    if (_askedForPin || !lock.needsPinPrompt || lock.isLocked) return;
+    _askedForPin = true;
+    Future.delayed(const Duration(seconds: 4), () {
+      final ctx = appNavigatorKey.currentContext;
+      if (ctx == null || !ctx.mounted || !lock.needsPinPrompt || lock.isLocked) return;
+      showPinSetupDialog(ctx, intro: true);
+    });
   }
 
   @override
   void dispose() {
+    AppLockManager.instance.removeListener(_maybeAskForPin);
+    HardwareKeyboard.instance.removeHandler(_onKey);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  // Typing counts as activity too (it never blocks the key).
+  bool _onKey(KeyEvent e) {
+    _ping();
+    return false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      AppLockManager.instance.checkElapsed();
+      DeviceSessions.check();
+    }
   }
 
   @override
@@ -197,6 +252,8 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => _ping(),
       onPointerMove: (_) => _ping(),
+      onPointerSignal: (_) => _ping(),
+      onPointerHover: (_) => _ping(),
       child: AnimatedBuilder(
         animation: AppLockManager.instance,
         builder: (context, _) {
@@ -395,7 +452,12 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
 
   final TextEditingController _pinController = TextEditingController();
   Timer? _ticker;
-  bool _isWrongPin = false;
+  bool _isWrong = false;
+  bool _busy = false;
+  // Users without a PIN, or who tap "Use password instead", unlock with
+  // their account password.
+  late bool _usePassword = !AppLockManager.instance.hasPin;
+  bool _showPassword = false;
 
   bool get _isLockedOut => _lockedUntil != null && DateTime.now().isBefore(_lockedUntil!);
   int get _secondsLeft => _isLockedOut ? _lockedUntil!.difference(DateTime.now()).inSeconds + 1 : 0;
@@ -419,13 +481,19 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
     });
   }
 
-  void _verifyPin() {
-    if (_isLockedOut) return;
-
+  Future<void> _verify() async {
+    if (_isLockedOut || _busy) return;
     final input = _pinController.text.trim();
     if (input.isEmpty) return;
 
-    final ok = AppLockManager.instance.unlock(input);
+    bool ok;
+    if (_usePassword) {
+      setState(() => _busy = true);
+      ok = await AppLockManager.instance.unlockWithPassword(_pinController.text);
+      if (mounted) setState(() => _busy = false);
+    } else {
+      ok = AppLockManager.instance.unlock(input);
+    }
     if (ok) {
       _failedAttempts = 0;
       _lockedUntil = null;
@@ -434,15 +502,14 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
 
     _failedAttempts++;
     _pinController.clear();
-
     if (_failedAttempts >= _maxAttempts) {
       _lockedUntil = DateTime.now().add(_lockout);
       _startTicker();
     }
-
-    setState(() => _isWrongPin = true);
+    if (!mounted) return;
+    setState(() => _isWrong = true);
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _isWrongPin = false);
+      if (mounted) setState(() => _isWrong = false);
     });
   }
 
@@ -455,16 +522,18 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
 
   String get _message {
     if (_isLockedOut) return "Too many attempts. Try again in ${_secondsLeft}s.";
-    if (_isWrongPin) {
+    if (_isWrong) {
       final left = _maxAttempts - _failedAttempts;
-      return "Incorrect PIN. $left ${left == 1 ? 'attempt' : 'attempts'} left.";
+      return "${_usePassword ? 'Incorrect password' : 'Incorrect PIN'}. $left ${left == 1 ? 'attempt' : 'attempts'} left.";
     }
-    return "App Locked due to inactivity";
+    return _usePassword ? "Locked after inactivity. Enter your account password." : "Locked after inactivity. Enter your PIN.";
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool error = _isWrongPin || _isLockedOut;
+    final bool error = _isWrong || _isLockedOut;
+    final lock = AppLockManager.instance;
+    final linkStyle = GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(const Color(0xFFD1B3FF)));
 
     return Material(
       color: AppPalette.bg(kDarkBg),
@@ -475,9 +544,14 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const BrandHeader(compact: true),
-              const SizedBox(height: 30),
+              const SizedBox(height: 24),
+              if (lock.userEmail.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Text(lock.userEmail, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 12.5, color: AppPalette.fg(Colors.white70))),
+                ),
               Container(
-                constraints: const BoxConstraints(maxWidth: 320),
+                constraints: const BoxConstraints(maxWidth: 340),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: AppPalette.bg(Colors.white.withValues(alpha: 0.05)),
@@ -486,49 +560,70 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
                 ),
                 child: Column(
                   children: [
+                    Icon(Icons.lock_rounded, color: AppPalette.fg(const Color(0xFFD1B3FF)), size: 30),
+                    const SizedBox(height: 8),
                     Text(
                       _message,
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.merriweather(
-                          fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(error ? Colors.redAccent : Colors.white70)),
+                      style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(error ? Colors.redAccent : Colors.white70)),
                     ),
                     const SizedBox(height: 12),
                     TextField(
+                      key: ValueKey(_usePassword),
                       controller: _pinController,
-                      enabled: !_isLockedOut,
+                      enabled: !_isLockedOut && !_busy,
                       autofocus: true,
-                      obscureText: true,
+                      obscureText: !_showPassword,
                       textAlign: TextAlign.center,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(_maxPinLength),
-                      ],
+                      keyboardType: _usePassword ? TextInputType.visiblePassword : TextInputType.number,
+                      inputFormatters: _usePassword
+                          ? const []
+                          : [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(_maxPinLength)],
                       style: GoogleFonts.merriweather(
-                          fontSize: 20, color: AppPalette.fg(Colors.white), letterSpacing: 8, fontWeight: FontWeight.w900),
+                          fontSize: _usePassword ? 15 : 20, color: AppPalette.fg(Colors.white), letterSpacing: _usePassword ? 1 : 8, fontWeight: FontWeight.w900),
                       decoration: InputDecoration(
-                        hintText: "••••",
-                        hintStyle: TextStyle(color: AppPalette.fg(Colors.white24), letterSpacing: 6),
+                        hintText: _usePassword ? "Password" : "••••",
+                        hintStyle: TextStyle(color: AppPalette.fg(Colors.white24), letterSpacing: _usePassword ? 1 : 6),
                         filled: true,
                         fillColor: AppPalette.bg(Colors.black26),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                        suffixIcon: _usePassword
+                            ? IconButton(
+                                icon: Icon(_showPassword ? Icons.visibility_off : Icons.visibility, color: AppPalette.fg(Colors.white54), size: 18),
+                                onPressed: () => setState(() => _showPassword = !_showPassword),
+                              )
+                            : null,
                       ),
-                      onSubmitted: (_) => _verifyPin(),
+                      onSubmitted: (_) => _verify(),
                     ),
                     const SizedBox(height: 14),
                     SizedBox(
                       width: double.infinity,
                       height: 40,
                       child: ElevatedButton(
-                        onPressed: _isLockedOut ? null : _verifyPin,
+                        onPressed: _isLockedOut || _busy ? null : _verify,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppPalette.bg(kPurple),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        child: Text("Unlock",
-                            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.white))),
+                        child: _busy
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text("Unlock", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.white))),
                       ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (lock.hasPin)
+                      TextButton(
+                        onPressed: () => setState(() {
+                          _usePassword = !_usePassword;
+                          _pinController.clear();
+                        }),
+                        child: Text(_usePassword ? "Use my PIN instead" : "Forgot PIN? Use my password", style: linkStyle),
+                      ),
+                    TextButton(
+                      onPressed: () => lock.signOut(),
+                      child: Text("Sign out", style: linkStyle.copyWith(color: AppPalette.fg(Colors.white54))),
                     ),
                   ],
                 ),
@@ -739,6 +834,13 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       case _LoadState.ready:
         // 1. Has valid SCJ ID key AND is approved -> HomeScreen
         if (_isReadyForHome) {
+          // Two-step verification: the code from the authenticator app first
+          if (TwoStep.codeNeeded) {
+            return TwoStepCodeScreen(onVerified: () {
+              _session = _client.auth.currentSession;
+              if (mounted) setState(() {});
+            });
+          }
           return HomeScreen(key: ValueKey(_session?.user.id ?? 'active_user'));
         }
 

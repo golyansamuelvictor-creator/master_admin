@@ -2,7 +2,8 @@
 import 'dart:math' as math;
 import '../core/table_export.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:master_admin/entry_modules/bb_attendance_sheet_entry.dart';
@@ -530,7 +531,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
               child: Column(
                 children: [
                   TextField(
-                    decoration: InputDecoration(hintText: "Search...", isDense: true, prefixIcon: const Icon(Icons.search, size: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                    decoration: InputDecoration(hintText: tr("Search..."), isDense: true, prefixIcon: const Icon(Icons.search, size: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
                     onChanged: (q) => setDialogState(() => query = q),
                   ),
                   const SizedBox(height: 6),
@@ -954,7 +955,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
               focusNode: focus,
               textAlign: TextAlign.center,
               style: GoogleFonts.merriweather(fontSize: 10.5),
-              decoration: const InputDecoration(hintText: "Location...", border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
+              decoration: InputDecoration(hintText: tr("Location..."), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
               onTap: () => _selectCell(r, visibleColIdx),
               onChanged: (v) {
                 widget.onChanged();

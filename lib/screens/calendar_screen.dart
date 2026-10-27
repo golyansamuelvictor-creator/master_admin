@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use, use_build_context_synchronously, curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -638,7 +639,7 @@ class _AddEventFormState extends State<AddEventForm> {
                 DropdownButtonFormField<String>(
                   initialValue: category,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: "Category", border: OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: tr("Category"), border: OutlineInputBorder()),
                   items: cats.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                   onChanged: (v) => setState(() => category = v),
                 ),

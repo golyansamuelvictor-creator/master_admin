@@ -2,7 +2,8 @@
 import 'package:excel/excel.dart' as xl;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -258,7 +259,7 @@ class TableExport {
   /// Print + Download buttons for a module toolbar.
   static Widget buttons(BuildContext context, ExportTable Function() build) => Row(mainAxisSize: MainAxisSize.min, children: [
         IconButton(
-          tooltip: 'Print preview (Ctrl+P)',
+          tooltip: tr('Print preview (Ctrl+P)'),
           onPressed: () {
             final t = build();
             if (t.isEmpty) {
@@ -270,7 +271,7 @@ class TableExport {
           icon: Icon(Icons.print_rounded, color: AppPalette.fg(Colors.blueGrey), size: 19),
         ),
         IconButton(
-          tooltip: 'Download Excel / PDF',
+          tooltip: tr('Download Excel / PDF'),
           onPressed: () => showMenu(context, build),
           icon: Icon(Icons.download_rounded, color: AppPalette.fg(Colors.green.shade700), size: 19),
         ),

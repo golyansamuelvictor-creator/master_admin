@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -21,6 +22,7 @@ import 'document_screen.dart';
 import 'presentation_screen.dart';
 import 'communication_screen.dart';
 import 'forms_screen.dart';
+import 'notification_center_screen.dart';
 import '../services/device_accounts.dart';
 import 'package:master_admin/core/app_palette.dart';
 
@@ -34,6 +36,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _supabase = Supabase.instance.client;
   int _selectedIndex = 0;
+  final Set<int> _visitedTabs = {0};
   late Timer _timer;
   int _lastMinute = -1;
   bool isLoading = true;
@@ -101,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
     _fetchInitialData();
+    NotificationCount.refresh();
   }
 
   // ==========================================
@@ -393,7 +397,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 autofocus: true,
                 onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
                 decoration: InputDecoration(
-                  labelText: "Password",
+                  labelText: tr("Password"),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                   suffixIcon: IconButton(
                     icon: Icon(obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18),
@@ -464,16 +468,28 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // The dashboard (side menu) opens screens; Back from them returns to the
+  // dashboard it was opened from, not straight to the home page.
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   void handleNavigation(String v) {
-    if (v == 'registration') Navigator.push(context, MaterialPageRoute(builder: (c) => const AddAccountScreen())).then((_) => _fetchUserProfile());
-    else if (v == 'settings_main') Navigator.push(context, MaterialPageRoute(builder: (c) => SettingsScreen(userEmail: email, userRole: selectedRole)));
-    else if (v == 'role_grid') Navigator.push(context, MaterialPageRoute(builder: (c) => ReportsScreen(userEmail: email, userRole: selectedRole)));
-    else if (v == 'mediahub_main') Navigator.push(context, MaterialPageRoute(builder: (c) => MediaHubScreen(title: "Media", userEmail: email, userRole: selectedRole)));
-    else if (v == 'forms_main') Navigator.push(context, MaterialPageRoute(builder: (c) => FormsScreen(title: "New form", userEmail: email, userRole: selectedRole)));
-    else if (v == 'spreadsheet_main') Navigator.push(context, MaterialPageRoute(builder: (c) => SpreadsheetScreen(title: "Sheets", userEmail: email, userRole: selectedRole)));
-    else if (v == 'document_main') Navigator.push(context, MaterialPageRoute(builder: (c) => DocumentScreen(title: "Docs", userEmail: email, userRole: selectedRole)));
-    else if (v == 'ppt_main') Navigator.push(context, MaterialPageRoute(builder: (c) => PresentationScreen(title: "Presentation", userEmail: email, userRole: selectedRole)));
-    else if (v == 'my_home') Navigator.push(context, MaterialPageRoute(builder: (c) => CommunicationScreen(userEmail: email, userRole: selectedRole)));
+    Widget? page;
+    if (v == 'registration') page = const AddAccountScreen();
+    else if (v == 'settings_main') page = SettingsScreen(userEmail: email, userRole: selectedRole);
+    else if (v == 'role_grid') page = ReportsScreen(userEmail: email, userRole: selectedRole);
+    else if (v == 'mediahub_main') page = MediaHubScreen(title: "Media", userEmail: email, userRole: selectedRole);
+    else if (v == 'forms_main') page = FormsScreen(title: "New form", userEmail: email, userRole: selectedRole);
+    else if (v == 'spreadsheet_main') page = SpreadsheetScreen(title: "Sheets", userEmail: email, userRole: selectedRole);
+    else if (v == 'document_main') page = DocumentScreen(title: "Docs", userEmail: email, userRole: selectedRole);
+    else if (v == 'ppt_main') page = PresentationScreen(title: "Presentation", userEmail: email, userRole: selectedRole);
+    else if (v == 'my_home') page = CommunicationScreen(userEmail: email, userRole: selectedRole);
+    if (page == null) return;
+    final target = page;
+    Navigator.push(context, MaterialPageRoute(builder: (c) => target)).then((_) {
+      if (v == 'registration') _fetchUserProfile();
+      if (!mounted) return;
+      _scaffoldKey.currentState?.openDrawer();
+    });
   }
 
   void _navigateToTab(String tabLabel) {
@@ -498,6 +514,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _visitedTabs.add(_selectedIndex);
     double width = MediaQuery.of(context).size.width;
     bool isDesktop = width > 900;
     double cardPadding = isDesktop ? 28 : 16;
@@ -510,7 +527,14 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return Scaffold(
+    return PopScope(
+      // Back on Intentions / Calendar / Survey returns to the Home tab first.
+      canPop: _selectedIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _selectedIndex = 0);
+      },
+      child: Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppPalette.bg(Theme.of(context).scaffoldBackgroundColor),
       drawer: SizedBox(
         width: width,
@@ -551,13 +575,16 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 Expanded(
+                  // Tabs are built the first time they are opened (and then kept),
+                  // so signing in no longer loads Intentions, Calendar and Survey
+                  // all at once before the Home page appears.
                   child: IndexedStack(
                     index: _selectedIndex,
                     children: [
                       _buildHomeTab(isDesktop, width, cardPadding),
-                      const SizedBox.expand(child: IntentionsScreen(isFullPage: true)),
-                      const SizedBox.expand(child: CalendarScreen(isFullPage: true)),
-                      const SizedBox.expand(child: SurveyScreen(isFullPage: true)),
+                      if (_visitedTabs.contains(1)) const SizedBox.expand(child: IntentionsScreen(isFullPage: true)) else const SizedBox.shrink(),
+                      if (_visitedTabs.contains(2)) const SizedBox.expand(child: CalendarScreen(isFullPage: true)) else const SizedBox.shrink(),
+                      if (_visitedTabs.contains(3)) const SizedBox.expand(child: SurveyScreen(isFullPage: true)) else const SizedBox.shrink(),
                     ],
                   ),
                 ),
@@ -616,7 +643,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ====================================================================
@@ -695,6 +722,25 @@ class _HomeScreenState extends State<HomeScreen> {
               letterSpacing: 0.3,
             ),
           ),
+          actions: [
+            // Notifications about my reports, transfers and account
+            ValueListenableBuilder<int>(
+              valueListenable: NotificationCount.unread,
+              builder: (context, n, _) => IconButton(
+                tooltip: tr("Notification Center"),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => NotificationCenterScreen(userRole: selectedRole)),
+                ).then((_) => NotificationCount.refresh()),
+                icon: Badge(
+                  isLabelVisible: n > 0,
+                  label: Text(n > 99 ? '99+' : '$n'),
+                  child: Icon(Icons.notifications_rounded, color: AppPalette.fg(pAccent), size: 26),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(1.0),
             child: Container(
@@ -1215,7 +1261,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: _currentQuoteIndex > 0 ? pAccent : Colors.grey.shade400,
                         splashRadius: 18,
                         onPressed: _currentQuoteIndex > 0 ? () => setState(() => _currentQuoteIndex--) : null,
-                        tooltip: "Previous Quote",
+                        tooltip: tr("Previous Quote"),
                       ),
                       Text(
                         "${_currentQuoteIndex + 1} / ${_liveQuotes.length}",
@@ -1226,7 +1272,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: _currentQuoteIndex < _liveQuotes.length - 1 ? pAccent : Colors.grey.shade400,
                         splashRadius: 18,
                         onPressed: _currentQuoteIndex < _liveQuotes.length - 1 ? () => setState(() => _currentQuoteIndex++) : null,
-                        tooltip: "Next Quote",
+                        tooltip: tr("Next Quote"),
                       ),
                     ],
                   ),
@@ -1506,7 +1552,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (cat == 'Headquarters') catColor = Colors.orange[900]!;
               else if (cat == 'Tribe') catColor = const Color(0xFF0D47A1);
               else if (cat == 'Church') catColor = Colors.green[800]!;
-              else if (cat == 'Regions') catColor = Colors.teal[800]!;
+              else if (cat == 'Region' || cat == 'Regions') catColor = Colors.teal[800]!;
               else if (cat == 'Department') catColor = Colors.deepPurple[600]!;
               final Color catText = _lift(catColor);
 
@@ -1537,7 +1583,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              cat,
+                              (cat == 'Region' || cat == 'Regions') ? 'Location' : cat,
                               style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(catText)),
                             ),
                           ),
@@ -2087,7 +2133,7 @@ class _FullScreenAIAssistantState extends State<FullScreenAIAssistant> {
                     child: TextField(
                       controller: _queryCtrl,
                       decoration: InputDecoration(
-                        hintText: "Ask about standards, quotes, events, or resources...",
+                        hintText: tr("Ask about standards, quotes, events, or resources..."),
                         hintStyle: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey)),
                         filled: true,
                         fillColor: AppPalette.bg(_cs.surfaceContainerHighest),

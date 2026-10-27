@@ -6,7 +6,8 @@ import 'package:csv/csv.dart';
 import 'package:excel/excel.dart' as xl;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -1215,8 +1216,8 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                     if (wide)
                       TextButton.icon(onPressed: _save, icon: Icon(status.$2, size: 16, color: AppPalette.fg(status.$3)), label: const Text("SAVE", style: TextStyle(fontSize: 10)))
                     else
-                      IconButton(tooltip: "Save now (Ctrl+S)", onPressed: _save, icon: Icon(status.$2, color: AppPalette.fg(status.$3))),
-                    IconButton(tooltip: "Download Excel (.xlsx)", icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kGreen)), onPressed: _exportXlsx),
+                      IconButton(tooltip: tr("Save now (Ctrl+S)"), onPressed: _save, icon: Icon(status.$2, color: AppPalette.fg(status.$3))),
+                    IconButton(tooltip: tr("Download Excel (.xlsx)"), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kGreen)), onPressed: _exportXlsx),
                   ],
                 ),
                 OfficeRibbon(tabs: _ribbonTabs(), active: _tab, onTab: (i) => setState(() => _tab = i), accent: _kPurple),
@@ -1246,7 +1247,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                         controller: _fxC,
                         focusNode: _fxFocus,
                         style: const TextStyle(fontSize: 13),
-                        decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero, hintText: "Type a value or =formula, then press Enter"),
+                        decoration: InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero, hintText: tr("Type a value or =formula, then press Enter")),
                         onSubmitted: (v) {
                           _setRaw(_curRow, _curCol, v);
                           _sm?.setKeepFocus(true);
@@ -1341,8 +1342,8 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                   height: 36,
                   decoration: BoxDecoration(color: AppPalette.bg(Colors.grey[100]), border: Border(top: BorderSide(color: AppPalette.line(Colors.black12)))),
                   child: Row(children: [
-                    IconButton(tooltip: "Previous sheet (Ctrl+PgUp)", visualDensity: VisualDensity.compact, icon: const Icon(Icons.chevron_left, size: 20), onPressed: _active > 0 ? () => _switchSheet(_active - 1) : null),
-                    IconButton(tooltip: "Next sheet (Ctrl+PgDn)", visualDensity: VisualDensity.compact, icon: const Icon(Icons.chevron_right, size: 20), onPressed: _active < _sheets.length - 1 ? () => _switchSheet(_active + 1) : null),
+                    IconButton(tooltip: tr("Previous sheet (Ctrl+PgUp)"), visualDensity: VisualDensity.compact, icon: const Icon(Icons.chevron_left, size: 20), onPressed: _active > 0 ? () => _switchSheet(_active - 1) : null),
+                    IconButton(tooltip: tr("Next sheet (Ctrl+PgDn)"), visualDensity: VisualDensity.compact, icon: const Icon(Icons.chevron_right, size: 20), onPressed: _active < _sheets.length - 1 ? () => _switchSheet(_active + 1) : null),
                     const VerticalDivider(width: 8),
                     Expanded(
                       child: ListView.builder(
@@ -1371,7 +1372,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                         },
                       ),
                     ),
-                    IconButton(tooltip: "Add sheet", visualDensity: VisualDensity.compact, icon: Icon(Icons.add, size: 18, color: AppPalette.fg(Colors.green)), onPressed: _addSheet),
+                    IconButton(tooltip: tr("Add sheet"), visualDensity: VisualDensity.compact, icon: Icon(Icons.add, size: 18, color: AppPalette.fg(Colors.green)), onPressed: _addSheet),
                     if (wide)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),

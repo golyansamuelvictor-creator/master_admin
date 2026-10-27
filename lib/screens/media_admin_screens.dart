@@ -2,7 +2,8 @@
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -272,7 +273,7 @@ class _MediaUploadScreenState extends State<MediaUploadScreen> {
               child: DropdownButtonFormField<String>(
                 initialValue: catValue,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: "Category *", border: OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr("Category *"), border: OutlineInputBorder()),
                 items: [
                   for (final c in cats)
                     DropdownMenuItem(
@@ -421,9 +422,9 @@ class _MediaCategoryManagerState extends State<MediaCategoryManager> {
             width: 460,
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                TextField(controller: name, decoration: const InputDecoration(labelText: "Name", border: OutlineInputBorder())),
+                TextField(controller: name, decoration: InputDecoration(labelText: tr("Name"), border: OutlineInputBorder())),
                 const SizedBox(height: 10),
-                TextField(controller: desc, maxLines: 2, decoration: const InputDecoration(labelText: "Description (optional)", border: OutlineInputBorder())),
+                TextField(controller: desc, maxLines: 2, decoration: InputDecoration(labelText: tr("Description (optional)"), border: OutlineInputBorder())),
                 const SizedBox(height: 12),
                 const Text("Holds", style: TextStyle(fontWeight: FontWeight.bold)),
                 Wrap(spacing: 6, children: [

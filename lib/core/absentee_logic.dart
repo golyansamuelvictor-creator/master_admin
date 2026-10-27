@@ -1,6 +1,8 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'group_scope.dart';
+import 'compilation_rules.dart' show CompStatus;
 
 class AbsenteeLogic {
   static final _supabase = Supabase.instance.client;
@@ -11,6 +13,13 @@ class AbsenteeLogic {
     String? unitType,
     DateTime? startDate,
     DateTime? endDate,
+    // The leader's whole unit path, e.g. {location, sub_location, department,
+    // team, cell_group}; only the levels of the role are given. An empty map
+    // means the whole church. (Matching by one unit name mixed units that
+    // share a name: every "Cell 3" or "팀1" in the church.)
+    Map<String, String>? scope,
+    // Church-wide group leaders (장년회, 부녀회 ...): their group across the church
+    String? group,
   }) async {
     try {
       String table = _getTableName(duty);
@@ -65,8 +74,31 @@ class AbsenteeLogic {
       // 2. Fetch members
       List<dynamic> members = [];
       bool fetchAll = unitName.isEmpty || unitName.toLowerCase() == 'all';
+      const cols = 'id, english_name, duty, location, sub_location, department, team, cell_group';
 
-      if (fetchAll) {
+      // All rows, 1000 at a time (a single request stops at 1000 members)
+      Future<List<dynamic>> paged(PostgrestFilterBuilder<List<Map<String, dynamic>>> Function() q) async {
+        final out = <dynamic>[];
+        for (int from = 0;; from += 1000) {
+          final page = await q().order('english_name').range(from, from + 999);
+          out.addAll(page);
+          if (page.length < 1000) break;
+        }
+        return out;
+      }
+
+      if (group != null && group.isNotEmpty) {
+        members = await paged(() => GroupScope.filter(_supabase.from('members').select(cols), group));
+      } else if (scope != null) {
+        members = await paged(() {
+          var q = _supabase.from('members').select(cols);
+          scope.forEach((col, val) {
+            final v = val.trim();
+            if (v.isNotEmpty && v.toUpperCase() != 'N/A') q = q.eq(col, v);
+          });
+          return q;
+        });
+      } else if (fetchAll) {
         final res = await _supabase.from('members').select('id, english_name, duty, location, sub_location, department, team, cell_group');
         members = res as List;
       } else if (unitType != null && unitType.isNotEmpty) {
@@ -138,9 +170,19 @@ class AbsenteeLogic {
 
       // Sessions held by this unit in the period (a date anyone reported on).
       // A member with no report for one of them is counted absent too.
+      // A date counts as a session only when a fair share of the unit was
+      // reported that day; one stray entry (a late make-up, a single member
+      // reported on a Tuesday) used to mark everybody else absent.
+      final Map<String, Set<String>> reportedOn = {};
+      for (final l in allLogs) {
+        final d = (l['report_date'] ?? '').toString().split('T').first;
+        if (d.isEmpty) continue;
+        reportedOn.putIfAbsent(d, () => {}).add((l['member_id'] ?? '').toString());
+      }
+      final int needed = members.length < 5 ? 1 : (members.length * 0.3).ceil();
       final Set<String> sessionDates = {
-        for (final l in allLogs)
-          if ((l['report_date'] ?? '').toString().isNotEmpty) (l['report_date']).toString().split('T').first,
+        for (final e in reportedOn.entries)
+          if (e.value.length >= needed) e.key,
       };
 
       for (var member in members) {
@@ -248,48 +290,43 @@ class AbsenteeLogic {
     return "";
   }
 
-  static const List<String> _answerKeys = [
-    'status_detail', 'attendance_realtime', 'attendance_makeup', 'attendance_pre', 'mon_part', 'mon_ml',
-  ];
+  /// The answer that says whether the member took part, per duty, in order.
+  /// Pre-attendance (a plan made before the service) and make-up (done
+  /// afterwards) are not the attendance itself. Reading every column before
+  /// meant a "No" in pre-attendance or make-up marked members who attended
+  /// as absent, so almost the whole name list showed up.
+  static List<String> _answerKeysFor(String duty) {
+    if (duty.startsWith('Service Attendance')) return const ['attendance_realtime'];
+    if (duty.contains('Morning Light')) return const ['status_detail', 'mon_ml', 'mon_part'];
+    return const ['status_detail', 'mon_part', 'mon_ml', 'attendance_realtime'];
+  }
 
-  /// A report row whose answer fields are all empty (nothing was chosen).
+  static String _answer(String duty, Map log) {
+    for (final k in _answerKeysFor(duty)) {
+      final v = (log[k] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '';
+  }
+
+  /// A report row whose answer is empty (nothing was chosen).
   static bool _isBlankLog(String duty, dynamic log) {
     if (log == null || log is! Map) return false;
     if (duty.contains('Offering') || duty.contains('Visitation')) return false;
-    final present = _answerKeys.where((k) => log.containsKey(k)).toList();
-    if (present.isEmpty) return false;
-    return present.every((k) => (log[k] ?? '').toString().trim().isEmpty);
+    if (!_answerKeysFor(duty).any(log.containsKey)) return false;
+    return _answer(duty, log).isEmpty;
   }
-
-  static bool _looksAbsent(String lower) =>
-      lower.contains('absent') || lower.contains('absence') || lower.contains('didn') || lower.contains('did not') ||
-      lower.contains('not part') || lower.contains('no part') || lower.contains('missed') || lower == 'no' ||
-      lower == 'none' || lower == 'nil' || lower == '-';
 
   static bool _checkIfMissedWithLabels(String duty, dynamic log, Set<String> absenteeLabels) {
     if (log == null || log is! Map) return false;
 
-    if (duty.contains('Offering')) return log['offering_tithe'] == "No";
+    if (duty.contains('Offering')) return CompStatus.isNegative(log['offering_tithe']);
 
-    final candidates = [
-      log['status_detail'],
-      log['attendance_realtime'],
-      log['attendance_makeup'],
-      log['attendance_pre'],
-      log['mon_part'],
-      log['mon_ml'],
-    ];
-
-    for (var cand in candidates) {
-      if (cand == null) continue;
-      final str = cand.toString().trim();
-      if (str.isEmpty) continue;
-      for (var abs in absenteeLabels) {
-        if (abs.toLowerCase() == str.toLowerCase()) return true;
-      }
-      if (_looksAbsent(str.toLowerCase())) return true;
-    }
-    return false;
+    final str = _answer(duty, log);
+    if (str.isEmpty) return false;
+    final lower = str.toLowerCase();
+    if (absenteeLabels.any((a) => a.toLowerCase() == lower)) return true;
+    return CompStatus.isNegative(str);
   }
 
   static String _getTableName(String duty) {

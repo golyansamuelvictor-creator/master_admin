@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Text;
+import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'package:master_admin/core/app_palette.dart';
@@ -290,7 +291,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                       autofocus: true,
                       style: GoogleFonts.merriweather(fontSize: 12),
                       decoration: InputDecoration(
-                        hintText: "Type text to match...",
+                        hintText: tr("Type text to match..."),
                         prefixIcon: const Icon(Icons.search, size: 16),
                         suffixIcon: filterController.text.isNotEmpty
                             ? IconButton(
@@ -554,13 +555,13 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
         actions: [
           // Columns Show/Hide Button
           IconButton(
-            tooltip: "Columns",
+            tooltip: tr("Columns"),
             icon: Icon(Icons.view_column_outlined, color: AppPalette.fg(Colors.white), size: 20),
             onPressed: _showColumnVisibilityDialog,
           ),
           // Export Popup Menu (Excel, PDF, Print)
           PopupMenuButton<String>(
-            tooltip: "Download & Print",
+            tooltip: tr("Download & Print"),
             icon: Icon(Icons.download_rounded, color: AppPalette.fg(Colors.white), size: 20),
             onSelected: (value) {
               if (value == 'excel') _exportAsExcelCsv();
