@@ -107,7 +107,7 @@ class _CallScreenState extends State<CallScreen> {
       final others = List<Map<String, dynamic>>.from(await _db.rpc('join_call', params: {'p_call': widget.callId}) as List);
       await _db.from('chat_call_people').update({'cam_on': _cam, 'mic_on': _mic}).eq('call_id', widget.callId).eq('user_id', _me);
       // signals that arrived before listening started
-      final early = await _db.from('chat_call_signals').select().eq('call_id', widget.callId).eq('to_user', _me).order('id');
+      final early = await _db.from('chat_call_signals').select().eq('call_id', widget.callId).eq('to_user', _me).order('id', ascending: true);
       for (final s in early) {
         await _onSignal(s);
       }

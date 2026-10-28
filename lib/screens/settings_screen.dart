@@ -14,6 +14,7 @@ import 'package:master_admin/widgets/feedback_screens.dart';
 import 'package:master_admin/widgets/language_screens.dart';
 import 'package:master_admin/services/app_sounds.dart';
 import 'package:master_admin/services/chat_service.dart';
+import 'package:master_admin/services/profile_refresh.dart';
 import 'package:master_admin/services/device_sessions.dart';
 import 'package:master_admin/services/app_lock_manager.dart';
 import 'package:master_admin/services/notice_permissions.dart';
@@ -200,7 +201,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _header() {
     final name = (_profile['full_name'] ?? widget.userEmail).toString();
     final user = (_profile['username'] ?? '').toString();
-    final avatar = (_profile['avatar_url'] ?? '').toString();
+    final own = (_profile['avatar_url'] ?? '').toString();
+    final avatar = myAvatarUrl.value.isNotEmpty ? myAvatarUrl.value : own;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -327,14 +329,13 @@ class _ProfilePanelState extends State<_ProfilePanel> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      final db = Supabase.instance.client;
       final u = _user.text.trim().toLowerCase();
       if (u.isNotEmpty && u != (_p['username'] ?? '').toString()) await ChatService.setUsername(u);
-      await db.from('profiles').update({
+      await updateMyProfile({
         'full_name': _name.text.trim(),
         'phone': _phone.text.trim(),
         'bio': _bio.text.trim(),
-      }).eq('id', db.auth.currentUser?.id ?? '');
+      });
       widget.onSaved();
       if (mounted) _snack(context, "Profile saved");
     } catch (e) {
@@ -347,7 +348,7 @@ class _ProfilePanelState extends State<_ProfilePanel> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator()));
-    final avatar = (_p['avatar_url'] ?? '').toString();
+    final avatar = myAvatarUrl.value.isNotEmpty ? myAvatarUrl.value : (_p['avatar_url'] ?? '').toString();
     InputDecoration deco(String l, {String? h, bool at = false}) =>
         InputDecoration(labelText: l, hintText: h, prefixText: at ? '@' : null, isDense: true, border: const OutlineInputBorder());
     Widget info(String l, dynamic v) => ListTile(

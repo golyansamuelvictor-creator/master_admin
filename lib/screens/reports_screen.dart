@@ -23,6 +23,9 @@ import '../admin_tools/task_manager_screen.dart';
 import 'admin/unit_growth_tracker_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../core/group_scope.dart';
+import 'duty_panel_screen.dart';
+import 'evangelism/bb_workspace_screen.dart';
+import 'evangelism/evangelism_results_screen.dart';
 import '../core/app_sizes.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -48,8 +51,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
   List<String> _primaryRoleDuties = [];
   List<String> _dynamicAdminActions = [];
   Map<String, String> _interventionLabels = {}; 
+  // Who enters each duty, when a duty has its own rule (duty_entry_rules in
+  // 12_round11.sql), e.g. Offering: the department treasurer; BB File: the
+  // location evangelism secretary. Everyone else with the duty only views it.
+  Map<String, List<String>> _entryRules = {};
+  // Duties with a policies / goals panel (duty_managers): Service Attendance
+  // here; Evangelism has its own button in the Evangelism menu
+  Set<String> _policyDuties = {};
   bool _canEnterDataFromDB = false;
   String? _roleApprovalScope;
+  String _roleGrouping = '';
   List<Map<String, dynamic>> _availableRoles = [];
 
   @override
@@ -149,6 +160,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   Future<void> _fetchDutyConfig() async {
     try {
+      final pm = await _supabase.from('duty_managers').select('duty_name');
+      _policyDuties = {for (final r in pm) r['duty_name'].toString()};
+      final rules = await _supabase.from('duty_entry_rules').select('duty_name, entry_roles');
+      _entryRules = {
+        for (final r in rules)
+          r['duty_name'].toString(): List<String>.from((r['entry_roles'] ?? const []) as List).map((e) => e.toLowerCase()).toList(),
+      };
+    } catch (e) {
+      debugPrint("Entry rules not loaded (run 12_round11.sql): $e");
+    }
+    try {
       final res = await _supabase.from('app_duty_config').select('duty_name, intervention_label');
       if (mounted && res.isNotEmpty) {
         setState(() {
@@ -194,6 +216,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
         primaryActions = List<String>.from(res['allowed_admin_actions'] ?? []);
         canEnter = res['can_enter_data'] ?? false;
         scope = res['approval_scope'];
+        _roleGrouping = (res['Grouping'] ?? '').toString();
+
+        // MG, WG, YAG, MOU and New Saints belong to Internal Affairs: they
+        // only report on their group's members across the church, so the
+        // department workers' reports (entered by the other 24 departments
+        // for their own workers) are neither entered nor shown for them.
+        final grp = GroupScope.detect(grouping: _roleGrouping, role: roleKey);
+        if (grp != null && grp != '신학부') {
+          primaryDuties.removeWhere((d) => const ['Workers Education', 'Workers Daily Participation'].contains(d));
+          _primaryRoleDuties = List<String>.from(primaryDuties);
+        }
 
         // If simulated by admin, sync the department context to match the role being simulated
         if (selectedRole == 'admin') {
@@ -247,6 +280,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     // 1. Admin can enter all reports
     if (r == 'admin') return true;
+
+    // 1b. Duties with their own rule: only the listed roles enter them
+    final cleanName = duty == 'Evangelism' ? 'Evangelism Part' : duty;
+    final rule = _entryRules[duty] ?? _entryRules[cleanName] ?? (duty == 'Offering' ? _entryRules['Offering Status'] : null);
+    if (rule != null) return rule.contains(r) || (sec.isNotEmpty && rule.contains(sec));
 
     // 2. Strict DB gate: If can_enter_data is FALSE in app_roles, this department
     // has NO dual modes (they are strictly view-only across all duties)
@@ -306,6 +344,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                              r.contains('_dept') ||
                              r.contains('group_sec');
 
+    // 7a. Secretaries of the 24 church departments (welfare_dept_sec,
+    //     fin_dept_sec, mg_group_sec …) enter every duty of their role for
+    //     their own department at church level (the entry form lists only
+    //     that department's members, never a location's).
+    final bool churchDeptSecretary = _roleGrouping.startsWith('24-Dept') &&
+        (r.endsWith('_sec') || r.endsWith('_mgr')) && !r.endsWith('_gen_sec');
+    if (churchDeptSecretary) return true;
+
     if (isDepartmentScope) {
       if (churchLocationReports.contains(duty)) {
         return false; // Church reports for locations are view-only
@@ -324,7 +370,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   List<String> _getMainGridButtons() {
     if (_simulatedRole == 'loc_treasurer') {
-      return ["Enter new offering data", "Open offering dashboard", _getInterventionLabel("Offering Status")];
+      return [if (_canUserEnterData("Offering Status")) "Enter new offering data", "Open offering dashboard", _getInterventionLabel("Offering Status")];
     }
     if (_simulatedRole == 'loc_ia_mgr') {
       return ["Member Bio", "Service Attendance Status", "Cell Group Service", "Visitations and Counselling"];
@@ -364,14 +410,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
         Padding(
           padding: EdgeInsets.symmetric(horizontal: hPadding, vertical: 10), 
           child: Container(
-            width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 12), 
+            width: double.infinity, height: isDesktop ? 40 : 34, alignment: Alignment.center, padding: const EdgeInsets.symmetric(horizontal: 10), 
             decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(20), border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.1)), width: 1.5), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)]), 
             child: Text(
               _secondaryRole != null && _secondaryRole!.isNotEmpty
                 ? "Viewing as: ${_formatRoleToTitleCase(_simulatedRole)} + ${_formatRoleToTitleCase(_secondaryRole)}"
                 : "Viewing as: ${_formatRoleToTitleCase(_simulatedRole)}", 
               textAlign: TextAlign.center, 
-              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: isDesktop ? 18 : 14, color: AppPalette.fg(pPurple))
+              maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: isDesktop ? 16 : 13, color: AppPalette.fg(pPurple))
             )
           )
         ),
@@ -391,8 +438,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
               String title = allButtons[index];
               bool isPrimary = ["Member Bio", "Strategic Analysis", "Notification Center"].contains(title);
               return Container(
-                decoration: BoxDecoration(color: AppPalette.bg(isPrimary ? pPurple : Colors.white), borderRadius: BorderRadius.circular(15), border: Border.all(color: AppPalette.line(Colors.black.withValues(alpha: 0.08))), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 4))]), 
-                child: InkWell(borderRadius: BorderRadius.circular(15), onTap: () => _handleSelection(title), child: Center(child: Text(title, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold, color: AppPalette.fg(isPrimary ? Colors.white : Colors.black87)))))
+                // elevated (raised) duty cards
+                decoration: BoxDecoration(color: AppPalette.bg(isPrimary ? pPurple : Colors.white), borderRadius: BorderRadius.circular(15), border: Border.all(color: AppPalette.line(Colors.black.withValues(alpha: 0.06))), boxShadow: [BoxShadow(color: pPurple.withValues(alpha: isPrimary ? 0.30 : 0.14), blurRadius: 12, offset: const Offset(0, 5)), BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 3, offset: const Offset(0, 1))]), 
+                child: InkWell(borderRadius: BorderRadius.circular(15), onTap: () => _handleSelection(title), child: Center(child: Text(title, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.bold, color: AppPalette.fg(isPrimary ? Colors.white : Colors.black87)))))
               );
             }
           )
@@ -402,7 +450,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   void _handleSelection(String title) {
-    if (title == "Enter new offering data") _handleExcelUpload("Offering Status");
+    if (title == "Enter new offering data") _showDutyActionDialog("Offering Status");
     else if (title == "Open offering dashboard") _goToCorrectDashboard("Offering Status");
     else if (title == _getInterventionLabel("Offering Status")) {
        _openAbsentees("Offering Status", title, _simulatedRole);
@@ -415,6 +463,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
           canReviewTransfers: _dynamicAdminActions.contains('Notification Center'),
         )));
     else if (title == "Evangelism") _showEvangelismSubMenu();
+    // BB File opens the BB File / Attendance sheets directly (no dashboard or policies there)
+    else if (title == "BB File") _openBbFile();
+    else if (title == "Evangelism Results" || title == "BB Results") _openEvangelismResults();
     else _showDutyActionDialog(title);
   }
 
@@ -643,6 +694,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
               _compactActionBtn(Icons.photo_camera_back_rounded, "Final service picture", Colors.indigo[700]!, () {
                 Navigator.push(context, MaterialPageRoute(builder: (c) => const ServicePhotosScreen()));
               }),
+            if (_policyDuties.contains(duty) && dutyFamily(duty) == duty && duty != 'Evangelism')
+              _compactActionBtn(Icons.gavel_rounded, "Policies, standards & goals", Colors.teal[800]!, () {
+                DutyPanelScreen.open(context, duty, role: selectedRole == 'admin' ? _simulatedRole : null);
+              }),
             _compactActionBtn(Icons.person_search_rounded, interventionLabel, Colors.blue[800]!, () { 
               _openAbsentees(duty, interventionLabel, _roleForDuty(duty));
             }),
@@ -665,11 +720,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget _compactActionBtn(IconData i, String l, Color c, VoidCallback t) => Container(
     margin: const EdgeInsets.only(bottom: 6),
     height: 38,
-    decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppPalette.line(c.withValues(alpha: 0.15)), width: 1.2), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4)]), 
-    child: InkWell(onTap: t, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 15), child: Row(children: [Icon(i, color: AppPalette.fg(c), size: 16), const SizedBox(width: 12), Expanded(child: Text(l, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold))), Icon(Icons.chevron_right_rounded, size: 16, color: AppPalette.fg(Colors.black26))])))
+    decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppPalette.line(c.withValues(alpha: 0.15)), width: 1.2), boxShadow: [BoxShadow(color: c.withValues(alpha: 0.16), blurRadius: 10, offset: const Offset(0, 4)), BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1))]), 
+    child: InkWell(onTap: t, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 15), child: Row(children: [Icon(i, color: AppPalette.fg(c), size: 17), const SizedBox(width: 12), Expanded(child: Text(l, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.bold))), Icon(Icons.chevron_right_rounded, size: 16, color: AppPalette.fg(Colors.black26))])))
   );
 
-  void _handleExcelUpload(String duty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Offering excel upload module initialized..."))); }
+  // (Offering is entered in the Offering entry form; the old Excel-upload placeholder opened nothing.)
   
   void _goToCorrectDashboard(String duty) { 
     final String role = _roleForDuty(duty);
@@ -795,7 +850,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return Container(
       margin: EdgeInsets.fromLTRB(hPad, 0, hPad, 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      constraints: const BoxConstraints(minHeight: 32, maxHeight: 35),
+      // same height as the "Viewing as" card below it
+      height: MediaQuery.of(context).size.width > 900 ? 40 : 34,
       decoration: BoxDecoration(
         color: AppPalette.bg(switcherBg),
         borderRadius: BorderRadius.circular(12),
@@ -821,7 +877,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           Text(
             "Admin Switcher",
             style: GoogleFonts.merriweather(
-              fontSize: 11, // Reduced font size
+              fontSize: 12.5,
               fontWeight: FontWeight.bold,
               color: AppPalette.fg(Colors.white),
             ),
@@ -1019,6 +1075,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
     });
   }
 
+  /// BB File: location evangelism secretaries enter, everyone else sees the
+  /// sheets compiled for their own unit.
+  void _openBbFile() {
+    final canEdit = _canUserEnterData("BB File");
+    Navigator.push(context, MaterialPageRoute(builder: (c) => BbWorkspaceScreen(
+      canEdit: canEdit,
+      userRole: _simulatedRole ?? '',
+    )));
+  }
+
+  /// Evangelism Results: the Summary sheet's tables with a filter side bar.
+  void _openEvangelismResults() {
+    Navigator.push(context, MaterialPageRoute(builder: (c) => EvangelismResultsScreen(
+      onOpenClassic: () => _goToCorrectDashboard("Evangelism Results"),
+    )));
+  }
+
   void _showEvangelismSubMenu() {
     showGeneralDialog(context: context, pageBuilder: (context, anim1, anim2) {
       return Scaffold(
@@ -1028,16 +1101,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _compactActionBtn(Icons.fact_check_rounded, "Evangelism participation", Colors.blue, () { 
             _showDutyActionDialog("Evangelism"); 
           }),
-          _compactActionBtn(Icons.folder_shared_outlined, "BB file (Students)", Colors.orange[800]!, () { 
-            if (_canUserEnterData("BB File")) {
-              _nav("BB File", "entry", selectedDate: DateTime.now());
-            } else {
-              _goToCorrectDashboard("BB File");
-            }
+          _compactActionBtn(Icons.folder_shared_outlined, "BB File", Colors.orange[800]!, _openBbFile),
+          _compactActionBtn(Icons.gavel_rounded, "Evangelism policies, standards & goals", Colors.teal[800]!, () {
+            DutyPanelScreen.open(context, "Evangelism", role: selectedRole == 'admin' ? _simulatedRole : null);
           }),
-          _compactActionBtn(Icons.analytics_outlined, "Evangelism results", Colors.purple, () { 
-            _goToCorrectDashboard("Evangelism Results"); 
-          }),
+          _compactActionBtn(Icons.analytics_outlined, "Evangelism results", Colors.purple, _openEvangelismResults),
         ]))
       );
     });

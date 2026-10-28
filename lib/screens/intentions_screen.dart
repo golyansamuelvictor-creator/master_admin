@@ -305,7 +305,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                         child: Column(
                           children: [
                             cards[0],
-                            const SizedBox(height: 22),
+                            const SizedBox(height: 14),
                             cards[3],
                           ],
                         ),
@@ -317,7 +317,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                         child: Column(
                           children: [
                             cards[1],
-                            const SizedBox(height: 22),
+                            const SizedBox(height: 14),
                             cards[4],
                           ],
                         ),
@@ -343,9 +343,9 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                         child: Column(
                           children: [
                             cards[0],
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 14),
                             cards[2],
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 14),
                             cards[4],
                           ],
                         ),
@@ -355,7 +355,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                         child: Column(
                           children: [
                             cards[1],
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 14),
                             cards[3],
                           ],
                         ),
@@ -539,7 +539,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
         children: [
           // GRADIENT HEADER
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 14, 16),
+            padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(colors: [dark, accentColor], begin: Alignment.topLeft, end: Alignment.bottomRight),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -547,8 +547,8 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.18),
                     shape: BoxShape.circle,
@@ -589,7 +589,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
 
           // CARD BODY
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
             child: points.isEmpty
                 ? Padding(
                     padding: const EdgeInsets.symmetric(vertical: 22),
@@ -609,30 +609,30 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                       final subject = (p['subject'] ?? '').toString().trim();
                       final deadline = DateTime.tryParse((p['deadline'] ?? '').toString());
                       return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
+                        margin: const EdgeInsets.only(bottom: 6),
                         decoration: BoxDecoration(
                           color: AppPalette.bg(Color.lerp(accentColor, Colors.white, 0.95)!),
                           borderRadius: BorderRadius.circular(14),
                           border: Border(left: BorderSide(color: AppPalette.line(accentColor), width: 4)),
                           boxShadow: [BoxShadow(color: accentColor.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 3))],
                         ),
-                        padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+                        padding: const EdgeInsets.fromLTRB(10, 7, 2, 7),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // NUMBER BADGE
                             Container(
-                              width: 28,
-                              height: 28,
+                              width: 24,
+                              height: 24,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(colors: [accentColor, dark]),
                                 shape: BoxShape.circle,
                                 boxShadow: [BoxShadow(color: accentColor.withValues(alpha: 0.35), blurRadius: 6, offset: const Offset(0, 2))],
                               ),
-                              child: Text("$idx", style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: Colors.white)),
+                              child: Text("$idx", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -640,16 +640,16 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                                   Text(
                                     p['point_text'] ?? "",
                                     style: GoogleFonts.merriweather(
-                                      fontSize: 14.5,
+                                      fontSize: 13.5,
                                       color: AppPalette.fg(const Color(0xFF1F1B2E)),
                                       fontWeight: FontWeight.w600,
-                                      height: 1.5,
+                                      height: 1.25,
                                     ),
                                   ),
                                   if (subject.isNotEmpty || deadline != null)
                                     Padding(
-                                      padding: const EdgeInsets.only(top: 8),
-                                      child: Wrap(spacing: 6, runSpacing: 6, children: [
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Wrap(spacing: 6, runSpacing: 4, children: [
                                         if (subject.isNotEmpty) _intentChip(Icons.label_outline_rounded, subject, accentColor),
                                         if (deadline != null)
                                           _intentChip(Icons.event_outlined, "By ${DateFormat('d MMM yyyy').format(deadline)}",

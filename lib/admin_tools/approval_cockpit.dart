@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../widgets/app_menus.dart';
 import '../core/compilation_rules.dart';
 import '../services/evidence_service.dart';
+import 'package:master_admin/core/offering_categories.dart';
 
 class ApprovalCockpit extends StatefulWidget {
   final String role, unitName, selectedDuty;
@@ -100,10 +101,12 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     ],
     'logs_cell_service': [('status_detail', 'Status'), ('reason_notes', 'Reason'), ('solution_notes', 'Solution')],
     'logs_offering': [
-      ('offering_tithe', 'Tithe'),
       ('offering_weekly', 'Weekly'),
-      ('offering_thanks', 'Thanks'),
+      ('offering_tithe', 'Tithe'),
       ('offering_construction', 'Construction'),
+      ('offering_thanks', 'T.G'),
+      ('offering_rent', 'Rent'),
+      ('offering_hq', 'HQ'),
       ('offering_donation', 'Donation'),
       ('reason_notes', 'Reason'),
     ],
@@ -162,7 +165,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         if (CompStatus.isPositive(rt) || CompStatus.isPositive(mu)) return true;
         return CompStatus.norm(rt).isEmpty && CompStatus.norm(mu).isEmpty ? null : false;
       case 'logs_offering':
-        const cols = ['offering_tithe', 'offering_weekly', 'offering_thanks', 'offering_construction', 'offering_donation'];
+        final cols = OfferingCategories.allColumns;
         if (cols.every((c) => CompStatus.norm(l[c]).isEmpty)) return null;
         return cols.any((c) => _paid(l[c]));
       case 'logs_visitations':

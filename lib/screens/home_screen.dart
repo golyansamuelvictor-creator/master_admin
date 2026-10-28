@@ -23,7 +23,9 @@ import 'presentation_screen.dart';
 import 'communication_screen.dart';
 import 'forms_screen.dart';
 import 'notification_center_screen.dart';
+import '../widgets/home_live_cards.dart';
 import '../services/device_accounts.dart';
+import '../services/profile_refresh.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'package:master_admin/core/app_sizes.dart';
 
@@ -106,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     _fetchInitialData();
     NotificationCount.refresh();
+    loadMyAvatar();
   }
 
   // ==========================================
@@ -196,13 +199,16 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==========================================
   Future<void> _fetchLiveUpcomingEvents() async {
     try {
-      final res = await _supabase.from('church_events').select();
+      // only what the card shows: the next 15 events (or the last 5 when none are coming)
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      List res = await _supabase.from('church_events').select().gte('event_date', today).order('event_date', ascending: true).limit(15);
+      if (res.isEmpty) res = await _supabase.from('church_events').select().order('event_date', ascending: false).limit(5);
       if (mounted) {
         DateTime now = DateTime.now();
         DateTime todayMidnight = DateTime(now.year, now.month, now.day);
 
         List<Map<String, dynamic>> events = [];
-        for (var item in (res as List)) {
+        for (var item in res) {
           DateTime? eventDate = DateTime.tryParse(item['event_date'] ?? '');
           if (eventDate != null) {
             events.add({
@@ -219,11 +225,11 @@ class _HomeScreenState extends State<HomeScreen> {
         }).toList();
 
         if (filtered.isEmpty && events.isNotEmpty) {
-          filtered = events.reversed.take(4).toList();
+          filtered = events.reversed.take(5).toList();
         }
 
         setState(() {
-          _upcomingEvents = filtered.take(4).toList();
+          _upcomingEvents = filtered.take(15).toList();
           _isLoadingEvents = false;
         });
       }
@@ -697,7 +703,15 @@ class _HomeScreenState extends State<HomeScreen> {
     String dateStr = DateFormat('EEEE, d MMMM y').format(DateTime.now());
     String timeStr = DateFormat('hh:mm a').format(DateTime.now());
 
-    return CustomScrollView(
+    // any touch, scroll or mouse movement here pauses the moving cards
+    return Listener(
+      onPointerDown: (_) => HomeActivity.touch(),
+      onPointerMove: (_) => HomeActivity.touch(),
+      onPointerSignal: (_) => HomeActivity.touch(),
+      onPointerHover: (_) {
+        if (HomeActivity.idle) HomeActivity.touch();
+      },
+      child: CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
         // FROZEN APP BAR
@@ -768,12 +782,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // COLUMN 1: LIVE QUICK PICKS & LIVE INTENTIONS
+                        // COLUMN 1: POP-UP NOTIFICATIONS & GROWTH STATUS (moving cards)
                         Expanded(
                           flex: 1,
                           child: Column(
                             children: [
-                              _buildQuickPicks(),
+                              HomeNotificationsCard(userEmail: email, userRole: selectedRole),
+                              const SizedBox(height: 18),
+                              HomeGrowthCard(userRole: selectedRole),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+
+                        // COLUMN 2: UPCOMING EVENTS & INTENTIONS
+                        Expanded(
+                          flex: 1,
+                          child: Column(
+                            children: [
+                              _buildUpcomingEventsCard(),
                               const SizedBox(height: 18),
                               _buildIntentionsSnippetCard(),
                             ],
@@ -781,17 +808,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(width: 20),
 
-                        // COLUMN 2: LIVE CHAIRMAN QUOTE (app_quotes Centerpiece)
+                        // COLUMN 3: LIVE CHAIRMAN QUOTE (app_quotes) & QUICK PICKS
                         Expanded(
                           flex: 1,
-                          child: _buildChairmanQuoteCard(),
-                        ),
-                        const SizedBox(width: 20),
-
-                        // COLUMN 3: LIVE UPCOMING EVENTS (church_events Master Itinerary)
-                        Expanded(
-                          flex: 1,
-                          child: _buildUpcomingEventsCard(),
+                          child: Column(
+                            children: [
+                              _buildChairmanQuoteCard(),
+                              const SizedBox(height: 18),
+                              _buildQuickPicks(),
+                            ],
+                          ),
                         ),
                       ],
                     )
@@ -799,6 +825,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     // Mobile vertical flow
                     Column(
                       children: [
+                        HomeNotificationsCard(userEmail: email, userRole: selectedRole),
+                        const SizedBox(height: 16),
+                        HomeGrowthCard(userRole: selectedRole),
+                        const SizedBox(height: 16),
                         _buildChairmanQuoteCard(),
                         const SizedBox(height: 16),
                         _buildUpcomingEventsCard(),
@@ -816,12 +846,25 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    ),
     );
   }
 
   // ==========================================
   // UNIFIED COMMAND HERO BANNER (LIVE profiles data)
   // ==========================================
+  /// The user's profile photo in the hero (shared with Settings / side menu /
+  /// My Home through [myAvatarUrl]); [initials] while no photo is set.
+  Widget _withPhoto(double size, double radius, Widget initials) => ValueListenableBuilder<String>(
+        valueListenable: myAvatarUrl,
+        builder: (ctx, url, child) => url.isEmpty
+            ? initials
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(radius),
+                child: Image.network(url, width: size, height: size, fit: BoxFit.cover, errorBuilder: (c, e, s) => initials),
+              ),
+      );
+
   Widget _buildUnifiedHeroBanner(bool isDesktop, String dateStr, String timeStr) {
     // Dynamic location derived from Supabase profile
     String locationText = userLoc.isNotEmpty ? "Sunny 28°C • $userLoc" : "Sunny 28°C • Kampala, Uganda";
@@ -831,8 +874,9 @@ class _HomeScreenState extends State<HomeScreen> {
       child: isDesktop
           ? Row(
               children: [
-                // User Avatar Circle (Initials computed dynamically from profile fullName)
-                Container(
+                // User photo (the same one as Settings, the side menu and My Home);
+                // initials until a photo is set.
+                _withPhoto(50, 14, Container(
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
@@ -860,7 +904,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                ),
+                )),
                 const SizedBox(width: 16),
 
                 // Greeting & Profile Data from Supabase
@@ -989,7 +1033,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Row(
                   children: [
-                    Container(
+                    _withPhoto(44, 12, Container(
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
@@ -1002,7 +1046,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                       ),
-                    ),
+                    )),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -1408,7 +1452,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
           else
-            ..._upcomingEvents.map((evt) {
+            // moves on its own while nobody touches the screen; a touch stops it
+            AutoTicker(
+              count: _upcomingEvents.length,
+              itemHeight: 62,
+              styles: const [TickerStyle.rollUp, TickerStyle.fade, TickerStyle.slideLeft, TickerStyle.flip],
+              every: const Duration(seconds: 5),
+              itemBuilder: (_, i) {
+              final evt = _upcomingEvents[i];
               DateTime? d = evt['_parsedDate'] as DateTime?;
               String dayNum = d != null ? DateFormat('d').format(d) : "--";
               String monthStr = d != null ? DateFormat('MMM').format(d).toUpperCase() : "DATE";
@@ -1418,7 +1469,7 @@ class _HomeScreenState extends State<HomeScreen> {
               }
 
               return Container(
-                margin: const EdgeInsets.only(bottom: 8),
+                margin: const EdgeInsets.only(bottom: 6),
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
                   color: AppPalette.bg(pSoft),
@@ -1465,10 +1516,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               );
-            }),
+              },
+            ),
           const SizedBox(height: 4),
           Align(
-            alignment: Alignment.centerRight,
+            alignment: Alignment.center,
             child: InkWell(
               onTap: () => _navigateToTab('Calendar'),
               borderRadius: BorderRadius.circular(6),

@@ -8,6 +8,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'dart:math' as math; 
 import 'entry_form_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/offering_categories.dart';
 
 class CellStatusScreen extends StatefulWidget {
   final String sheetName, cellName, initialMode, location, subLocation, dept, team;
@@ -162,6 +163,11 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
     return 'logs_service_attendance_status';
   }
 
+  // Offering: an amount above 0 (the treasurer types amounts) or "Paid"
+  int _paidCount(String k) => _logs.where((l) {
+        final v = l[k]?.toString().toLowerCase() ?? '';
+        return v == 'paid' || OfferingCategories.amount(v) > 0;
+      }).length;
   int _count(String k, String v) => _logs.where((l) => l[k]?.toString().toLowerCase() == v.toLowerCase()).length;
 
   @override
@@ -274,8 +280,8 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
       addC("$v"); addC("$couns"); addC("$pos"); addC("$neg", c: Colors.red);
     }
     else if (d.contains('Offering')) {
-      for (var k in ['offering_tithe', 'offering_weekly', 'offering_thanks', 'offering_construction', 'offering_donation']) {
-        int count = _count(k, 'Paid'); addC("$count"); addC("$count", isP: true);
+      for (var k in OfferingCategories.list.map((c) => c.column)) {
+        int count = _paidCount(k); addC("$count"); addC("$count", isP: true);
       }
     }
     else if (d.contains('Evangelism')) {
@@ -339,16 +345,10 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
         _BarData("Negative", (neg / tot) * 100, Colors.red.shade400),
       ];
     } else if (d.contains('Offering')) {
-      final keys = [
-        MapEntry('Tithe', 'offering_tithe'),
-        MapEntry('Weekly', 'offering_weekly'),
-        MapEntry('Thanks', 'offering_thanks'),
-        MapEntry('Const', 'offering_construction'),
-        MapEntry('Donation', 'offering_donation'),
-      ];
-      final colors = [pPurple, Colors.indigo, Colors.teal, Colors.orange, Colors.blue];
+      final keys = [for (final c in OfferingCategories.list) MapEntry(c.short, c.column)];
+      final colors = [for (final c in OfferingCategories.list) c.color];
       for (int i = 0; i < keys.length; i++) {
-        int count = _count(keys[i].value, 'Paid');
+        int count = _paidCount(keys[i].value);
         bars.add(_BarData(keys[i].key, (count / tot) * 100, colors[i]));
       }
     } else if (d.contains('Evangelism')) {

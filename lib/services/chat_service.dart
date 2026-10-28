@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'profile_refresh.dart';
+
 /// One chat in the signed-in user's list (from my_chat_rooms()).
 class ChatRoom {
   final String id;
@@ -415,12 +417,14 @@ class ChatService {
     final me = myId;
     if (me == null) return {};
     final r = await _db.from('profiles').select().eq('id', me).maybeSingle();
+    final u = (r?['avatar_url'] ?? '').toString().trim();
+    if (r != null) myAvatarUrl.value = u;
     return r == null ? {} : Map<String, dynamic>.from(r);
   }
 
   static Future<String?> setUsername(String u) async => (await _db.rpc('set_username', params: {'p_username': u}))?.toString();
 
-  static Future<void> setBio(String bio) => _db.from('profiles').update({'bio': bio}).eq('id', myId ?? '');
+  static Future<void> setBio(String bio) => updateMyProfile({'bio': bio});
 
   /// Uploads a new profile photo (public "avatars" bucket, own folder) and saves it on the profile.
   static Future<String> uploadAvatar(Uint8List bytes, String fileName) async {
@@ -430,6 +434,7 @@ class ChatService {
     await _db.storage.from('avatars').uploadBinary(path, bytes, fileOptions: FileOptions(contentType: mimeFor(fileName), upsert: true));
     final url = _db.storage.from('avatars').getPublicUrl(path);
     await _db.from('profiles').update({'avatar_url': url}).eq('id', me);
+    myAvatarUrl.value = url;
     return url;
   }
 

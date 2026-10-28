@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'group_scope.dart';
 import 'compilation_rules.dart' show CompStatus;
+import 'package:master_admin/core/offering_categories.dart';
 
 class AbsenteeLogic {
   static final _supabase = Supabase.instance.client;
@@ -320,7 +321,8 @@ class AbsenteeLogic {
   static bool _checkIfMissedWithLabels(String duty, dynamic log, Set<String> absenteeLabels) {
     if (log == null || log is! Map) return false;
 
-    if (duty.contains('Offering')) return CompStatus.isNegative(log['offering_tithe']);
+    // Offering: missed when nothing was given in any kind of offering
+    if (duty.contains('Offering')) return !OfferingCategories.allColumns.any((c) => OfferingCategories.amount(log[c]) > 0 || CompStatus.isPositive(log[c]));
 
     final str = _answer(duty, log);
     if (str.isEmpty) return false;

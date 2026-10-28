@@ -86,10 +86,26 @@ class NotificationCenterScreen extends StatefulWidget {
   State<NotificationCenterScreen> createState() => _NotificationCenterScreenState();
 }
 
-class _NotificationCenterScreenState extends State<NotificationCenterScreen> with SingleTickerProviderStateMixin {
+class _NotificationCenterScreenState extends State<NotificationCenterScreen> with TickerProviderStateMixin {
+  bool _canReviewTransfers = false; // a step in transfer_steps is mine (13_round12.sql)
+
   final _db = Supabase.instance.client;
   static const Color _purple = Color(0xFF4A148C);
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  /// Tabs this user needs (my_notification_tabs, 14_round13.sql): Transfers
+  /// only for roles that request or approve transfers, My reports only for
+  /// roles with duties. Everyone has Notifications.
+  bool _showReports = true, _showTransfers = true;
+  TabController? _tabs;
+
+  void _setTabs(bool reports, bool transfers) {
+    final n = 1 + (reports ? 1 : 0) + (transfers ? 1 : 0);
+    _showReports = reports;
+    _showTransfers = transfers;
+    if (_tabs?.length != n) {
+      _tabs?.dispose();
+      _tabs = TabController(length: n, vsync: this);
+    }
+  }
 
   List<Map<String, dynamic>> _notes = [];
   List<Map<String, dynamic>> _reports = [];
@@ -102,6 +118,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
   @override
   void initState() {
     super.initState();
+    _setTabs(true, true);
+    Supabase.instance.client.rpc('can_review_transfers').then((v) {
+      if (mounted && v == true) setState(() => _canReviewTransfers = true);
+    }, onError: (_) {});
+    _loadTabs();
     _load();
     NotificationCount.unread.addListener(_onLive);
   }
@@ -109,8 +130,19 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
   @override
   void dispose() {
     NotificationCount.unread.removeListener(_onLive);
-    _tabs.dispose();
+    _tabs?.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadTabs() async {
+    try {
+      final v = await _db.rpc('my_notification_tabs');
+      if (!mounted || v is! Map) return;
+      final transfers = v['transfers'] == true || widget.canReviewTransfers;
+      setState(() => _setTabs(v['reports'] != false || _reports.isNotEmpty, transfers));
+    } catch (_) {
+      // before 14_round13.sql: keep all tabs
+    }
   }
 
   void _onLive() => _loadNotes();
@@ -386,7 +418,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
 
   Widget _transfersTab() {
     return _wrap([
-      if (widget.canReviewTransfers && (widget.userRole ?? '').isNotEmpty)
+      if (widget.canReviewTransfers || _canReviewTransfers)
         Card(
           margin: const EdgeInsets.only(bottom: 14),
           color: AppPalette.bg(Color.lerp(_purple, Colors.white, 0.92)),
@@ -396,7 +428,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
             title: const Text("Transfer approvals", style: TextStyle(fontWeight: FontWeight.bold)),
             subtitle: const Text("Requests waiting for your decision (Governance Inbox)"),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ApprovalInbox(userRole: widget.userRole!))).then((_) => _load()),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ApprovalInbox(userRole: widget.userRole ?? ''))).then((_) => _load()),
           ),
         ),
       Text("Transfers I requested", style: GoogleFonts.merriweather(fontWeight: FontWeight.w800, fontSize: 14.5)),
@@ -443,14 +475,14 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
         title: Text("Notification Center", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 17)),
         actions: [IconButton(tooltip: tr("Refresh"), onPressed: _load, icon: const Icon(Icons.refresh_rounded))],
         bottom: TabBar(
-          controller: _tabs,
+          controller: _tabs!,
           labelColor: _purple,
           indicatorColor: _purple,
           isScrollable: MediaQuery.of(context).size.width < 420,
           tabs: [
             Tab(text: unread > 0 ? "Notifications ($unread)" : "Notifications"),
-            Tab(text: tr("My reports")),
-            Tab(text: tr("Transfers")),
+            if (_showReports) Tab(text: tr("My reports")),
+            if (_showTransfers) Tab(text: tr("Transfers")),
           ],
         ),
       ),
@@ -458,7 +490,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
           ? const Center(child: CircularProgressIndicator())
           : _error != null
               ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)))
-              : TabBarView(controller: _tabs, children: [_notesTab(), _reportsTab(), _transfersTab()]),
+              : TabBarView(controller: _tabs!, children: [_notesTab(), if (_showReports) _reportsTab(), if (_showTransfers) _transfersTab()]),
     );
   }
 }

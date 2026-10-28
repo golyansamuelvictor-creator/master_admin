@@ -6,13 +6,13 @@ class AppSizes {
   AppSizes._();
 
   /// Duty / item / menu cards (one line).
-  static const double card = 50;
+  static const double card = 40; // 80% of the earlier 50
 
   /// Person and record cards in lists with a search bar (name + one detail line).
-  static const double listCard = 50;
+  static const double listCard = 46;
 
   /// Title bar cards: a little higher than item cards.
-  static const double titleCard = 58;
+  static const double titleCard = 54;
 
   /// Space at the screen edges (about 0.3 cm): screens use the full width.
   static const double gutter = 12;

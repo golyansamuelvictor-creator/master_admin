@@ -19,6 +19,7 @@ import '../entry_modules/visitations_entry.dart';
 import '../entry_modules/workers_education_entry.dart';
 import '../entry_modules/daily_participation_entry.dart';
 import '../entry_modules/bb_file_entry.dart';
+import '../entry_modules/offering_entry.dart';
 import '../core/compilation_rules.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../widgets/app_menus.dart';
@@ -297,6 +298,17 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         for (var opt in optionsRes) {
           tempOpts.putIfAbsent(opt['field_key'].toString().trim(), () => []).add(opt['option_label'].toString());
         }
+        // Stages and opening months set by the Evangelism Department (12_round11.sql)
+        try {
+          if ((tempOpts['level_status'] ?? []).isEmpty) {
+            final st = await supabase.from('evangelism_stages').select('stage').eq('is_active', true).order('sort_order', ascending: true);
+            tempOpts['level_status'] = [for (final x in st) x['stage'].toString()];
+          }
+          if ((tempOpts['month'] ?? []).isEmpty) {
+            final mo = await supabase.from('evangelism_opening_months').select('label').eq('is_open', true).order('month_start', ascending: true);
+            tempOpts['month'] = [for (final x in mo) x['label'].toString()];
+          }
+        } catch (_) {}
 
         if (mounted) {
           setState(() {
@@ -353,7 +365,10 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
            (widget.team.isNotEmpty && widget.team != 'N/A') ||
            (widget.cellName.isNotEmpty && widget.cellName != 'N/A'));
 
-      final bool isLocWorker = isLocRole || hasLocationUnits;
+      // Secretaries of the 24 church departments enter for their department
+      // at church level, whatever location their own profile is in.
+      final bool is24Dept = grouping.startsWith('24-Dept') && !isCellWorker && !isTeamWorker;
+      final bool isLocWorker = !is24Dept && (isLocRole || hasLocationUnits);
 
       if (isLocWorker) {
         if (isWorkersSheet) {
@@ -729,7 +744,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           onConflict: 'member_id,report_date',
           defaultToNull: false,
         );
-      } else if (widget.sheetName == 'Offering Status') {
+      } else if (widget.sheetName == 'Offering Status' || widget.sheetName == 'Offering') {
         // Needs the unique key from 02_schema_fixes.sql; without it every save added new rows
         await supabase.from(_getTargetTable()).upsert(
           logRows,
@@ -970,6 +985,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     }
     if (sn == 'Evangelism' || sn == 'Evangelism Part') return EvangelismEntry(members: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
     if (sn == 'BB File') return BbFileEntry(students: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['level_status'] ?? [], methodOptions: dynamicOptions['method'] ?? [], monthOptions: dynamicOptions['month'] ?? [], onChanged: onDataChanged);
+    if (sn == 'Offering Status' || sn == 'Offering') return OfferingEntry(members: members, reportData: reportData, pPurple: pPurple, onChanged: onDataChanged, reportDate: selectedDate);
     if (sn == 'Visitations and Counselling') return VisitationsEntry(members: members, reportData: reportData, pPurple: pPurple, optionsReason: dynamicOptions['visitation_reason'] ?? [], optionsResult: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
     if (sn == 'Workers Daily Participation') return DailyParticipationEntry(members: members, reportData: reportData, pPurple: pPurple, statusOptions: dynamicOptions['status_detail'] ?? [], onChanged: onDataChanged);
 

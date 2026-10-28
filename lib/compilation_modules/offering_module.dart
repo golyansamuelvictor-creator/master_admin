@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../core/compilation_rules.dart';
+import '../core/offering_categories.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -13,30 +14,23 @@ import 'package:master_admin/core/app_palette.dart';
 class _OfferingUnitStat {
   final String unitName;
   final int totalSaints;
-  final num givers;
-  final num tithe;
-  final num weekly;
-  final num thanks;
-  final num construction;
-  final num donation;
+  final num givers; // members who gave anything in the period (each counted once)
+  final Map<String, num> giversBy; // per kind: weekly kinds = average per week, monthly kinds = members in the period
+  final Map<String, num> amountBy; // money given in the period, per kind
+  final num amount;
 
   _OfferingUnitStat({
     required this.unitName,
     required this.totalSaints,
     required this.givers,
-    required this.tithe,
-    required this.weekly,
-    required this.thanks,
-    required this.construction,
-    required this.donation,
+    required this.giversBy,
+    required this.amountBy,
+    required this.amount,
   });
 
-  double get giversPct => totalSaints > 0 ? (givers / totalSaints * 100.0) : 0.0;
-  double get tithePct => totalSaints > 0 ? (tithe / totalSaints * 100.0) : 0.0;
-  double get weeklyPct => totalSaints > 0 ? (weekly / totalSaints * 100.0) : 0.0;
-  double get thanksPct => totalSaints > 0 ? (thanks / totalSaints * 100.0) : 0.0;
-  double get constructionPct => totalSaints > 0 ? (construction / totalSaints * 100.0) : 0.0;
-  double get donationPct => totalSaints > 0 ? (donation / totalSaints * 100.0) : 0.0;
+  double pct(num v) => totalSaints > 0 ? (v / totalSaints * 100.0) : 0.0;
+  double get giversPct => pct(givers);
+  double pctOf(String col) => pct(giversBy[col] ?? 0);
 }
 
 class OfferingModule extends StatefulWidget {
@@ -103,15 +97,30 @@ class _OfferingModuleState extends State<OfferingModule> {
 
   String _selectedChartUnit = 'General total';
 
+  /// Offered week shown: 0 = all weeks, 1–5 = that week only.
+  int _week = 0;
+
+  /// The reports of the chosen week (all reports for "All weeks").
+  List<dynamic> get _logs => _week == 0
+      ? widget.logs
+      : widget.logs.where((l) => l is Map && OfferingCategories.weekOf(l) == _week).toList();
+
   // Headcount comes only from the screen's scoped member list. (The old
   // fallback loaded ALL church members when the scoped list was empty.)
   List<Map<String, dynamic>> get _effectiveMembers => widget.masterMembers ?? const [];
 
-  int get _sessions => widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(widget.logs);
+  int get _sessions => widget.timePeriod == "Current status" || _week != 0 ? 1 : CompPeriod.sessionCount(_logs);
+
+  static final NumberFormat _money = NumberFormat.decimalPattern();
+  List<OfferingCategory> get _cats => OfferingCategories.list;
 
   @override
   void initState() {
     super.initState();
+    // kinds of offering (Weekly, Tithe, Construction, T.G, Rent, HQ …) from Supabase
+    OfferingCategories.load().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -214,7 +223,7 @@ class _OfferingModuleState extends State<OfferingModule> {
 
   // SOLVED: Next-Tier Decomposition (Never suppresses to null)
   List<_OfferingUnitStat> _calculateStats() {
-    final cascadedLogs = widget.logs.where((l) {
+    final cascadedLogs = _logs.where((l) {
       if (l is! Map) return false;
       return _matchesCascade(Map<String, dynamic>.from(l));
     }).toList();
@@ -255,34 +264,34 @@ class _OfferingModuleState extends State<OfferingModule> {
         saints = distinctIds.isNotEmpty ? distinctIds.length : uLogs.length;
       }
 
-      // Per-week averages over the weeks THIS unit reported in (one week for "Current status")
-      final int sessions = widget.timePeriod == "Current status" ? 1 : CompPeriod.sessionCount(uLogs);
+      // Weekly kinds (Weekly Offering, Week 1–5): average per week over the
+      // weeks THIS unit reported in (one week for "Current status" or a
+      // chosen week). Monthly kinds (Tithe, Construction, T.G, Rent, HQ …)
+      // are given once a month, so each member who offered in the period
+      // is counted once (accumulated).
+      final int sessions = widget.timePeriod == "Current status" || _week != 0 ? 1 : CompPeriod.sessionCount(uLogs);
       num per(int v) => CompPeriod.avgPerSession(v, sessions);
-      num t = per(uLogs.where((l) => _isPaid(l['offering_tithe'])).length);
-      num w = per(uLogs.where((l) => _isPaid(l['offering_weekly'])).length);
-      num th = per(uLogs.where((l) => _isPaid(l['offering_thanks'])).length);
-      num c = per(uLogs.where((l) => _isPaid(l['offering_construction'])).length);
-      num d = per(uLogs.where((l) => _isPaid(l['offering_donation'])).length);
+      Object who(dynamic l) => l['member_id'] ?? l['members']?['id'] ?? l['id'] ?? l.hashCode;
+      int distinct(bool Function(dynamic) f) => uLogs.where(f).map(who).toSet().length;
+      final giversBy = <String, num>{
+        for (final c in _cats)
+          c.column: c.weekly ? per(uLogs.where((l) => _isPaid(l[c.column])).length) : distinct((l) => _isPaid(l[c.column])),
+      };
+      final amountBy = <String, num>{
+        for (final c in _cats) c.column: uLogs.fold<num>(0, (a, l) => a + OfferingCategories.amount(l[c.column])),
+      };
+      num givers = distinct((l) => _cats.any((c) => _isPaid(l[c.column])));
 
-      num givers = per(uLogs.where((l) =>
-        _isPaid(l['offering_tithe']) ||
-        _isPaid(l['offering_weekly']) ||
-        _isPaid(l['offering_thanks']) ||
-        _isPaid(l['offering_construction']) ||
-        _isPaid(l['offering_donation'])
-      ).length);
-
-      saints = math.max(saints, math.max(givers, math.max(t, math.max(w, math.max(th, math.max(c, d))))).ceil());
+      final most = giversBy.values.fold<num>(givers, (a, b) => math.max(a, b));
+      saints = math.max(saints, most.ceil());
 
       stats.add(_OfferingUnitStat(
         unitName: u,
         totalSaints: saints,
         givers: givers,
-        tithe: t,
-        weekly: w,
-        thanks: th,
-        construction: c,
-        donation: d,
+        giversBy: giversBy,
+        amountBy: amountBy,
+        amount: amountBy.values.fold<num>(0, (a, b) => a + b),
       ));
     }
 
@@ -292,31 +301,23 @@ class _OfferingModuleState extends State<OfferingModule> {
   _OfferingUnitStat _calculateTotalStat(List<_OfferingUnitStat> stats) {
     int totalSaints = 0;
     num givers = 0;
-    num tithe = 0;
-    num weekly = 0;
-    num thanks = 0;
-    num construction = 0;
-    num donation = 0;
-
+    final giversBy = <String, num>{for (final c in _cats) c.column: 0};
+    final amountBy = <String, num>{for (final c in _cats) c.column: 0};
     for (var s in stats) {
       totalSaints += s.totalSaints;
       givers += s.givers;
-      tithe += s.tithe;
-      weekly += s.weekly;
-      thanks += s.thanks;
-      construction += s.construction;
-      donation += s.donation;
+      for (final c in _cats) {
+        giversBy[c.column] = giversBy[c.column]! + (s.giversBy[c.column] ?? 0);
+        amountBy[c.column] = amountBy[c.column]! + (s.amountBy[c.column] ?? 0);
+      }
     }
-
     return _OfferingUnitStat(
       unitName: 'General total',
       totalSaints: totalSaints,
       givers: givers,
-      tithe: tithe,
-      weekly: weekly,
-      thanks: thanks,
-      construction: construction,
-      donation: donation,
+      giversBy: giversBy,
+      amountBy: amountBy,
+      amount: amountBy.values.fold<num>(0, (a, b) => a + b),
     );
   }
 
@@ -352,112 +353,236 @@ class _OfferingModuleState extends State<OfferingModule> {
         },
       );
 
+  Widget _header(String title, double h) => SizedBox(
+        height: h,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2.0),
+            child: Text(title,
+                style: GoogleFonts.merriweather(color: AppPalette.fg(CompStyle.headerFg), fontSize: CompStyle.headerFont, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      );
+
+  /// How many members gave each kind of offering (average per week) and the share of all members.
   Widget _buildOfferingTable(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) {
-    const double rh = 24.0;
-    const double hh = 28.0;
-
-    final Map<int, double> colWidths = {
-      0: 130,
-      1: 65,
-      2: 65,
-      3: 55,
-      4: 50,
-      5: 55,
-      6: 50,
-      7: 55,
-      8: 50,
-      9: 55,
-      10: 50,
-      11: 55,
-      12: 50,
-    };
-
-    List<String> headers = [
+    const double rh = 20.0;
+    const double hh = 26.0;
+    final cats = _cats;
+    final Map<int, double> colWidths = {0: 130, 1: 60, 2: 60, 3: 50};
+    for (int k = 0; k < cats.length; k++) {
+      colWidths[4 + k * 2] = 55;
+      colWidths[5 + k * 2] = 48;
+    }
+    final headers = [
       widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : "Unit name",
-      "Saints", "Givers", "Tithe", "%", "Wkly", "%", "Thks", "%", "Const", "%", "Donat", "%"
+      "Saints", "Offered", "%",
+      for (final c in cats) ...[c.short, "%"],
     ];
-
+    List<Widget> cells(_OfferingUnitStat u, double h, {bool total = false}) => [
+          _cellText(total ? "General total" : u.unitName, h, isBold: true, color: total ? pPurple : null),
+          _cellText("${u.totalSaints}", h, isBold: total),
+          _cellText(CompPeriod.fmt(u.givers), h, isBold: true, color: pPurple),
+          _cellPercent(u.giversPct, h, pPurple, isBold: total),
+          for (final c in cats) ...[
+            _cellText(CompPeriod.fmt(u.giversBy[c.column] ?? 0), h, isBold: total),
+            _cellPercent(u.pctOf(c.column), h, c.color, isBold: total),
+          ],
+        ];
     return _fitTable(colWidths, (cols) => Table(
-        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-        columnWidths: cols,
-        border: TableBorder.all(color: Colors.black87, width: 1.0),
-        children: [
-          // Header Row
-          TableRow(
-            decoration: BoxDecoration(color: AppPalette.bg(CompStyle.headerBg)),
-            children: headers.map((title) {
-              return SizedBox(
-                height: hh,
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                    child: Text(
-                      title,
-                      style: GoogleFonts.merriweather(
-                        color: AppPalette.fg(CompStyle.headerFg),
-                        fontSize: CompStyle.headerFont,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-
-          // General Total Summary Row
-          TableRow(
-            decoration: BoxDecoration(color: AppPalette.bg(CompStyle.totalBg)),
-            children: [
-              _cellText("General total", 26.0, isBold: true, color: pPurple),
-              _cellText("${totalStat.totalSaints}", 26.0, isBold: true),
-              _cellText(CompPeriod.fmt(totalStat.givers), 26.0, isBold: true, color: pPurple),
-              _cellText(CompPeriod.fmt(totalStat.tithe), 26.0, isBold: true),
-              _cellPercent(totalStat.tithePct, 26.0, pPurple, isBold: true),
-              _cellText(CompPeriod.fmt(totalStat.weekly), 26.0, isBold: true),
-              _cellPercent(totalStat.weeklyPct, 26.0, Colors.blue[900]!, isBold: true),
-              _cellText(CompPeriod.fmt(totalStat.thanks), 26.0, isBold: true),
-              _cellPercent(totalStat.thanksPct, 26.0, Colors.orange[900]!, isBold: true),
-              _cellText(CompPeriod.fmt(totalStat.construction), 26.0, isBold: true),
-              _cellPercent(totalStat.constructionPct, 26.0, Colors.teal[900]!, isBold: true),
-              _cellText(CompPeriod.fmt(totalStat.donation), 26.0, isBold: true),
-              _cellPercent(totalStat.donationPct, 26.0, Colors.indigo[900]!, isBold: true),
-            ],
-          ),
-
-          // Data Rows
-          // A single unit row would just repeat the General total
-          if (stats.length > 1) ...stats.asMap().entries.map((entry) {
-            int idx = entry.key;
-            _OfferingUnitStat u = entry.value;
-            final isEven = idx.isEven;
-            final rowColor = isEven ? Colors.white : const Color(0xFFF8FAFC);
-
-            return TableRow(
-              decoration: BoxDecoration(color: AppPalette.bg(rowColor)),
-              children: [
-                _cellText(u.unitName, rh, isBold: true),
-                _cellText("${u.totalSaints}", rh),
-                _cellText(CompPeriod.fmt(u.givers), rh, color: pPurple, isBold: true),
-                _cellText(CompPeriod.fmt(u.tithe), rh),
-                _cellPercent(u.tithePct, rh, pPurple),
-                _cellText(CompPeriod.fmt(u.weekly), rh),
-                _cellPercent(u.weeklyPct, rh, Colors.blue[800]!),
-                _cellText(CompPeriod.fmt(u.thanks), rh),
-                _cellPercent(u.thanksPct, rh, Colors.orange[900]!),
-                _cellText(CompPeriod.fmt(u.construction), rh),
-                _cellPercent(u.constructionPct, rh, Colors.teal[800]!),
-                _cellText(CompPeriod.fmt(u.donation), rh),
-                _cellPercent(u.donationPct, rh, Colors.indigo[800]!),
-              ],
-            );
-          }),
-        ],
-      ),
-    );
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          columnWidths: cols,
+          border: TableBorder.all(color: Colors.black87, width: 1.0),
+          children: [
+            TableRow(decoration: BoxDecoration(color: AppPalette.bg(CompStyle.headerBg)), children: headers.map((t) => _header(t, hh)).toList()),
+            TableRow(decoration: BoxDecoration(color: AppPalette.bg(CompStyle.totalBg)), children: cells(totalStat, 22.0, total: true)),
+            // A single unit row would just repeat the General total
+            if (stats.length > 1)
+              ...stats.asMap().entries.map((e) => TableRow(
+                    decoration: BoxDecoration(color: AppPalette.bg(e.key.isEven ? Colors.white : const Color(0xFFF8FAFC))),
+                    children: cells(e.value, rh),
+                  )),
+          ],
+        ));
   }
+
+  /// Money given in the period, per kind of offering (consolidated from the treasurers' entries).
+  Widget _buildAmountTable(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) {
+    const double rh = 20.0;
+    const double hh = 26.0;
+    final cats = _cats;
+    final Map<int, double> colWidths = {0: 130};
+    for (int k = 0; k < cats.length; k++) {
+      colWidths[1 + k] = 92;
+    }
+    colWidths[1 + cats.length] = 104;
+    colWidths[2 + cats.length] = 92;
+    final headers = [
+      widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : "Unit name",
+      for (final c in cats) c.label,
+      "Total",
+      "Per person offered",
+    ];
+    List<Widget> cells(_OfferingUnitStat u, double h, {bool total = false}) => [
+          _cellText(total ? "General total" : u.unitName, h, isBold: true, color: total ? pPurple : null),
+          for (final c in cats) _cellText(_money.format(u.amountBy[c.column] ?? 0), h, isBold: total, color: c.color),
+          _cellText(_money.format(u.amount), h, isBold: true, color: pPurple),
+          _cellText(u.givers > 0 ? _money.format((u.amount / math.max(1, u.givers)).round()) : '-', h, isBold: total),
+        ];
+    return _fitTable(colWidths, (cols) => Table(
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          columnWidths: cols,
+          border: TableBorder.all(color: Colors.black87, width: 1.0),
+          children: [
+            TableRow(decoration: BoxDecoration(color: AppPalette.bg(CompStyle.headerBg)), children: headers.map((t) => _header(t, hh)).toList()),
+            TableRow(decoration: BoxDecoration(color: AppPalette.bg(CompStyle.totalBg)), children: cells(totalStat, 22.0, total: true)),
+            if (stats.length > 1)
+              ...stats.asMap().entries.map((e) => TableRow(
+                    decoration: BoxDecoration(color: AppPalette.bg(e.key.isEven ? Colors.white : const Color(0xFFF8FAFC))),
+                    children: cells(e.value, rh),
+                  )),
+          ],
+        ));
+  }
+
+  // weeks in the period (givers are an average per week, amounts are a sum)
+  int _sessionsOf(_OfferingUnitStat u) => widget.timePeriod == "Current status" ? 1 : math.max(1, _sessions);
+
+  // --- OFFERED WEEK: toggle (All weeks / Week 1–5) and week comparison ---
+  Widget _weekBar() => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: SegmentedButton<int>(
+              showSelectedIcon: false,
+              style: ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                textStyle: WidgetStatePropertyAll(GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+              segments: [
+                const ButtonSegment(value: 0, label: Text("All weeks"), icon: Icon(Icons.calendar_view_month_rounded, size: 16)),
+                for (int w = 1; w <= 5; w++) ButtonSegment(value: w, label: Text("Week $w")),
+              ],
+              selected: {_week},
+              onSelectionChanged: (s) => setState(() {
+                _week = s.first;
+                _selectedChartUnit = 'General total';
+              }),
+            ),
+          ),
+        ),
+      );
+
+  /// One row per offered week: who gave the weekly offering(s), money per
+  /// kind and in total, with the best and the weakest week marked.
+  List<Map<String, dynamic>> _weekRows(int saints) {
+    final logs = widget.logs.where((l) => l is Map && _matchesCascade(Map<String, dynamic>.from(l))).toList();
+    final weekly = _cats.where((c) => c.weekly).toList();
+    final rows = <Map<String, dynamic>>[];
+    for (int w = 1; w <= 5; w++) {
+      final wl = logs.where((l) => OfferingCategories.weekOf(l as Map) == w).toList();
+      // the same week of several months is averaged (e.g. Week 1 of Sep and Oct)
+      final months = wl.map((l) => (l['report_date'] ?? '').toString().padRight(7).substring(0, 7)).toSet().length;
+      final n = months < 1 ? 1 : months;
+      final offered = weekly.isEmpty
+          ? 0
+          : CompPeriod.avgPerSession(wl.where((l) => weekly.any((c) => _isPaid(l[c.column]))).map((l) => l['member_id'] ?? l['id']).length, n);
+      final amountBy = {for (final c in _cats) c.column: wl.fold<num>(0, (a, l) => a + OfferingCategories.amount(l[c.column]))};
+      rows.add({
+        'week': w,
+        'reported': wl.isNotEmpty,
+        'offered': offered,
+        'pct': saints > 0 ? offered / saints * 100 : 0.0,
+        'weeklyAmount': weekly.fold<num>(0, (a, c) => a + (amountBy[c.column] ?? 0)),
+        'amount': amountBy.values.fold<num>(0, (a, b) => a + b),
+        'anyone': wl.where((l) => _cats.any((c) => _isPaid(l[c.column]))).map((l) => l['member_id'] ?? l['id']).toSet().length,
+      });
+    }
+    return rows;
+  }
+
+  Widget _buildWeekTable(int saints) {
+    final rows = _weekRows(saints);
+    final reported = rows.where((r) => r['reported'] == true).toList();
+    int? best, worst;
+    if (reported.length > 1) {
+      reported.sort((a, b) => (b['pct'] as num).compareTo(a['pct'] as num));
+      best = reported.first['week'] as int;
+      worst = reported.last['week'] as int;
+      if ((reported.first['pct'] as num) == (reported.last['pct'] as num)) best = worst = null;
+    }
+    final avgPct = reported.isEmpty ? 0.0 : reported.fold<double>(0, (a, r) => a + (r['pct'] as num)) / reported.length;
+    final weeklyName = _cats.where((c) => c.weekly).map((c) => c.short).join(' + ');
+    const double rh = 22, hh = 30;
+    final headers = ["Offered week", "$weeklyName offered", "%", "$weeklyName (UGX)", "All kinds (UGX)", "Offered anything", "Result"];
+    List<Widget> cells(Map<String, dynamic> r) {
+      final w = r['week'] as int;
+      final tag = !(r['reported'] as bool) ? 'No reports' : w == best ? 'Best week' : w == worst ? 'Weakest week' : '';
+      final c = w == best ? const Color(0xFF2E7D32) : w == worst ? Colors.red.shade700 : null;
+      return [
+        _cellText("Week $w", rh, isBold: true, color: c),
+        _cellText(CompPeriod.fmt(r['offered']), rh, isBold: true),
+        _cellPercent((r['pct'] as num).toDouble(), rh, c ?? pPurple),
+        _cellText(_money.format(r['weeklyAmount']), rh),
+        _cellText(_money.format(r['amount']), rh, isBold: true, color: pPurple),
+        _cellText("${r['anyone']}", rh),
+        _cellText(tag, rh, isBold: tag.isNotEmpty, color: c ?? Colors.blueGrey),
+      ];
+    }
+
+    final all = rows.fold<num>(0, (a, r) => a + (r['amount'] as num));
+    final allWeekly = rows.fold<num>(0, (a, r) => a + (r['weeklyAmount'] as num));
+    return Column(children: [
+      _fitTable({0: 95, 1: 95, 2: 60, 3: 110, 4: 110, 5: 90, 6: 105}, (cols) => Table(
+            defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+            columnWidths: cols,
+            border: TableBorder.all(color: Colors.black87, width: 1.0),
+            children: [
+              TableRow(decoration: BoxDecoration(color: AppPalette.bg(CompStyle.headerBg)), children: headers.map((t) => _header(t, hh)).toList()),
+              for (final r in rows)
+                TableRow(
+                  decoration: BoxDecoration(
+                      color: AppPalette.bg(r['week'] == best
+                          ? const Color(0xFFE8F5E9)
+                          : r['week'] == worst
+                              ? const Color(0xFFFFEBEE)
+                              : Colors.white)),
+                  children: cells(r),
+                ),
+              TableRow(decoration: BoxDecoration(color: AppPalette.bg(CompStyle.totalBg)), children: [
+                _cellText("Overall", 24, isBold: true, color: pPurple),
+                _cellText("avg", 24, isBold: true),
+                _cellPercent(avgPct, 24, pPurple, isBold: true),
+                _cellText(_money.format(allWeekly), 24, isBold: true),
+                _cellText(_money.format(all), 24, isBold: true, color: pPurple),
+                _cellText("$saints saints", 24, isBold: true),
+                _cellText("${reported.length} of 5 weeks", 24, isBold: true),
+              ]),
+            ],
+          )),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+        child: Text(
+          "$weeklyName is given every week; ${_cats.where((c) => !c.weekly).map((c) => c.short).join(', ')} once a month, so in the other tables each member who offered them in the period is counted once.",
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700)),
+        ),
+      ),
+    ]);
+  }
+
+  ExportTable _exportWeeks(int saints) => ExportTable(
+        title: "Offering by week – ${widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : widget.level}",
+        subtitle: _exportSubtitle,
+        headers: const ['Offered week', 'Weekly offered', '%', 'Weekly (UGX)', 'All kinds (UGX)', 'Offered anything'],
+        rows: [
+          for (final r in _weekRows(saints))
+            ['Week ${r['week']}', CompPeriod.fmt(r['offered']), '${(r['pct'] as num).toStringAsFixed(1)}%', _money.format(r['weeklyAmount']), _money.format(r['amount']), '${r['anyone']}'],
+        ],
+      );
 
   // --- UI: DYNAMIC UNIT SELECTOR PILLS ---
   Widget _buildUnitPillBar(List<_OfferingUnitStat> stats) {
@@ -501,7 +626,7 @@ class _OfferingModuleState extends State<OfferingModule> {
 
   // --- UI: DYNAMIC TREND CHART (Week 1–5 or Month 1–4) ---
   Widget _buildTrendChart(List<_OfferingUnitStat> stats) {
-    final cascadedLogs = widget.logs.where((l) {
+    final cascadedLogs = _logs.where((l) {
       if (l is! Map) return false;
       return _matchesCascade(Map<String, dynamic>.from(l));
     }).toList();
@@ -565,13 +690,7 @@ class _OfferingModuleState extends State<OfferingModule> {
               Wrap(
                 spacing: 10,
                 runSpacing: 4,
-                children: [
-                  _legItem("Tithe", pPurple),
-                  _legItem("Weekly", Colors.blue),
-                  _legItem("Thanks", Colors.orange),
-                  _legItem("Const", Colors.teal),
-                  _legItem("Donat", Colors.indigo),
-                ],
+                children: [for (final c in _cats) _legItem(c.short, c.color)],
               ),
             ],
           ),
@@ -633,13 +752,7 @@ class _OfferingModuleState extends State<OfferingModule> {
                 topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
               ),
-              lineBarsData: [
-                _lineData(sortedDates, timeMap, 'offering_tithe', pPurple),
-                _lineData(sortedDates, timeMap, 'offering_weekly', Colors.blue),
-                _lineData(sortedDates, timeMap, 'offering_thanks', Colors.orange),
-                _lineData(sortedDates, timeMap, 'offering_construction', Colors.teal),
-                _lineData(sortedDates, timeMap, 'offering_donation', Colors.indigo),
-              ],
+              lineBarsData: [for (final c in _cats) _lineData(sortedDates, timeMap, c.column, c.color)],
             ),
           ),
         ),
@@ -688,7 +801,7 @@ class _OfferingModuleState extends State<OfferingModule> {
             ],
           ),
           subtitle: Text(
-            "Saints: ${item.totalSaints} | Givers: ${CompPeriod.fmt(item.givers)} (Tithe: ${CompPeriod.fmt(item.tithe)}, Wkly: ${CompPeriod.fmt(item.weekly)})",
+            "Saints: ${item.totalSaints} | Offered: ${CompPeriod.fmt(item.givers)} | Amount: ${_money.format(item.amount)}",
             style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.blueGrey)),
           ),
           trailing: Text(
@@ -702,61 +815,47 @@ class _OfferingModuleState extends State<OfferingModule> {
 
   // --- PDF REPORT EXPORT ---
   // Excel / PDF / Print for the summary table (same rows as the old PDF)
-  ExportTable _exportTable(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) => ExportTable(
-        title: "Offering Status – ${widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : widget.level}",
-        subtitle: 'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
-              '${widget.selectedLocation.isNotEmpty ? ' | Loc: ${widget.selectedLocation}' : ''}'
-              '${widget.selectedSubLocation.isNotEmpty ? ' | Sub: ${widget.selectedSubLocation}' : ''}'
-              '${widget.selectedDepartment.isNotEmpty ? ' | Dept: ${widget.selectedDepartment}' : ''}'
-              '${widget.selectedTeam.isNotEmpty ? ' | Team: ${widget.selectedTeam}' : ''}',
-        headers: <String>[
-                widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : 'Unit',
-                'Saints',
-                'Givers',
-                'Tithe',
-                'Tithe %',
-                'Wkly',
-                'Wkly %',
-                'Thks',
-                'Thks %',
-                'Const',
-                'Const %',
-                'Donat',
-                'Donat %',
-              ],
-        rows: <List<String>>[
-                ...stats.map((u) => [
-                      u.unitName,
-                      '${u.totalSaints}',
-                      CompPeriod.fmt(u.givers),
-                      CompPeriod.fmt(u.tithe),
-                      '${u.tithePct.toStringAsFixed(0)}%',
-                      CompPeriod.fmt(u.weekly),
-                      '${u.weeklyPct.toStringAsFixed(0)}%',
-                      CompPeriod.fmt(u.thanks),
-                      '${u.thanksPct.toStringAsFixed(0)}%',
-                      CompPeriod.fmt(u.construction),
-                      '${u.constructionPct.toStringAsFixed(0)}%',
-                      CompPeriod.fmt(u.donation),
-                      '${u.donationPct.toStringAsFixed(0)}%',
-                    ]),
-                [
-                  'General Total',
-                  '${totalStat.totalSaints}',
-                  CompPeriod.fmt(totalStat.givers),
-                  CompPeriod.fmt(totalStat.tithe),
-                  '${totalStat.tithePct.toStringAsFixed(0)}%',
-                  CompPeriod.fmt(totalStat.weekly),
-                  '${totalStat.weeklyPct.toStringAsFixed(0)}%',
-                  CompPeriod.fmt(totalStat.thanks),
-                  '${totalStat.thanksPct.toStringAsFixed(0)}%',
-                  CompPeriod.fmt(totalStat.construction),
-                  '${totalStat.constructionPct.toStringAsFixed(0)}%',
-                  CompPeriod.fmt(totalStat.donation),
-                  '${totalStat.donationPct.toStringAsFixed(0)}%',
-                ],
-              ],
-      );
+  String get _exportSubtitle => 'Level: ${widget.level} | Group By: ${widget.groupBy} | Period: ${widget.timePeriod}'
+      '${widget.selectedLocation.isNotEmpty ? ' | Loc: ${widget.selectedLocation}' : ''}'
+      '${widget.selectedSubLocation.isNotEmpty ? ' | Sub: ${widget.selectedSubLocation}' : ''}'
+      '${widget.selectedDepartment.isNotEmpty ? ' | Dept: ${widget.selectedDepartment}' : ''}'
+      '${widget.selectedTeam.isNotEmpty ? ' | Team: ${widget.selectedTeam}' : ''}';
+
+  ExportTable _exportTable(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) {
+    List<String> row(_OfferingUnitStat u, String name) => [
+          name,
+          '${u.totalSaints}',
+          CompPeriod.fmt(u.givers),
+          '${u.giversPct.toStringAsFixed(0)}%',
+          for (final c in _cats) ...[CompPeriod.fmt(u.giversBy[c.column] ?? 0), '${u.pctOf(c.column).toStringAsFixed(0)}%'],
+        ];
+    return ExportTable(
+      title: "Members who offered – ${widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : widget.level}",
+      subtitle: _exportSubtitle,
+      headers: <String>[
+        widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : 'Unit',
+        'Saints',
+        'Offered',
+        'Offered %',
+        for (final c in _cats) ...[c.short, '${c.short} %'],
+      ],
+      rows: <List<String>>[...stats.map((u) => row(u, u.unitName)), row(totalStat, 'General Total')],
+    );
+  }
+
+  ExportTable _exportAmounts(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) {
+    List<String> row(_OfferingUnitStat u, String name) => [
+          name,
+          for (final c in _cats) _money.format(u.amountBy[c.column] ?? 0),
+          _money.format(u.amount),
+        ];
+    return ExportTable(
+      title: "Offering amounts – ${widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : widget.level}",
+      subtitle: _exportSubtitle,
+      headers: <String>[widget.activeUnitLabel.isNotEmpty ? widget.activeUnitLabel : 'Unit', for (final c in _cats) c.label, 'Total'],
+      rows: <List<String>>[...stats.map((u) => row(u, u.unitName)), row(totalStat, 'General Total')],
+    );
+  }
 
   Future<void> _exportPdf(List<_OfferingUnitStat> stats, _OfferingUnitStat totalStat) =>
       TableExport.showMenu(context, () => _exportTable(stats, totalStat));
@@ -919,7 +1018,7 @@ class _OfferingModuleState extends State<OfferingModule> {
       children: [
         if (widget.analyticsMode == 'Ranking') ...[
           _section(
-            "Top giving units",
+            "Top offering units",
             _buildRankingList(unitStats, true),
             context,
           ),
@@ -929,8 +1028,23 @@ class _OfferingModuleState extends State<OfferingModule> {
             context,
           ),
         ] else ...[
+          _weekBar(),
           _section(
-            "Offering summary table",
+            "Offering by week (Week 1–5)",
+            _buildWeekTable(totalStat.totalSaints),
+            context,
+            onPdf: () => TableExport.showMenu(context, () => _exportWeeks(totalStat.totalSaints)),
+          ),
+          const SizedBox(height: 10),
+          _section(
+            _week == 0 ? "Offering amounts (UGX)" : "Offering amounts (UGX) – Week $_week",
+            _buildAmountTable(unitStats, totalStat),
+            context,
+            onPdf: () => TableExport.showMenu(context, () => _exportAmounts(unitStats, totalStat)),
+          ),
+          const SizedBox(height: 10),
+          _section(
+            _week == 0 ? "Members who offered" : "Members who offered – Week $_week",
             _buildOfferingTable(unitStats, totalStat),
             context,
             onPdf: () => _exportPdf(unitStats, totalStat),

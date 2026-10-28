@@ -19,6 +19,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/chat_service.dart';
+import '../services/profile_refresh.dart';
 import '../services/app_sounds.dart';
 import '../services/call_service.dart';
 import '../widgets/app_menus.dart';
@@ -558,7 +559,12 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
             InkWell(
               customBorder: const CircleBorder(),
               onTap: _openSettings,
-              child: Tooltip(message: "My profile and settings", child: _Avatar(name: _myName.isEmpty ? '?' : _myName, url: _myAvatar, size: 36)),
+              child: Tooltip(
+                  message: "My profile and settings",
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: myAvatarUrl,
+                    builder: (ctx, shared, child) => _Avatar(name: _myName.isEmpty ? '?' : _myName, url: shared.isNotEmpty ? shared : _myAvatar, size: 36),
+                  )),
             ),
             const SizedBox(width: 10),
             Expanded(

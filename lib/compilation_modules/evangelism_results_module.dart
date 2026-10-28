@@ -8,6 +8,7 @@ import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'evangelism_goals_view.dart';
 
 class _EvangelismResultUnitStat {
   final String unitName;
@@ -62,6 +63,10 @@ class EvangelismResultsModule extends StatefulWidget {
   final String userLoc;
   final String userTeam;
 
+  /// The compilation period (Results By Units compares it with the goals).
+  final DateTime? periodStart;
+  final DateTime? periodEnd;
+
   const EvangelismResultsModule({
     super.key,
     required this.bbData,
@@ -88,6 +93,8 @@ class EvangelismResultsModule extends StatefulWidget {
     this.userSub = '',
     this.userLoc = '',
     this.userTeam = '',
+    this.periodStart,
+    this.periodEnd,
   });
 
   @override
@@ -864,7 +871,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
   Widget build(BuildContext context) {
     final filteredData = _getFilteredBbData();
     final List<_EvangelismResultUnitStat> unitStats = _calculateUnitStats(filteredData);
-    final _EvangelismResultUnitStat totalStat = _calculateTotalStat(unitStats);
+    _calculateTotalStat(unitStats);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -881,25 +888,19 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
             context,
           ),
         ] else ...[
-          _section(
-            "Evangelism results stage cards",
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: _buildResultCards(filteredData),
-            ),
-            context,
-          ),
-          _section(
-            "Evangelism results summary table",
-            _buildTableSummary(unitStats, totalStat),
-            context,
-            onPdf: () => _exportPdf(unitStats, totalStat),
-          ),
-          const SizedBox(height: 10),
-          _section(
-            "Evangelism results stage breakdown",
-            _buildStageChart(unitStats, totalStat),
-            context,
+          // Results By Units: goals vs current, down to the cell, with column
+          // and line charts (the stage cards and the detailed results were
+          // removed: the BB File has the details).
+          EvangelismGoalsView(
+            from: widget.periodStart ?? DateTime.now().subtract(const Duration(days: 6)),
+            to: widget.periodEnd ?? DateTime.now(),
+            timePeriod: widget.timePeriod,
+            level: widget.level,
+            location: widget.selectedLocation,
+            subLocation: widget.selectedSubLocation,
+            department: widget.selectedDepartment,
+            team: widget.selectedTeam,
+            section: (title, content, {onExport}) => _section(title, content, context, onPdf: onExport),
           ),
         ],
       ],

@@ -7,6 +7,7 @@ import 'package:master_admin/core/app_palette.dart';
 import 'package:master_admin/core/table_export.dart';
 import 'package:flutter/services.dart';
 import 'package:master_admin/widgets/app_menus.dart';
+import 'package:master_admin/core/offering_categories.dart';
 
 class CompilationResultsList extends StatefulWidget {
   final List<dynamic> logs;
@@ -146,6 +147,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       "offering_thanks": "Thanksgiving",
       "offering_construction": "Construction",
       "offering_donation": "Donation",
+      "offering_rent": "Rent",
+      "offering_hq": "HQ",
       "weekly_schedule": "Weekly Schedule",
       "visitation_reason": "Reason for Visit",
       "edu_sun": "Sunday Edu",
@@ -191,7 +194,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     } else if (d == 'Cell Group Service') {
       base.addAll(["status_detail", "reason_notes", "solution_notes"]);
     } else if (d == 'Offering Status') {
-      base.addAll(["offering_tithe", "offering_weekly", "offering_thanks", "offering_construction", "offering_donation", "reason_notes", "solution_notes"]);
+      base.addAll([...OfferingCategories.allColumns, "reason_notes", "solution_notes"]);
     } else if (d == 'Evangelism Part') {
       base.addAll(["weekly_schedule", "status_detail"]);
     } else if (d == 'Morning Light') {

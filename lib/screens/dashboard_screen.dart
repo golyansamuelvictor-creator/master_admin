@@ -9,6 +9,8 @@ import 'package:image_picker/image_picker.dart';
 import '../main.dart';
 import 'add_account_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../services/chat_service.dart';
+import '../services/profile_refresh.dart';
 import 'package:master_admin/core/app_sizes.dart';
 
 // PRESERVED: UserAccount Model
@@ -74,8 +76,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _currentRole = widget.currentRole;
     _accountType = widget.accountType;
 
+    _avatarUrl = myAvatarUrl.value.isEmpty ? null : myAvatarUrl.value;
+    myAvatarUrl.addListener(_onAvatar);
     _fetchMenu();
     _fetchLiveProfile();
+  }
+
+  void _onAvatar() {
+    if (mounted) setState(() => _avatarUrl = myAvatarUrl.value.isEmpty ? null : myAvatarUrl.value);
+  }
+
+  @override
+  void dispose() {
+    myAvatarUrl.removeListener(_onAvatar);
+    super.dispose();
   }
 
   // ==========================================
@@ -133,6 +147,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // avatar_url & bio
           if (res['avatar_url'] != null && res['avatar_url'].toString().trim().isNotEmpty) {
             _avatarUrl = res['avatar_url'].toString().trim();
+            myAvatarUrl.value = _avatarUrl!;
           }
           if (res['bio'] != null && res['bio'].toString().trim().isNotEmpty) {
             _bio = res['bio'].toString().trim();
@@ -457,12 +472,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             decoration: BoxDecoration(
               color: AppPalette.bg(Colors.white), 
               borderRadius: BorderRadius.circular(15), 
+              // elevated (raised) duty cards
               boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03), 
-                  blurRadius: 8, 
-                  offset: const Offset(0, 3),
-                ),
+                BoxShadow(color: pColor.withValues(alpha: 0.14), blurRadius: 12, offset: const Offset(0, 5)),
+                BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 3, offset: const Offset(0, 1)),
               ], 
               border: Border.all(color: AppPalette.line(Colors.black.withValues(alpha: 0.05))),
             ),
@@ -472,7 +485,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Expanded(
                 child: Text(
                   _toTitleCase(item['label']), 
-                  style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14, color: AppPalette.fg(Colors.black87)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 15, color: AppPalette.fg(Colors.black87)),
                 ),
               ), 
               Icon(Icons.chevron_right_rounded, size: 18, color: AppPalette.fg(Colors.black26)),
@@ -524,7 +539,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: AppPalette.bg(Colors.white),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
@@ -548,22 +563,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 errorText = null;
               });
 
-              final user = _supabase.auth.currentUser;
-              final uid = user?.id ?? DateTime.now().millisecondsSinceEpoch.toString();
-              final fileExt = pickedFile.name.split('.').last.toLowerCase();
-              // profile-photos only accepts files inside the user's own folder (<uid>/...)
-              final fileName = '$uid/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-              final contentType = (fileExt == 'jpg' || fileExt == 'jpeg') ? 'image/jpeg' : 'image/$fileExt';
-
+              // Same store as Settings › Profile: the 'avatars' bucket, inside
+              // the user's own folder (the 'profile-photos' bucket the old code
+              // used doesn't exist, so every upload failed). Saved right away.
               final imageBytes = await pickedFile.readAsBytes();
-
-              await _supabase.storage.from('profile-photos').uploadBinary(
-                fileName,
-                imageBytes,
-                fileOptions: FileOptions(contentType: contentType, upsert: true),
-              );
-
-              final publicUrl = _supabase.storage.from('profile-photos').getPublicUrl(fileName);
+              final publicUrl = await ChatService.uploadAvatar(imageBytes, pickedFile.name);
+              if (mounted) setState(() => _avatarUrl = publicUrl);
 
               setModalState(() {
                 avatarCtrl.text = publicUrl;
@@ -753,10 +758,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   });
 
                                   try {
-                                    final user = _supabase.auth.currentUser;
-                                    
-                                    // Strictly updates profiles table columns
-                                    final updateData = {
+                                    // Updates the profiles columns; a column the database
+                                    // doesn't have yet (bio before 14_round13.sql) is skipped
+                                    // instead of failing the whole save.
+                                    final updateData = <String, dynamic>{
                                       'full_name': newName,
                                       'username': newUsername,
                                       'phone': newPhone,
@@ -764,12 +769,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       if (newAvatar.isNotEmpty) 'avatar_url': newAvatar,
                                       'updated_at': DateTime.now().toIso8601String(),
                                     };
-
-                                    if (user != null) {
-                                      await _supabase.from('profiles').update(updateData).eq('id', user.id);
-                                    } else {
-                                      await _supabase.from('profiles').update(updateData).ilike('email', _email.trim());
-                                    }
+                                    await updateMyProfile(updateData, email: _email);
 
                                     if (mounted) {
                                       setState(() {
@@ -841,7 +841,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: AppPalette.bg(Colors.white),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(28),

@@ -29,6 +29,7 @@ import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../widgets/app_menus.dart';
+import 'package:master_admin/core/offering_categories.dart';
 
 class CompilationEngine extends StatefulWidget {
   final String role, userUnit, selectedDuty, loc, sub, dept, team; 
@@ -1278,8 +1279,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
 
     if (d == 'Offering' || d == 'Offering Status') {
-      return ['offering_tithe', 'offering_weekly', 'offering_thanks', 'offering_construction', 'offering_donation']
-          .any((k) => paid(r[k]));
+      return OfferingCategories.allColumns.any((k) => paid(r[k]));
     }
     if (d == 'Service Attendance Status') return CompStatus.isPositive(r['attendance_realtime']);
     if (d == 'Visitations and Counselling') {
@@ -2376,6 +2376,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
     }
     if (d == 'Evangelism Results' || d == 'BB Results') {
       return EvangelismResultsModule(
+        periodStart: _periodStart,
+        periodEnd: _periodEnd,
         bbData: _logs,
         logs: _logs,
         masterMembers: _masterMembers,

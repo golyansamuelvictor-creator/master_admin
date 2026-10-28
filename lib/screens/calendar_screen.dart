@@ -128,7 +128,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
       if (mounted) setState(() { _events = newEvents; _isLoading = false; });
     } catch (e) { 
-      if (mounted) setState(() => _isLoading = false); 
+      debugPrint("Calendar load error: $e");
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Couldn't load the calendar: ${e is PostgrestException ? e.message : e}"),
+          backgroundColor: Colors.red.shade700,
+        ));
+      }
     }
   }
 
@@ -464,18 +471,39 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   // --- FULL SCREEN ADD EVENT ---
   Future<void> _showAddEventFullScreen(BuildContext context) async {
-    final saved = await Navigator.push<bool>(
+    final saved = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(fullscreenDialog: true, builder: (context) => AddEventForm(perm: _perm, initialDate: _selectedDay ?? DateTime.now())),
     );
-    if (saved == true) _fetchEvents();
+    if (saved == null || !mounted) return;
+    // Go to the event's day so it shows in the Daily schedule right away
+    final d = DateTime.tryParse((saved['event_date'] ?? '').toString()) ?? DateTime.now();
+    setState(() {
+      _selectedDay = DateTime(d.year, d.month, d.day);
+      _focusedDay = _selectedDay!;
+    });
+    await _fetchEvents();
+    if (!mounted) return;
+    final shown = _getEventsForDay(d).any((e) => e['type'] == 'event' && e['id']?.toString() == saved['id']?.toString());
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: shown ? const Color(0xFF2E7D32) : Colors.orange.shade800,
+      duration: const Duration(seconds: 5),
+      content: Text(shown
+          ? "Event saved: \"${saved['title']}\" on ${DateFormat('EEE d MMM yyyy').format(d)}."
+          : "Event saved, but it isn't visible to your account (check its category / location)."),
+    ));
   }
 
   // --- UI HELPERS ---
   Widget _categorySmallCard(String title, Color color) => Container(
     margin: const EdgeInsets.only(bottom: 4),
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppPalette.line(color.withValues(alpha: 0.1)))),
+    decoration: BoxDecoration(
+      color: AppPalette.bg(Colors.white),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: AppPalette.line(color.withValues(alpha: 0.2))),
+      boxShadow: [BoxShadow(color: color.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 3))],
+    ),
     child: Row(children: [
       Container(width: 8, height: 8, decoration: BoxDecoration(color: AppPalette.bg(color), borderRadius: BorderRadius.circular(2))),
       const SizedBox(width: 10),
@@ -489,8 +517,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     decoration: BoxDecoration(
       color: AppPalette.bg(color ?? Colors.white), 
       borderRadius: BorderRadius.circular(15), 
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10)],
-      border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.05)))
+      // Raised cards (were flat)
+      boxShadow: [
+        BoxShadow(color: pPurple.withValues(alpha: 0.10), blurRadius: 18, offset: const Offset(0, 8)),
+        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 2)),
+      ],
+      border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.10)))
     ),
     child: Column(children: [
       if (title != null) ...[
@@ -503,7 +535,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _eventItem(String title, String time, Color c) => Container(
       margin: const EdgeInsets.only(bottom: 6), padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFFBFBFE)), borderRadius: BorderRadius.circular(10), border: Border(left: BorderSide(color: AppPalette.line(c), width: 4))),
+      decoration: BoxDecoration(
+        color: AppPalette.bg(const Color(0xFFFBFBFE)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border(left: BorderSide(color: AppPalette.line(c), width: 4)),
+        boxShadow: [BoxShadow(color: c.withValues(alpha: 0.18), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
         Text(title, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(Colors.black87)), maxLines: 2, overflow: TextOverflow.ellipsis),
         Text(time, style: GoogleFonts.merriweather(fontSize: 10, color: AppPalette.fg(Colors.blueGrey), fontWeight: FontWeight.bold)),
@@ -589,7 +626,7 @@ class _AddEventFormState extends State<AddEventForm> {
       if (notesC.text.trim().isNotEmpty) notesC.text.trim(),
     ].join('\n');
     try {
-      await Supabase.instance.client.from('church_events').insert({
+      final row = {
         'title': nameC.text.trim(),
         'description': desc.isEmpty ? null : desc,
         'event_date': DateFormat('yyyy-MM-dd').format(date),
@@ -597,15 +634,21 @@ class _AddEventFormState extends State<AddEventForm> {
         'category': category,
         'unit_scope': level == 'location' ? widget.perm.location : 'Church',
         ...widget.perm.scopeFor(level),
-      });
-      if (mounted) Navigator.pop(context, true);
+      };
+      // Returns the saved row, so the calendar can confirm it and open its day
+      final saved = await Supabase.instance.client.from('church_events').insert(row).select().maybeSingle();
+      if (mounted) Navigator.pop(context, Map<String, dynamic>.from(saved ?? row));
     } catch (e) {
       debugPrint("Add event error: $e");
       if (mounted) {
+        final msg = e is PostgrestException ? e.message : e.toString();
         setState(() {
           saving = false;
-          error = "Couldn't save the event. Your role may not be allowed to add this category.";
+          error = msg.contains('row-level security')
+              ? "Your role isn't allowed to add $category. Ask the admin to give your role this permission."
+              : "Couldn't save the event: $msg";
         });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error!), backgroundColor: Colors.red.shade700));
       }
     }
   }

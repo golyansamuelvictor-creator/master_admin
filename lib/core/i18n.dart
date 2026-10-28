@@ -173,7 +173,7 @@ class I18n {
 
   /// More languages that can be added (`app_language_catalog`).
   static Future<List<Map<String, dynamic>>> catalog() async {
-    final rows = await _db.from('app_language_catalog').select().order('name_en');
+    final rows = await _db.from('app_language_catalog').select().order('name_en', ascending: true);
     return List<Map<String, dynamic>>.from(rows);
   }
 
@@ -197,7 +197,7 @@ class I18n {
   static Future<Map<String, String>> _fetchPack(String code) async {
     final out = <String, String>{};
     for (int from = 0;; from += 1000) {
-      final page = await _db.from('app_translations').select('key, value').eq('lang_code', code).order('key').range(from, from + 999);
+      final page = await _db.from('app_translations').select('key, value').eq('lang_code', code).order('key', ascending: true).range(from, from + 999);
       for (final r in page) {
         out[r['key'].toString()] = (r['value'] ?? '').toString();
       }

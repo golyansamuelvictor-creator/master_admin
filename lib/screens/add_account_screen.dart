@@ -711,8 +711,9 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   /// Every account must be complete: no account without its role and
   /// the units that role belongs to.
   String? _validateSelections() {
-    if (dynamicRoles.isNotEmpty && selectedChurchRole == null) {
-      return "Please select your assigned role.";
+    // Workers must have their role (Saints get the Saint role)
+    if ((selectedAccountType != "Saint" || dynamicRoles.isNotEmpty) && (selectedChurchRole == null || selectedChurchRole!.trim().isEmpty)) {
+      return "Please select your assigned role. It is required for workers.";
     }
     if (selectedAccountType == "Worker" && dynamicRoles.isEmpty) {
       return "No role matches the unit you selected. Check your unit, or ask the administration to add the role.";
@@ -1238,7 +1239,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
             // CARD 2: Identity & Role Details
             _buildCard("2. Identity & Role Details", [
-              _sideBySideDropdown("Assigned Role", dynamicRoles, selectedChurchRole, (v) {
+              _sideBySideDropdown("Assigned Role *", dynamicRoles, selectedChurchRole, (v) {
                 setState(() {
                   selectedChurchRole = v;
                   if (!_isTeamLeaderRole) _isDualTeamSecretary = false;
@@ -1333,7 +1334,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                 _sideBySideField("Full Names", _nameController, Icons.person_outline),
                 _sideBySideField("SCJ ID", _idController, Icons.badge_outlined),
               ],
-              _sideBySideField("User Name", _userController, Icons.alternate_email),
+              _sideBySideField("User Name *", _userController, Icons.alternate_email),
 
               if (isGoogleSignUp) ...[
                 _lockedInfoRow(
