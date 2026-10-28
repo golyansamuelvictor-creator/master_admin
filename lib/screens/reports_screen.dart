@@ -11,7 +11,6 @@ import 'member_directory_screen.dart';
 import 'entry_form_screen.dart';
 import '../admin_tools/approval_cockpit.dart';
 import 'admin/transfer_request_form.dart';
-import 'admin/account_approvals_screen.dart';
 import 'notification_center_screen.dart';
 import 'service_photos_screen.dart';
 import 'admin_user_management_screen.dart';
@@ -24,6 +23,7 @@ import '../admin_tools/task_manager_screen.dart';
 import 'admin/unit_growth_tracker_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../core/group_scope.dart';
+import '../core/app_sizes.dart';
 
 class ReportsScreen extends StatefulWidget {
   final String userEmail, userRole;
@@ -349,7 +349,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     double width = MediaQuery.of(context).size.width; bool isDesktop = width > 900;
     final Color pPurple = const Color(0xFF4A148C);
     final allButtons = _getMainGridButtons();
-    double hPadding = isDesktop ? width * 0.15 : 20;
+    // Full width with a small edge (was 15% empty on each side on desktop)
+    double hPadding = isDesktop ? 18 : AppSizes.gutter;
 
     return Scaffold(
       backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
@@ -380,10 +381,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
           child: GridView.builder(
             padding: EdgeInsets.fromLTRB(hPadding, 0, hPadding, 40), 
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: isDesktop ? 3 : 1, 
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 15, 
-              childAspectRatio: isDesktop ? 8.5 : 12.0 
+              crossAxisCount: AppSizes.columns(width),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 12,
+              mainAxisExtent: AppSizes.card, // the standard card height
             ), 
             itemCount: allButtons.length, 
             itemBuilder: (context, index) {
@@ -955,13 +956,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
               Navigator.push(context, MaterialPageRoute(builder: (c) => const TransferRequestForm())); 
             }),
           ],
-          // New accounts: roles with the "Approve Accounts" permission (app_roles)
+          // One screen for approvals, roles and removal: roles with the
+          // "Approve Accounts" permission (app_roles), inside their own area
           if (r == 'admin' || _dynamicAdminActions.contains('Approve Accounts'))
-            _compactActionBtn(Icons.how_to_reg_rounded, "Account approvals", Colors.green[800]!, () {
-              Navigator.push(context, MaterialPageRoute(builder: (c) => const AccountApprovalsScreen()));
-            }),
-          if (r == 'admin')
-            _compactActionBtn(Icons.manage_accounts_rounded, "User management (roles, remove)", Colors.blueGrey[700]!, () {
+            _compactActionBtn(Icons.manage_accounts_rounded, "User management", Colors.green[800]!, () {
               Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminUserManagementScreen()));
             }),
         ]))

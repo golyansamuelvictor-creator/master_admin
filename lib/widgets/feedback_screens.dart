@@ -80,7 +80,7 @@ class _FeedbackFormState extends State<FeedbackForm> {
       appBar: AppBar(title: Text(k.$1, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 17))),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
+          constraints: const BoxConstraints(maxWidth: double.infinity),
           child: ListView(padding: const EdgeInsets.all(18), children: [
             Row(children: [
               Icon(k.$2, color: AppPalette.fg(_kPurple), size: 28),
@@ -202,7 +202,7 @@ class _FeedbackListScreenState extends State<FeedbackListScreen> {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
+          constraints: const BoxConstraints(maxWidth: double.infinity),
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : ListView(padding: const EdgeInsets.all(14), children: [

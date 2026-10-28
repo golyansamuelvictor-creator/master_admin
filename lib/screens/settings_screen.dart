@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/app_sizes.dart';
+import 'package:master_admin/widgets/compact_card.dart';
 import 'package:master_admin/widgets/app_lock_settings.dart';
 import 'package:master_admin/widgets/two_step.dart';
 import 'package:master_admin/widgets/feedback_screens.dart';
@@ -164,15 +166,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 40), children: [
+            constraints: const BoxConstraints(maxWidth: double.infinity),
+            child: ListView(padding: AppSizes.page, children: [
               if (cat == null) ...[
                 _header(),
-                const SizedBox(height: 16),
-                for (final c in _cats)
-                  _tile(c.icon, c.color, c.title, c.subtitle, () => setState(() => _selected = c.title), big: true),
+                const SizedBox(height: 12),
+                CardGrid(
+                  shrinkWrap: true,
+                  extent: AppSizes.listCard,
+                  itemCount: _cats.length,
+                  itemBuilder: (_, i) {
+                    final c = _cats[i];
+                    return _tile(c.icon, c.color, c.title, c.subtitle, () => setState(() => _selected = c.title), big: true);
+                  },
+                ),
               ] else
-                for (final it in cat.items) _tile(it.icon, it.color ?? cat.color, it.title, it.subtitle, () => _open(context, it), danger: it.color != null),
+                CardGrid(
+                  shrinkWrap: true,
+                  extent: AppSizes.listCard,
+                  itemCount: cat.items.length,
+                  itemBuilder: (_, i) {
+                    final it = cat.items[i];
+                    return _tile(it.icon, it.color ?? cat.color, it.title, it.subtitle, () => _open(context, it), danger: it.color != null);
+                  },
+                ),
             ]),
           ),
         ),
@@ -185,7 +202,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final user = (_profile['username'] ?? '').toString();
     final avatar = (_profile['avatar_url'] ?? '').toString();
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [Color(0xFF4A148C), Color(0xFF7B3FC4)]),
         borderRadius: BorderRadius.circular(20),
@@ -193,7 +210,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       child: Row(children: [
         CircleAvatar(
-          radius: 32,
+          radius: 24,
           backgroundColor: Colors.white24,
           backgroundImage: avatar.isEmpty ? null : NetworkImage(avatar),
           child: avatar.isEmpty ? Text(name.isEmpty ? '?' : name[0].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)) : null,
@@ -201,10 +218,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(width: 14),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: Colors.white)),
-            if (user.isNotEmpty) Text("@$user", style: const TextStyle(color: Colors.white70)),
-            Text(widget.userEmail, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-            const SizedBox(height: 4),
+            Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15.5, color: Colors.white)),
+            Text(user.isNotEmpty ? "@$user · ${widget.userEmail}" : widget.userEmail,
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            const SizedBox(height: 2),
             Text(widget.userRole.replaceAll('_', ' ').toUpperCase(), style: const TextStyle(color: Color(0xFFFFD54F), fontSize: 11, fontWeight: FontWeight.bold)),
           ]),
         ),
@@ -213,18 +230,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _tile(IconData icon, Color color, String title, String subtitle, VoidCallback onTap, {bool big = false, bool danger = false}) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      elevation: 0.6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ListTile(
-        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: big ? 6 : 2),
-        leading: CircleAvatar(backgroundColor: AppPalette.bg(color.withValues(alpha: 0.12)), child: Icon(icon, color: AppPalette.fg(color))),
-        title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: danger ? AppPalette.fg(color) : null)),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12.5)),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: onTap,
-      ),
+    return CompactCard(
+      leading: CircleAvatar(radius: 17, backgroundColor: AppPalette.bg(color.withValues(alpha: 0.12)), child: Icon(icon, size: 19, color: AppPalette.fg(color))),
+      title: title,
+      subtitle: subtitle,
+      titleColor: danger ? color : null,
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
     );
   }
 }
@@ -246,8 +258,8 @@ class _SettingsPage extends StatelessWidget {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
-          child: ListView(padding: const EdgeInsets.all(16), children: [
+          constraints: const BoxConstraints(maxWidth: double.infinity),
+          child: ListView(padding: AppSizes.page, children: [
             Card(
               elevation: 1,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),

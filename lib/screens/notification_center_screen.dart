@@ -221,7 +221,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
   Widget _wrap(List<Widget> children) => RefreshIndicator(
         onRefresh: _load,
         child: ListView(padding: const EdgeInsets.fromLTRB(14, 14, 14, 40), children: [
-          Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 860), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children))),
+          Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: double.infinity), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children))),
         ]),
       );
 

@@ -222,7 +222,7 @@ class _MediaUploadScreenState extends State<MediaUploadScreen> {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
+          constraints: const BoxConstraints(maxWidth: double.infinity),
           child: ListView(padding: const EdgeInsets.all(18), children: [
             _section("1. File"),
             _fileBox(
@@ -578,7 +578,7 @@ class _MediaCategoryManagerState extends State<MediaCategoryManager> {
           ? const Center(child: CircularProgressIndicator())
           : Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
+                constraints: const BoxConstraints(maxWidth: double.infinity),
                 child: ReorderableListView.builder(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
                   itemCount: _cats.length,

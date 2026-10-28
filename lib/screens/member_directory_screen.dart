@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'member_detail_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/app_sizes.dart';
+import 'package:master_admin/widgets/compact_card.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_menus.dart';
@@ -386,7 +388,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
         children: [
           if (group != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 10, AppSizes.gutter, 0),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -402,7 +404,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
           // Dual Mode Switcher for Internal Affairs and Administration (not group leaders)
           if (_hasDualMode)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 10, AppSizes.gutter, 0),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
@@ -435,7 +437,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
             ),
 
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 12, AppSizes.gutter, 6),
             child: TextField(
               controller: _controller,
               onChanged: (v) => setState(() => _searchQuery = v),
@@ -472,26 +474,28 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                 final members = _apply(all);
                 final anyFilter = _filters.values.any((v) => v != null);
                 return Column(children: [
+                  // Filters in the middle; they scroll sideways when they don't fit
                   SizedBox(
                     height: 48,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      children: [
-                        for (final k in _filters.keys) _filterChip(k, all),
-                        if (anyFilter)
-                          TextButton.icon(
-                            onPressed: () => setState(() => _filters.updateAll((_, __) => null)),
-                            icon: const Icon(Icons.clear_all_rounded, size: 18),
-                            label: const Text("Clear filters"),
-                          ),
-                      ],
+                    child: Center(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: AppSizes.gutter),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          for (final k in _filters.keys) _filterChip(k, all),
+                          if (anyFilter)
+                            TextButton.icon(
+                              onPressed: () => setState(() => _filters.updateAll((_, __) => null)),
+                              icon: const Icon(Icons.clear_all_rounded, size: 18),
+                              label: const Text("Clear filters"),
+                            ),
+                        ]),
+                      ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
+                    padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 0, AppSizes.gutter, 6),
+                    child: Center(
                       child: Text(
                         members.length == all.length ? "${all.length} members" : "${members.length} of ${all.length} members",
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppPalette.fg(Colors.grey.shade700)),
@@ -506,7 +510,9 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                               style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey)),
                             ),
                           )
-                        : ListView.builder(
+                        : CardGrid(
+                            padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 0, AppSizes.gutter, 24),
+                            extent: AppSizes.listCard,
                             itemCount: members.length,
                             itemBuilder: (context, index) {
                               final member = members[index];
@@ -516,26 +522,29 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                                 _v(member, 'team'),
                                 _v(member, 'cell_group'),
                               ].where((x) => x.isNotEmpty && x.toLowerCase() != 'n/a').join(' › ');
+                              final name = _v(member, 'english_name');
 
                               return OfficeRightClick(
                                 longPress: true,
                                 onMenu: (p) => _memberMenu(p, member),
-                                child: Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
-                                      child: Text(
-                                        _v(member, 'english_name').isNotEmpty ? _v(member, 'english_name')[0] : "?",
-                                        style: TextStyle(color: AppPalette.fg(Colors.white)),
-                                      ),
-                                    ),
-                                    title: Text(member['english_name'] ?? "No Name", style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    subtitle: Text(
-                                      "ID: ${member['scj_id'] ?? '-'} • Dept: ${member['department'] ?? '-'} • Loc: ${member['location'] ?? '-'}"
+                                child: Tooltip(
+                                  message: "ID: ${member['scj_id'] ?? '-'} • Dept: ${member['department'] ?? '-'} • Loc: ${member['location'] ?? '-'}"
                                       "${unit.isEmpty ? '' : '\n$unit'}\nIntro: $recruiter",
+                                  waitDuration: const Duration(milliseconds: 600),
+                                  child: CompactCard(
+                                    leading: CircleAvatar(
+                                      radius: 17,
+                                      backgroundColor: AppPalette.bg(const Color(0xFF4A148C)),
+                                      child: Text(name.isNotEmpty ? name[0] : "?", style: TextStyle(color: AppPalette.fg(Colors.white), fontSize: 13)),
                                     ),
-                                    isThreeLine: true,
+                                    title: name.isEmpty ? "No Name" : name,
+                                    subtitle: [
+                                      "ID ${member['scj_id'] ?? '-'}",
+                                      member['location'] ?? '-',
+                                      member['department'] ?? '-',
+                                      if (unit.isNotEmpty) unit,
+                                      "Intro: $recruiter",
+                                    ].join(' • '),
                                     trailing: const Icon(Icons.chevron_right),
                                     onTap: () => _openMember(member),
                                   ),

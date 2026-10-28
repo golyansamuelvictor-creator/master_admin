@@ -20,6 +20,7 @@ import 'package:video_player/video_player.dart';
 
 import '../services/chat_service.dart';
 import '../services/app_sounds.dart';
+import '../services/call_service.dart';
 import '../widgets/app_menus.dart';
 import 'package:master_admin/core/app_palette.dart';
 
@@ -34,8 +35,10 @@ part 'my_home_extras.dart';
 class CommunicationScreen extends StatefulWidget {
   final String userEmail;
   final String userRole;
+  /// Chat to open first (e.g. after joining with an invite link)
+  final String? openRoomId;
 
-  const CommunicationScreen({super.key, required this.userEmail, required this.userRole});
+  const CommunicationScreen({super.key, required this.userEmail, required this.userRole, this.openRoomId});
 
   @override
   State<CommunicationScreen> createState() => _CommunicationScreenState();
@@ -137,6 +140,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   @override
   void initState() {
     super.initState();
+    _openRoomId = widget.openRoomId;
     _loadRooms();
     _loadMyName();
     _loadPrivacy();
@@ -172,6 +176,34 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     if (pr != null) _db.removeChannel(pr);
     _onlineNow.value = <String>{};
     super.dispose();
+  }
+
+  /// Paste an invite link (or its code) to join a group.
+  Future<void> _joinWithLink() async {
+    final c = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Join with a link"),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          decoration: InputDecoration(hintText: tr("Paste the invite link or code"), border: const OutlineInputBorder()),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text("Continue")),
+        ],
+      ),
+    );
+    final code = CallService.codeFrom(text ?? '');
+    if (code == null || !mounted) {
+      if (text != null && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("That isn't an invite link.")));
+      return;
+    }
+    await CallService.joinWithCode(context, code);
+    _loadRooms();
   }
 
   /// Who is online: everyone with My Home open joins this channel.
@@ -560,10 +592,12 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
                 if (v == 'contacts') _openContacts();
                 if (v == 'settings') _openSettings();
                 if (v == 'refresh') _loadRooms();
+                if (v == 'join') _joinWithLink();
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'chat', child: Row(children: [Icon(Icons.person_add_alt_1_rounded, size: 18), SizedBox(width: 10), Text("New chat")])),
                 PopupMenuItem(value: 'group', child: Row(children: [Icon(Icons.group_add_rounded, size: 18), SizedBox(width: 10), Text("New group")])),
+                PopupMenuItem(value: 'join', child: Row(children: [Icon(Icons.link_rounded, size: 18), SizedBox(width: 10), Text("Join with a link")])),
                 PopupMenuItem(value: 'contacts', child: Row(children: [Icon(Icons.contacts_outlined, size: 18), SizedBox(width: 10), Text("Contacts")])),
                 PopupMenuItem(value: 'settings', child: Row(children: [Icon(Icons.settings_outlined, size: 18), SizedBox(width: 10), Text("Privacy & settings")])),
                 PopupMenuItem(value: 'refresh', child: Row(children: [Icon(Icons.refresh_rounded, size: 18), SizedBox(width: 10), Text("Refresh")])),
@@ -1171,6 +1205,18 @@ class _ConversationViewState extends State<_ConversationView> {
                         ]),
                       ),
               ),
+              if (!r.blocked) ...[
+                IconButton(
+                  tooltip: tr(r.isGroup ? "Voice chat" : "Voice call"),
+                  icon: Icon(Icons.call_rounded, color: AppPalette.fg(_kPurple)),
+                  onPressed: () => CallService.call(context, r.id, video: false, roomName: r.name),
+                ),
+                IconButton(
+                  tooltip: tr(r.isGroup ? "Video chat" : "Video call"),
+                  icon: Icon(Icons.videocam_rounded, color: AppPalette.fg(_kPurple)),
+                  onPressed: () => CallService.call(context, r.id, video: true, roomName: r.name),
+                ),
+              ],
               IconButton(
                 tooltip: _searching ? "Close search" : "Search",
                 icon: Icon(_searching ? Icons.close_rounded : Icons.search_rounded, color: AppPalette.fg(Colors.grey.shade700)),
@@ -1245,6 +1291,17 @@ class _ConversationViewState extends State<_ConversationView> {
   }
 
   Widget _bubble(ChatMessage m, double maxWidth, {required bool showName}) {
+    // "… joined with an invite link": a small line in the middle
+    if (m.kind == 'system') {
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(color: AppPalette.bg(Colors.black.withValues(alpha: 0.07)), borderRadius: BorderRadius.circular(12)),
+          child: Text(m.content, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade800))),
+        ),
+      );
+    }
     final mine = _isMine(m);
     final replied = m.replyTo == null ? null : _messages.where((x) => x.id == m.replyTo).firstOrNull;
     final read = mine &&
@@ -1288,7 +1345,13 @@ class _ConversationViewState extends State<_ConversationView> {
             if (m.hasAttachment) _attachment(m, maxWidth),
             if (m.kind == 'poll') _PollCard(key: ValueKey('poll-${m.id}'), message: m, tick: _pollTicks[m.id] ?? 0),
             if (m.kind == 'location') _LocationCard(content: m.content),
-            if (m.content.isNotEmpty && m.kind != 'poll' && m.kind != 'location')
+            if (m.kind == 'call')
+              _CallLine(
+                text: m.content,
+                onCall: () => CallService.call(context, widget.room.id,
+                    video: m.content.contains('🎥'), roomName: widget.room.name),
+              ),
+            if (m.content.isNotEmpty && m.kind != 'poll' && m.kind != 'location' && m.kind != 'call')
               Padding(
                 padding: EdgeInsets.only(top: m.hasAttachment ? 6 : 0),
                 child: SelectableText(m.content, style: GoogleFonts.merriweather(fontSize: _ChatPrefs.textSize, height: 1.35, color: AppPalette.fg(Colors.black87))),
@@ -1600,6 +1663,201 @@ class _ConversationViewState extends State<_ConversationView> {
 // =====================================================================
 // CHAT INFO (members, group settings, shared media)
 // =====================================================================
+/// Group admins: make, copy and turn off invite links; answer join requests.
+class _InviteLinksDialog extends StatefulWidget {
+  final ChatRoom room;
+  final VoidCallback onChanged;
+  const _InviteLinksDialog({required this.room, required this.onChanged});
+  @override
+  State<_InviteLinksDialog> createState() => _InviteLinksDialogState();
+}
+
+class _InviteLinksDialogState extends State<_InviteLinksDialog> {
+  final _db = Supabase.instance.client;
+  List<Map<String, dynamic>> _links = [];
+  List<Map<String, dynamic>> _requests = [];
+  bool _loading = true;
+  int _days = 7;
+  int _maxUses = 0;
+  bool _approval = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final l = await _db.from('chat_invites').select().eq('room_id', widget.room.id).eq('revoked', false).order('created_at', ascending: false);
+      final r = await _db.rpc('chat_join_requests_list', params: {'p_room': widget.room.id});
+      if (mounted) {
+        setState(() {
+          _links = List<Map<String, dynamic>>.from(l);
+          _requests = List<Map<String, dynamic>>.from(r as List);
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  Future<void> _create() async {
+    try {
+      final code = await _db.rpc('create_chat_invite', params: {
+        'p_room': widget.room.id,
+        'p_days': _days,
+        'p_max_uses': _maxUses == 0 ? null : _maxUses,
+        'p_needs_approval': _approval,
+      });
+      await Clipboard.setData(ClipboardData(text: CallService.inviteLink(code.toString())));
+      _snack("Link made and copied. Paste it in WhatsApp, SMS or email.");
+      _load();
+    } catch (e) {
+      _snack("Couldn't make a link: ${e is PostgrestException ? e.message : e}");
+    }
+  }
+
+  Future<void> _revoke(String code) async {
+    await _db.from('chat_invites').update({'revoked': true}).eq('code', code);
+    _load();
+  }
+
+  Future<void> _answer(String user, bool ok) async {
+    await _db.rpc('answer_join_request', params: {'p_room': widget.room.id, 'p_user': user, 'p_accept': ok});
+    widget.onChanged();
+    _load();
+  }
+
+  String _limits(Map l) {
+    final parts = <String>[];
+    final exp = DateTime.tryParse((l['expires_at'] ?? '').toString());
+    parts.add(exp == null ? "Never expires" : "Until ${DateFormat('d MMM, HH:mm').format(exp.toLocal())}");
+    parts.add(l['max_uses'] == null ? "${l['uses']} joined" : "${l['uses']} of ${l['max_uses']} used");
+    if (l['needs_approval'] == true) parts.add("admin approves");
+    return parts.join(' · ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text("Invite to ${widget.room.name}"),
+      content: SizedBox(
+        width: 460,
+        child: _loading
+            ? const SizedBox(height: 80, child: Center(child: CircularProgressIndicator()))
+            : SingleChildScrollView(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+                  const Text("Anyone with an approved account who opens the link can join this group."),
+                  const SizedBox(height: 10),
+                  Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, alignment: WrapAlignment.center, children: [
+                    DropdownButton<int>(
+                      value: _days,
+                      items: const [
+                        DropdownMenuItem(value: 1, child: Text("1 day")),
+                        DropdownMenuItem(value: 7, child: Text("7 days")),
+                        DropdownMenuItem(value: 30, child: Text("30 days")),
+                        DropdownMenuItem(value: 0, child: Text("Never expires")),
+                      ],
+                      onChanged: (v) => setState(() => _days = v ?? 7),
+                    ),
+                    DropdownButton<int>(
+                      value: _maxUses,
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text("No limit")),
+                        DropdownMenuItem(value: 1, child: Text("1 person")),
+                        DropdownMenuItem(value: 10, child: Text("10 people")),
+                        DropdownMenuItem(value: 50, child: Text("50 people")),
+                        DropdownMenuItem(value: 100, child: Text("100 people")),
+                      ],
+                      onChanged: (v) => setState(() => _maxUses = v ?? 0),
+                    ),
+                    FilterChip(label: const Text("Admin approves"), selected: _approval, onSelected: (v) => setState(() => _approval = v)),
+                  ]),
+                  const SizedBox(height: 8),
+                  Center(child: ElevatedButton.icon(onPressed: _create, icon: const Icon(Icons.add_link_rounded), label: const Text("Make a new link"))),
+                  if (_links.isNotEmpty) ...[
+                    const Divider(height: 24),
+                    const Text("Active links", style: TextStyle(fontWeight: FontWeight.bold)),
+                    for (final l in _links)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.link_rounded),
+                        title: SelectableText(CallService.inviteLink(l['code'].toString()), maxLines: 1, style: const TextStyle(fontSize: 12.5)),
+                        subtitle: Text(_limits(l)),
+                        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          IconButton(
+                            tooltip: tr("Copy"),
+                            icon: const Icon(Icons.copy_rounded, size: 18),
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: CallService.inviteLink(l['code'].toString())));
+                              _snack("Link copied");
+                            },
+                          ),
+                          IconButton(tooltip: tr("Turn off"), icon: Icon(Icons.link_off_rounded, size: 18, color: AppPalette.fg(Colors.red.shade700)), onPressed: () => _revoke(l['code'].toString())),
+                        ]),
+                      ),
+                  ],
+                  if (_requests.isNotEmpty) ...[
+                    const Divider(height: 24),
+                    Text("Asking to join (${_requests.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
+                    for (final q in _requests)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text((q['full_name'] ?? 'Someone').toString()),
+                        subtitle: Text([q['location'], q['department']].where((x) => (x ?? '').toString().isNotEmpty).join(' · ')),
+                        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          IconButton(tooltip: tr("Accept"), icon: Icon(Icons.check_circle_rounded, color: AppPalette.fg(Colors.green.shade700)), onPressed: () => _answer(q['user_id'].toString(), true)),
+                          IconButton(tooltip: tr("Decline"), icon: Icon(Icons.cancel_rounded, color: AppPalette.fg(Colors.red.shade700)), onPressed: () => _answer(q['user_id'].toString(), false)),
+                        ]),
+                      ),
+                  ],
+                ]),
+              ),
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close"))],
+    );
+  }
+}
+
+/// A call in the chat history: "📞 Voice call · 3:12", "Missed video call" …
+class _CallLine extends StatelessWidget {
+  final String text;
+  final VoidCallback onCall;
+  const _CallLine({required this.text, required this.onCall});
+  @override
+  Widget build(BuildContext context) {
+    final missed = text.contains('Missed') || text.contains('declined');
+    final video = text.contains('🎥');
+    final label = text.replaceAll('📞 ', '').replaceAll('🎥 ', '');
+    return InkWell(
+      onTap: onCall,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: AppPalette.bg((missed ? Colors.red : const Color(0xFF16A34A)).withValues(alpha: 0.12)),
+            child: Icon(video ? Icons.videocam_rounded : (missed ? Icons.call_missed_rounded : Icons.call_rounded),
+                size: 17, color: AppPalette.fg(missed ? Colors.red.shade700 : const Color(0xFF16A34A))),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text(label, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(missed ? Colors.red.shade700 : Colors.black87))),
+              Text(text.contains('started') ? "Tap to join" : "Tap to call back", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
 class _ChatInfoPanel extends StatefulWidget {
   final ChatRoom room;
   final VoidCallback onChanged;
@@ -1762,6 +2020,15 @@ class _ChatInfoPanelState extends State<_ChatInfoPanel> {
                   OutlinedButton.icon(onPressed: _editGroup, icon: const Icon(Icons.edit_rounded, size: 16), label: const Text("Edit")),
                 if (r.isGroup && r.isAdmin)
                   OutlinedButton.icon(onPressed: _addPeople, icon: const Icon(Icons.person_add_alt_1_rounded, size: 16), label: const Text("Add")),
+                if (r.isGroup && r.isAdmin)
+                  OutlinedButton.icon(
+                    onPressed: () => showDialog(context: context, builder: (_) => _InviteLinksDialog(room: r, onChanged: () async {
+                      await _load();
+                      widget.onChanged();
+                    })),
+                    icon: const Icon(Icons.link_rounded, size: 16),
+                    label: const Text("Invite link"),
+                  ),
                 OutlinedButton.icon(
                   onPressed: () async {
                     await ChatService.setMyFlag(r.id, 'muted', !r.muted);

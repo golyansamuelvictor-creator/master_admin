@@ -274,12 +274,12 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         padding: EdgeInsets.symmetric(
-          horizontal: isDesktop ? 36 : (isTablet ? 24 : 16),
+          horizontal: isDesktop ? 14 : (isTablet ? 12 : 10),
           vertical: 20,
         ),
         child: Center(
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 1400),
+            constraints: const BoxConstraints(maxWidth: double.infinity),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

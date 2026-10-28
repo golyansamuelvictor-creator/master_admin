@@ -176,7 +176,7 @@ class TableExport {
       fullscreenDialog: true,
       builder: (ctx) => Scaffold(
         appBar: AppBar(
-          title: Text('Print preview · $title', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600)),
+          title: Text('Print preview · $title', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.w600)),
         ),
         body: PdfPreview(
           build: build,
@@ -226,7 +226,7 @@ class TableExport {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text('Export “${t.title}”', maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 15)),
+            child: Text('Export “${t.title}”', maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontWeight: FontWeight.w700, fontSize: 15)),
           ),
           _opt(ctx, 'excel', Icons.grid_on_rounded, const Color(0xFF1D6F42), 'Excel (.xlsx)', 'Download a spreadsheet file'),
           _opt(ctx, 'pdf', Icons.picture_as_pdf_rounded, const Color(0xFFC62828), 'PDF', 'Download a PDF file'),
@@ -251,8 +251,8 @@ class TableExport {
 
   static Widget _opt(BuildContext ctx, String v, IconData i, Color c, String title, String sub) => ListTile(
         leading: CircleAvatar(backgroundColor: AppPalette.bg(c.withValues(alpha: 0.1)), child: Icon(i, color: AppPalette.fg(c), size: 20)),
-        title: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14)),
-        subtitle: Text(sub, style: GoogleFonts.inter(fontSize: 12)),
+        title: Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w600, fontSize: 14)),
+        subtitle: Text(sub, style: GoogleFonts.merriweather(fontSize: 12)),
         onTap: () => Navigator.pop(ctx, v),
       );
 

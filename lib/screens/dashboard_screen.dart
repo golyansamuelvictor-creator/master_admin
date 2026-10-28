@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../main.dart';
 import 'add_account_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/app_sizes.dart';
 
 // PRESERVED: UserAccount Model
 class UserAccount {
@@ -437,10 +438,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: isDesktop ? 3 : 1,
-        mainAxisSpacing: 10,
+        crossAxisCount: AppSizes.columns(MediaQuery.of(context).size.width),
+        mainAxisSpacing: 8,
         crossAxisSpacing: 12,
-        childAspectRatio: isDesktop ? 7.5 : 9.5, 
+        mainAxisExtent: AppSizes.card, // the standard card height
       ),
       itemCount: items.length,
       itemBuilder: (context, index) {

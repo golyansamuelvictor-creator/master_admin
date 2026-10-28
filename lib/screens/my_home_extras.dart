@@ -1517,7 +1517,7 @@ class _ChatSettingsScreenState extends State<_ChatSettingsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
+                constraints: const BoxConstraints(maxWidth: double.infinity),
                 child: ListView(children: [
                   const SizedBox(height: 16),
                   Center(

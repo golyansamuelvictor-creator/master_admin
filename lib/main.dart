@@ -16,6 +16,7 @@ import 'services/app_lock_manager.dart';
 import 'services/profile_refresh.dart';
 import 'services/device_accounts.dart';
 import 'services/device_sessions.dart';
+import 'services/call_service.dart';
 import 'services/media_playback.dart';
 import 'widgets/media_mini_player.dart';
 import 'widgets/app_lock_settings.dart';
@@ -51,10 +52,17 @@ void main() async {
   // System language: the device copy now (instant, offline), the account's
   // choice after signing in
   await I18n.init();
+  // My Home: an invite link opened (?join=CODE) waits until signed in
+  unawaited(CallService.rememberInviteFromUrl());
   Supabase.instance.client.auth.onAuthStateChange.listen((st) {
     if (st.event == AuthChangeEvent.signedIn || st.event == AuthChangeEvent.initialSession) {
-      if (st.session != null) unawaited(I18n.syncFromAccount());
+      if (st.session != null) {
+        unawaited(I18n.syncFromAccount());
+        // incoming voice / video calls ring on every screen
+        CallService.start();
+      }
     }
+    if (st.event == AuthChangeEvent.signedOut) CallService.stop();
   });
 
   try {
@@ -129,6 +137,9 @@ class MasterAdminApp extends StatelessWidget {
             fontFamily: GoogleFonts.merriweather().fontFamily,
             textTheme: GoogleFonts.merriweatherTextTheme(ThemeData.light().textTheme),
             scaffoldBackgroundColor: kLightBg,
+            // Every list row and card at the standard (duty card) height
+            listTileTheme: const ListTileThemeData(dense: true, visualDensity: VisualDensity(vertical: -2), minVerticalPadding: 4, contentPadding: EdgeInsets.symmetric(horizontal: 12)),
+            cardTheme: const CardThemeData(margin: EdgeInsets.symmetric(vertical: 4, horizontal: 0)),
           ),
           darkTheme: ThemeData(
             useMaterial3: true,
@@ -137,6 +148,9 @@ class MasterAdminApp extends StatelessWidget {
             fontFamily: GoogleFonts.merriweather().fontFamily,
             textTheme: GoogleFonts.merriweatherTextTheme(ThemeData.dark().textTheme),
             scaffoldBackgroundColor: kDarkBg,
+            // Every list row and card at the standard (duty card) height
+            listTileTheme: const ListTileThemeData(dense: true, visualDensity: VisualDensity(vertical: -2), minVerticalPadding: 4, contentPadding: EdgeInsets.symmetric(horizontal: 12)),
+            cardTheme: const CardThemeData(margin: EdgeInsets.symmetric(vertical: 4, horizontal: 0)),
           ),
           themeMode: currentMode,
           localizationsDelegates: const [

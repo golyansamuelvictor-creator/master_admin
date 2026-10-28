@@ -2,128 +2,208 @@
 import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/app_sizes.dart';
+import 'package:master_admin/widgets/compact_card.dart';
 
+/// Member Bio › User management.
+///
+/// One screen for what used to be "Account approvals" and "User
+/// Administration" (Approve new users / Change roles / Remove user):
+/// - Pending, Approved, Rejected and All accounts, searchable, and filtered by
+///   role, location, sub-location and department;
+/// - Approve / Reject (anyone with "Approve Accounts", inside their own area:
+///   church-wide roles everyone, a Location Sec their location, a
+///   sub-location role their sub-location; the person is notified);
+/// - Change role and Remove user (admins).
+/// The list and the filters come from the database already limited to your
+/// area (user_admin_list / user_admin_facets in 11_round10.sql).
 class AdminUserManagementScreen extends StatefulWidget {
-  const AdminUserManagementScreen({super.key});
+  final String initialStatus;
+  const AdminUserManagementScreen({super.key, this.initialStatus = 'pending'});
 
   @override
   State<AdminUserManagementScreen> createState() => _AdminUserManagementScreenState();
 }
 
 class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
-  final _supabase = Supabase.instance.client;
+  final _db = Supabase.instance.client;
+  static const int _page = 100;
 
-  String _currentView = 'menu'; // 'menu', 'approve', 'roles', 'remove'
-  bool _isLoading = false;
-  List<Map<String, dynamic>> _profiles = [];
+  late String _status = widget.initialStatus;
+  String _search = '';
+  String? _role, _location, _subLocation, _department;
+  bool _loading = true;
+  bool _loadingMore = false;
+  String? _error;
+  String? _scope;
+  bool _isAdmin = false;
+  int _total = 0;
+  List<Map<String, dynamic>> _rows = [];
+  Map<String, List<Map<String, dynamic>>> _facets = {};
   List<Map<String, dynamic>> _appRoles = [];
-  String _searchQuery = '';
+  // Department / group choices for the role dialog (official_departments)
+  Map<String, String?> _deptOptions = {"All / General": null};
+  final Set<String> _busy = {};
+  int _req = 0;
 
   final Color pPurple = const Color(0xFF4A148C);
-  final Color pGold = const Color(0xFFB78103);
-
-  // Exact Official Department UUIDs from your app_roles table
-  final Map<String, String?> _deptUUIDMap = {
-    "All / General": null,
-    "내무부 (Internal Affairs)": "1ab8ccda-1551-4cdc-8e6c-6d8c50a7ebe2",
-    "장년회 (MG)": "03100bbc-6897-4538-8533-c9f36fe74f41",
-    "부녀회 (WG)": "fd7bc250-72b6-449b-b0eb-348483261c17",
-    "청년회 (YAG)": "5c8a3f12-7e44-4829-9b93-8a123456789a",
-    "새신자 (New Saints)": "ccf31d7c-119d-4cba-82e0-b47540489d64",
-    "MOU": "65d7451d-83d8-459d-81b8-b73fea7636cb",
-  };
 
   @override
   void initState() {
     super.initState();
-    _loadAppRoles();
+    _init();
   }
 
-  Future<void> _loadAppRoles() async {
+  Future<void> _init() async {
     try {
-      final res = await _supabase.from('app_roles').select();
-      setState(() => _appRoles = List<Map<String, dynamic>>.from(res));
-    } catch (e) {
-      debugPrint("Error loading roles: $e");
-    }
-  }
-
-  Future<void> _loadProfiles({bool pendingOnly = false}) async {
-    setState(() => _isLoading = true);
-    try {
-      var query = _supabase.from('profiles').select();
-      if (pendingOnly) {
-        query = query.or('is_approved.is.false,approval_status.eq.pending');
+      final r = await Future.wait<dynamic>([
+        _db.rpc('account_approval_scope'),
+        _db.rpc('is_admin'),
+        _db.from('app_roles').select(),
+        _db.from('official_departments').select('id, name, name_en, name_ko, parent_id').order('name'),
+      ]);
+      _scope = r[0]?.toString();
+      _isAdmin = r[1] == true;
+      _appRoles = List<Map<String, dynamic>>.from(r[2] as List);
+      final depts = List<Map<String, dynamic>>.from(r[3] as List);
+      String label(Map d) {
+        final ko = (d['name_ko'] ?? d['name'] ?? '').toString();
+        final en = (d['name_en'] ?? '').toString();
+        return en.isEmpty || en == ko ? ko : (ko.isEmpty ? en : "$ko ($en)");
       }
-      final res = await query.order('created_at', ascending: false);
+      final opts = <String, String?>{"All / General": null};
+      for (final d in depts.where((d) => d['parent_id'] == null)) {
+        opts[label(d)] = d['id'].toString();
+        for (final c in depts.where((c) => c['parent_id']?.toString() == d['id'].toString())) {
+          opts["   ${label(c)}"] = c['id'].toString();
+        }
+      }
+      _deptOptions = opts;
+    } catch (e) {
+      debugPrint("User management init: $e");
+    }
+    await _load();
+  }
+
+  Future<void> _load({bool more = false}) async {
+    final req = ++_req;
+    setState(() {
+      if (more) {
+        _loadingMore = true;
+      } else {
+        _loading = true;
+        _error = null;
+      }
+    });
+    try {
+      final params = {
+        'p_status': _status,
+        'p_search': _search.trim(),
+        'p_role': _role,
+        'p_location': _location,
+        'p_sub_location': _subLocation,
+        'p_department': _department,
+        'p_limit': _page,
+        'p_offset': more ? _rows.length : 0,
+      };
+      final res = await Future.wait<dynamic>([
+        _db.rpc('user_admin_list', params: params),
+        if (!more) _db.rpc('user_admin_facets', params: {'p_status': _status}),
+      ]);
+      if (!mounted || req != _req) return;
+      final rows = List<Map<String, dynamic>>.from((res[0] as List).map((e) => Map<String, dynamic>.from(e as Map)));
       setState(() {
-        _profiles = List<Map<String, dynamic>>.from(res);
-        _isLoading = false;
+        _rows = more ? [..._rows, ...rows] : rows;
+        _total = rows.isEmpty ? (more ? _total : 0) : ((rows.first['total'] ?? rows.length) as num).toInt();
+        if (!more) {
+          final f = <String, List<Map<String, dynamic>>>{};
+          for (final x in (res[1] as List)) {
+            final m = Map<String, dynamic>.from(x as Map);
+            f.putIfAbsent(m['kind'].toString(), () => []).add(m);
+          }
+          _facets = f;
+        }
+        _loading = false;
+        _loadingMore = false;
       });
     } catch (e) {
-      debugPrint("Error loading profiles: $e");
-      setState(() => _isLoading = false);
+      debugPrint("User management: $e");
+      if (mounted && req == _req) {
+        setState(() {
+          _loading = false;
+          _loadingMore = false;
+          _error = "Couldn't load accounts. Ask the admin to run 11_round10.sql.";
+        });
+      }
     }
   }
 
-  // ==========================================
-  // 1. APPROVE ACCOUNT ACTION
-  // ==========================================
-  Future<void> _approveUser(Map<String, dynamic> user) async {
-    try {
-      await _supabase.from('profiles').update({
-        'is_approved': true,
-        'approval_status': 'approved',
-      }).eq('id', user['id']);
+  void _snack(String m, {bool error = false}) => ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m), behavior: SnackBarBehavior.floating, backgroundColor: error ? Colors.red.shade700 : null));
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Approved account for ${user['full_name'] ?? user['email']}."),
-          backgroundColor: Colors.green.shade800,
-        ),
-      );
-      _loadProfiles(pendingOnly: true);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Approval error: $e"), backgroundColor: Colors.red),
-      );
-    }
+  String _v(Map r, String k) {
+    final s = (r[k] ?? '').toString().trim();
+    return s.toLowerCase() == 'n/a' ? '' : s;
   }
 
-  Future<void> _rejectUser(Map<String, dynamic> user) async {
-    final reasonCtrl = TextEditingController();
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Reject Registration"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text("Reason for rejecting ${user['full_name'] ?? user['email']}:"),
-            const SizedBox(height: 10),
-            TextField(controller: reasonCtrl, decoration: InputDecoration(labelText: tr("Reason"), border: OutlineInputBorder())),
+  String _name(Map r) => _v(r, 'full_name').isEmpty ? _v(r, 'email') : _v(r, 'full_name');
+
+  // ==========================================
+  // 1. APPROVE / REJECT (decide_account: area rule + notification)
+  // ==========================================
+  Future<void> _decide(Map<String, dynamic> r, bool approve) async {
+    String? reason;
+    if (!approve) {
+      final c = TextEditingController();
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Reject ${_name(r)}?"),
+          content: SizedBox(
+            width: 380,
+            child: TextField(
+              controller: c,
+              autofocus: true,
+              maxLines: 3,
+              decoration: InputDecoration(labelText: tr("Reason (shown to the person)"), border: const OutlineInputBorder()),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+              onPressed: () {
+                if (c.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text("Reject"),
+            ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(Colors.red)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text("Reject", style: TextStyle(color: AppPalette.fg(Colors.white))),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      await _supabase.from('profiles').update({
-        'is_approved': false,
-        'approval_status': 'rejected',
-        'rejection_reason': reasonCtrl.text.trim(),
-      }).eq('id', user['id']);
-      _loadProfiles(pendingOnly: true);
+      );
+      if (ok != true) return;
+      reason = c.text.trim();
+    }
+    final id = r['id'].toString();
+    setState(() => _busy.add(id));
+    try {
+      await _db.rpc('decide_account', params: {'p_user': id, 'p_approve': approve, 'p_reason': reason});
+      _snack(approve ? "${_name(r)} approved" : "${_name(r)} rejected");
+      setState(() {
+        if (_status == 'all') {
+          r['approval_status'] = approve ? 'approved' : 'rejected';
+        } else {
+          _rows.removeWhere((x) => x['id'].toString() == id);
+          _total = _total > 0 ? _total - 1 : 0;
+        }
+      });
+    } catch (e) {
+      _snack(e is PostgrestException ? e.message : "Couldn't save the decision", error: true);
+    } finally {
+      if (mounted) setState(() => _busy.remove(id));
     }
   }
 
@@ -146,7 +226,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) {
-          final targetDeptUUID = _deptUUIDMap[selectedDeptLabel];
+          final targetDeptUUID = _deptOptions[selectedDeptLabel];
 
           // Filter app_roles based on approval_scope, official_dept_id, and level
           final filteredRoles = _appRoles.where((r) {
@@ -220,7 +300,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                   DropdownButtonFormField<String>(
                     initialValue: selectedDeptLabel,
                     decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.all(10)),
-                    items: _deptUUIDMap.keys.map((k) => DropdownMenuItem(value: k, child: Text(k))).toList(),
+                    isExpanded: true,
+                    items: _deptOptions.keys.map((k) => DropdownMenuItem(value: k, child: Text(k, overflow: TextOverflow.ellipsis))).toList(),
                     onChanged: (v) => setDState(() {
                       selectedDeptLabel = v!;
                       selectedRoleName = null;
@@ -304,13 +385,13 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                   // (it used to save the display name, e.g. "Cell Leader", so the new
                   // role matched nothing). app_role_id isn't a profiles column, and
                   // forcing department to 내무부 moved users out of their own reports.
-                  await _supabase.from('profiles').update({
+                  await _db.from('profiles').update({
                     'role': selectedRoleKey,
                     'secondary_role': selectedSecondaryKey == selectedRoleKey ? null : selectedSecondaryKey,
                   }).eq('id', user['id']);
 
                   Navigator.pop(ctx);
-                  _loadProfiles(pendingOnly: false);
+                  _load();
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text("Role updated to '$selectedRoleName'"), backgroundColor: Colors.green),
                   );
@@ -331,7 +412,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text("Remove User: ${user['full_name'] ?? user['email']}", style: TextStyle(color: AppPalette.fg(Colors.red))),
+        title: Text("Remove User: ${_name(user)}", style: TextStyle(color: AppPalette.fg(Colors.red))),
         content: const Text("Are you sure you want to remove this user from the profiles table? This cannot be undone."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
@@ -345,197 +426,279 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     );
 
     if (confirm == true) {
-      await _supabase.from('profiles').delete().eq('id', user['id']);
-      _loadProfiles(pendingOnly: false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("User removed successfully.")));
+      try {
+        await _db.from('profiles').delete().eq('id', user['id']);
+        _load();
+        _snack("User removed successfully.");
+      } catch (e) {
+        _snack("Couldn't remove: $e", error: true);
+      }
     }
+  }
+
+  // ==========================================
+  // DETAILS
+  // ==========================================
+  void _details(Map<String, dynamic> r) {
+    final unit = [_v(r, 'location'), _v(r, 'sub_location'), _v(r, 'department'), _v(r, 'team'), _v(r, 'cell_group')].where((x) => x.isNotEmpty).join(' › ');
+    final created = DateTime.tryParse((r['created_at'] ?? '').toString())?.toLocal();
+    Widget line(IconData i, String label, String t) => t.isEmpty
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(i, size: 17, color: AppPalette.fg(Colors.grey.shade600)),
+              const SizedBox(width: 8),
+              SizedBox(width: 110, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              Expanded(child: SelectableText(t, style: const TextStyle(fontSize: 12.5))),
+            ]),
+          );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(_name(r), style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(pPurple))),
+            const SizedBox(height: 8),
+            line(Icons.alternate_email, "User name", _v(r, 'username').isEmpty ? '' : "@${_v(r, 'username')}"),
+            line(Icons.badge_outlined, "SCJ ID", _v(r, 'scj_id')),
+            line(Icons.mail_outline, "Email", _v(r, 'email')),
+            line(Icons.phone_outlined, "Phone", _v(r, 'phone')),
+            line(Icons.work_outline, "Role", [_v(r, 'role_name').isEmpty ? _v(r, 'role') : _v(r, 'role_name'), _v(r, 'secondary_role')].where((x) => x.isNotEmpty).join(' + ')),
+            line(Icons.account_tree_outlined, "Unit", unit),
+            line(Icons.person_outline, "Account", [_v(r, 'account_type'), _v(r, 'unit_category')].where((x) => x.isNotEmpty).join(' · ')),
+            line(Icons.flag_outlined, "Status", _v(r, 'approval_status')),
+            line(Icons.info_outline, "Reason", _v(r, 'rejection_reason')),
+            line(Icons.event_outlined, "Registered", created == null ? '' : DateFormat('d MMM yyyy, HH:mm').format(created)),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: _actions(r, ctx: ctx, full: true)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _actions(Map<String, dynamic> r, {BuildContext? ctx, bool full = false}) {
+    final st = _v(r, 'approval_status');
+    void close() {
+      if (ctx != null) Navigator.pop(ctx);
+    }
+    return [
+      if (st != 'approved')
+        full
+            ? ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+                onPressed: () {
+                  close();
+                  _decide(r, true);
+                },
+                icon: const Icon(Icons.check_rounded, size: 18),
+                label: const Text("Approve"))
+            : IconButton(tooltip: tr("Approve"), icon: Icon(Icons.check_circle_rounded, color: AppPalette.fg(Colors.green.shade700)), onPressed: () => _decide(r, true)),
+      if (st != 'rejected')
+        full
+            ? OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
+                onPressed: () {
+                  close();
+                  _decide(r, false);
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+                label: const Text("Reject"))
+            : IconButton(tooltip: tr("Reject"), icon: Icon(Icons.cancel_rounded, color: AppPalette.fg(Colors.red.shade700)), onPressed: () => _decide(r, false)),
+      if (_isAdmin && full) ...[
+        OutlinedButton.icon(
+            onPressed: () {
+              close();
+              _openChangeRoleDialog(r);
+            },
+            icon: const Icon(Icons.manage_accounts_rounded, size: 18),
+            label: const Text("Change role")),
+        OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
+            onPressed: () {
+              close();
+              _removeUser(r);
+            },
+            icon: const Icon(Icons.person_remove_rounded, size: 18),
+            label: const Text("Remove user")),
+      ],
+    ];
+  }
+
+  // ==========================================
+  // SCREEN
+  // ==========================================
+  Widget _filter(String kind, String label, String? value, void Function(String?) set) {
+    final opts = _facets[kind] ?? const [];
+    final current = opts.firstWhere((o) => o['value'] == value, orElse: () => <String, dynamic>{});
+    final text = value == null ? label : (current['label'] ?? value).toString();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: PopupMenuButton<String>(
+        tooltip: tr(label),
+        enabled: opts.isNotEmpty,
+        onSelected: (v) {
+          set(v == '\u0000' ? null : v);
+          _load();
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem(value: '\u0000', child: Text("All", style: const TextStyle(fontWeight: FontWeight.bold))),
+          for (final o in opts) PopupMenuItem(value: o['value'].toString(), child: Text("${o['label']}  (${o['n']})")),
+        ],
+        child: Chip(
+          avatar: Icon(value == null ? Icons.filter_list_rounded : Icons.check_rounded, size: 16),
+          label: Text(text, overflow: TextOverflow.ellipsis),
+          backgroundColor: AppPalette.bg(value == null ? Colors.white : const Color(0xFFEDE3F8)),
+          side: BorderSide(color: AppPalette.line(value == null ? Colors.black12 : pPurple)),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final scopeText = switch (_scope) {
+      'church' => "Accounts across the whole church.",
+      'location' => "Accounts in your location.",
+      'sub_location' => "Accounts in your sub-location.",
+      _ => "Your role cannot manage accounts. An admin can give it the \"Approve Accounts\" permission.",
+    };
+    final anyFilter = _role != null || _location != null || _subLocation != null || _department != null;
     return Scaffold(
+      backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
       appBar: AppBar(
-        backgroundColor: AppPalette.bg(pPurple),
-        title: Text("User Administration", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 16)),
-        leading: _currentView != 'menu'
-            ? IconButton(icon: Icon(Icons.arrow_back, color: AppPalette.fg(Colors.white)), onPressed: () => setState(() => _currentView = 'menu'))
-            : null,
+        backgroundColor: AppPalette.bg(Colors.white),
+        elevation: 0.5,
+        centerTitle: true,
+        title: Text("User management", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 17)),
+        actions: [IconButton(tooltip: tr("Refresh"), onPressed: _load, icon: const Icon(Icons.refresh_rounded))],
       ),
-      body: _buildCurrentView(),
-    );
-  }
-
-  Widget _buildCurrentView() {
-    switch (_currentView) {
-      case 'approve': return _buildListView(isApprovalView: true);
-      case 'roles': return _buildListView(isRoleChangeView: true);
-      case 'remove': return _buildListView(isRemoveView: true);
-      case 'menu':
-      default: return _buildSelectionMenu();
-    }
-  }
-
-  Widget _buildSelectionMenu() {
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 550),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text("Profiles Management",
-                textAlign: TextAlign.center,
-                style: GoogleFonts.merriweather(fontSize: 20, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
-            const SizedBox(height: 6),
-            Text("Select an administrative operation",
-                textAlign: TextAlign.center,
-                style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey))),
-            const SizedBox(height: 28),
-
-            _menuCard(
-              icon: Icons.how_to_reg_rounded,
-              color: Colors.green.shade700,
-              title: "Approve New Users",
-              subtitle: "Load pending accounts and grant verified approval.",
-              onTap: () {
-                setState(() => _currentView = 'approve');
-                _loadProfiles(pendingOnly: true);
-              },
-            ),
-            const SizedBox(height: 14),
-
-            _menuCard(
-              icon: Icons.manage_accounts_rounded,
-              color: Colors.blue.shade800,
-              title: "Change Roles",
-              subtitle: "Filter roles dynamically by unit category and department.",
-              onTap: () {
-                setState(() => _currentView = 'roles');
-                _loadProfiles(pendingOnly: false);
-              },
-            ),
-            const SizedBox(height: 14),
-
-            _menuCard(
-              icon: Icons.person_remove_rounded,
-              color: Colors.red.shade700,
-              title: "Remove User",
-              subtitle: "Review members under units and delete accounts.",
-              onTap: () {
-                setState(() => _currentView = 'remove');
-                _loadProfiles(pendingOnly: false);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _menuCard({required IconData icon, required Color color, required String title, required String subtitle, required VoidCallback onTap}) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: AppPalette.bg(color.withValues(alpha: 0.12)), borderRadius: BorderRadius.circular(12)),
-                child: Icon(icon, color: AppPalette.fg(color), size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14)),
-                    const SizedBox(height: 3),
-                    Text(subtitle, style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 10, AppSizes.gutter, 0),
+          child: Column(children: [
+            Text(scopeText, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
+            const SizedBox(height: 8),
+            Center(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'pending', icon: Icon(Icons.hourglass_top_rounded, size: 18), label: Text("Pending")),
+                    ButtonSegment(value: 'approved', icon: Icon(Icons.verified_rounded, size: 18), label: Text("Approved")),
+                    ButtonSegment(value: 'rejected', icon: Icon(Icons.block_rounded, size: 18), label: Text("Rejected")),
+                    ButtonSegment(value: 'all', icon: Icon(Icons.groups_rounded, size: 18), label: Text("All")),
                   ],
+                  selected: {_status},
+                  onSelectionChanged: (s) {
+                    setState(() => _status = s.first);
+                    _load();
+                  },
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppPalette.fg(Colors.grey)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildListView({bool isApprovalView = false, bool isRoleChangeView = false, bool isRemoveView = false}) {
-    final filtered = _profiles.where((p) {
-      final name = (p['full_name'] ?? '').toString().toLowerCase();
-      final email = (p['email'] ?? '').toString().toLowerCase();
-      final scj = (p['scj_id'] ?? '').toString().toLowerCase();
-      final q = _searchQuery.toLowerCase();
-      return name.contains(q) || email.contains(q) || scj.contains(q);
-    }).toList();
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(14),
-          child: TextField(
-            decoration: InputDecoration(
-              hintText: tr("Search Name, Email, or SCJ ID..."),
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
-            onChanged: (v) => setState(() => _searchQuery = v),
-          ),
+            const SizedBox(height: 8),
+            TextField(
+              onChanged: (v) => _search = v,
+              onSubmitted: (_) => _load(),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: tr("Search name, email, SCJ ID or phone, then press Enter"),
+                prefixIcon: const Icon(Icons.search),
+                isDense: true,
+                filled: true,
+                fillColor: AppPalette.bg(Colors.white),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+            const SizedBox(height: 6),
+            // Filters in the middle; they scroll sideways when they don't fit
+            Center(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  _filter('role', "Role", _role, (v) => _role = v),
+                  _filter('location', "Location", _location, (v) => _location = v),
+                  _filter('sub_location', "Sub-location", _subLocation, (v) => _subLocation = v),
+                  _filter('department', "Department", _department, (v) => _department = v),
+                  if (anyFilter)
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() => _role = _location = _subLocation = _department = null);
+                        _load();
+                      },
+                      icon: const Icon(Icons.clear_all_rounded, size: 18),
+                      label: const Text("Clear"),
+                    ),
+                ]),
+              ),
+            ),
+            if (!_loading && _error == null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 6),
+                child: Text("$_total account${_total == 1 ? '' : 's'}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+              ),
+          ]),
         ),
         Expanded(
-          child: _isLoading
+          child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : filtered.isEmpty
-                  ? Center(child: Text(isApprovalView ? "No accounts pending approval." : "No profiles found.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
-                  : ListView.builder(
-                      itemCount: filtered.length,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      itemBuilder: (ctx, i) {
-                        final u = filtered[i];
-                        final bool approved = u['is_approved'] == true;
-
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          child: ListTile(
-                            title: Text(u['full_name'] ?? u['email'] ?? "Member", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 14)),
-                            subtitle: Text(
-                              "SCJ ID: ${u['scj_id'] ?? 'N/A'} • Role: ${u['role'] ?? 'Saint'}\nDept: ${u['department'] ?? '내무부'} • Status: ${u['approval_status'] ?? (approved ? 'approved' : 'pending')}",
-                              style: GoogleFonts.merriweather(fontSize: 11, height: 1.4),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (isApprovalView) ...[
-                                  IconButton(icon: Icon(Icons.check_circle_rounded, color: AppPalette.fg(Colors.green)), tooltip: tr("Approve"), onPressed: () => _approveUser(u)),
-                                  IconButton(icon: Icon(Icons.cancel_rounded, color: AppPalette.fg(Colors.red)), tooltip: tr("Reject"), onPressed: () => _rejectUser(u)),
-                                ],
-                                if (isRoleChangeView)
-                                  ElevatedButton.icon(
-                                    icon: const Icon(Icons.edit, size: 14),
-                                    label: const Text("Role"),
-                                    style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple), foregroundColor: AppPalette.fg(Colors.white)),
-                                    onPressed: () => _openChangeRoleDialog(u),
-                                  ),
-                                if (isRemoveView)
-                                  IconButton(icon: Icon(Icons.delete_forever_rounded, color: AppPalette.fg(Colors.red)), tooltip: tr("Delete"), onPressed: () => _removeUser(u)),
-                              ],
-                            ),
+              : _error != null
+                  ? Center(child: Padding(padding: const EdgeInsets.all(20), child: Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: AppPalette.fg(Colors.red.shade800)))))
+                  : _rows.isEmpty
+                      ? Center(
+                          child: Text(_status == 'pending' ? "No accounts waiting for approval." : "No accounts found.",
+                              style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
+                      : RefreshIndicator(
+                          onRefresh: _load,
+                          child: CardGrid(
+                            padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 0, AppSizes.gutter, 24),
+                            extent: AppSizes.listCard,
+                            itemCount: _rows.length + (_rows.length < _total ? 1 : 0),
+                            itemBuilder: (_, i) {
+                              if (i >= _rows.length) {
+                                return Center(
+                                  child: _loadingMore
+                                      ? const CircularProgressIndicator()
+                                      : TextButton.icon(onPressed: () => _load(more: true), icon: const Icon(Icons.expand_more_rounded), label: Text("Show more (${_total - _rows.length})")),
+                                );
+                              }
+                              final r = _rows[i];
+                              final id = r['id'].toString();
+                              final name = _name(r);
+                              final st = _v(r, 'approval_status');
+                              final unit = [_v(r, 'location'), _v(r, 'sub_location'), _v(r, 'department'), _v(r, 'team'), _v(r, 'cell_group')]
+                                  .where((x) => x.isNotEmpty)
+                                  .join(' › ');
+                              final statusColor = st == 'approved' ? Colors.green.shade700 : (st == 'rejected' ? Colors.red.shade700 : Colors.orange.shade800);
+                              return CompactCard(
+                                leading: CircleAvatar(
+                                  radius: 17,
+                                  backgroundColor: AppPalette.bg(statusColor.withValues(alpha: 0.12)),
+                                  child: Text(name.isEmpty ? '?' : name[0].toUpperCase(), style: TextStyle(color: AppPalette.fg(statusColor), fontWeight: FontWeight.bold)),
+                                ),
+                                title: name,
+                                subtitle: [
+                                  _v(r, 'role_name').isEmpty ? _v(r, 'role') : _v(r, 'role_name'),
+                                  unit,
+                                  if (_status == 'all') st,
+                                ].where((x) => x.isNotEmpty).join(' · '),
+                                onTap: () => _details(r),
+                                trailing: _busy.contains(id)
+                                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : Row(mainAxisSize: MainAxisSize.min, children: [
+                                        if (st == 'pending') ..._actions(r),
+                                        Icon(Icons.chevron_right_rounded, color: AppPalette.fg(Colors.grey)),
+                                      ]),
+                              );
+                            },
                           ),
-                        );
-                      },
-                    ),
+                        ),
         ),
-      ],
+      ]),
     );
   }
 }

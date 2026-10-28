@@ -901,7 +901,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
         _ => ('All changes saved', Icons.cloud_done_outlined, Colors.green.shade700),
       };
 
-  Widget _centered(Widget child) => Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: child));
+  Widget _centered(Widget child) => Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: double.infinity), child: child));
 
   Widget _questionsTab() {
     return ListView(padding: const EdgeInsets.fromLTRB(12, 16, 12, 120), children: [
@@ -2002,7 +2002,7 @@ class _FormFillScreenState extends State<FormFillScreen> {
       body: ListView(controller: _scroll, padding: const EdgeInsets.fromLTRB(12, 16, 12, 40), children: [
         Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
+            constraints: const BoxConstraints(maxWidth: double.infinity),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               if (_page == 0 || _done) header,
               if (pages.length > 1 && !_done) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text("Page ${_page + 1} of ${pages.length}", style: TextStyle(color: AppPalette.fg(Colors.grey.shade700), fontSize: 12))),
@@ -2231,7 +2231,7 @@ class _FormResponsesViewState extends State<FormResponsesView> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 16, 12, 120), children: [
-        Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [header, const SizedBox(height: 12), body]))),
+        Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: double.infinity), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [header, const SizedBox(height: 12), body]))),
       ]),
     );
   }

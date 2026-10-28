@@ -18,7 +18,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class DeviceSessions {
   DeviceSessions._();
 
-  static const String appVersion = '10.3';
+  static const String appVersion = '10.4';
   static String? _key;
   static Timer? _timer;
   static StreamSubscription<AuthState>? _sub;

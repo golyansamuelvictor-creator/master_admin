@@ -49,6 +49,7 @@ dependencies:
   device_info_plus: '>=11.0.0 <13.0.0'  # Settings › Devices (device name)
   qr_flutter: ^4.1.0        # Settings › Two-step verification QR code
   http: ^1.2.2              # Settings › Devices (approximate place)
+  flutter_webrtc: '>=0.12.0 <2.0.0'  # My Home voice / video calls and video chats
 
 dev_dependencies:
   flutter_test:

@@ -626,7 +626,7 @@ class _AddEventFormState extends State<AddEventForm> {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
+          constraints: const BoxConstraints(maxWidth: double.infinity),
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [

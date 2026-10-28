@@ -395,8 +395,26 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     final effectiveDeptName = (selectedSubOfficialDeptName ?? selectedOfficialDeptName ?? '').toLowerCase();
 
     // 1. MATCH BY DIRECT official_dept_id IF AVAILABLE
+    //    (a sub-department without roles of its own shows its department's roles)
     if (roleOfficialDeptId != null && roleOfficialDeptId.isNotEmpty) {
-      return roleOfficialDeptId == effectiveDeptId;
+      if (roleOfficialDeptId == effectiveDeptId) return true;
+      return selectedSubOfficialDeptId != null &&
+          roleOfficialDeptId == selectedOfficialDeptId &&
+          !_roleDataMap.any((x) => x['official_dept_id']?.toString() == selectedSubOfficialDeptId);
+    }
+
+    // 1b. Department roles not linked by id yet (Welfare, Finance, Sports,
+    //     Theology ... had no official_dept_id, so nothing was shown): match the
+    //     role key with the department's English name or code, e.g.
+    //     welfare_dept_leader → Welfare Department, fin_dept_sec → Finance,
+    //     pr_dept_leader → Public Relations. 11_round10.sql saves these links.
+    if (roleGrouping.startsWith('24-Dept') && !roleGrouping.contains('MG') && !roleGrouping.contains('WG') &&
+        !roleGrouping.contains('YAG') && !roleGrouping.contains('New Saints') && !roleGrouping.contains('MOU')) {
+      final top = _officialDepts.firstWhere((d) => d['id']?.toString() == selectedOfficialDeptId, orElse: () => {});
+      final sub = selectedSubOfficialDeptId == null
+          ? <String, dynamic>{}
+          : _officialDepts.firstWhere((d) => d['id']?.toString() == selectedSubOfficialDeptId, orElse: () => {});
+      return _roleKeyMatchesDept(roleKey, top) || _roleKeyMatchesDept(roleKey, sub);
     }
 
     // 2. SUB-GROUPS UNDER INTERNAL AFFAIRS (장년회, 부녀회, 청년회, 새신자, MOU)
@@ -445,6 +463,30 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     }
 
     return false;
+  }
+
+  /// welfare_dept_leader → "welfare"; domestic_mission_dept_sec → "domestic mission"
+  static String _roleDeptToken(String roleKey) => roleKey
+      .toLowerCase()
+      .replaceFirst(RegExp(r'_(maintenance_manager|leader|gen_sec|sec|mgr|manager|treasurer)$'), '')
+      .replaceFirst(RegExp(r'_dept$'), '')
+      .replaceAll('_', ' ')
+      .trim();
+
+  static bool _roleKeyMatchesDept(String roleKey, Map<String, dynamic> d) {
+    if (d.isEmpty) return false;
+    final token = _roleDeptToken(roleKey);
+    if (token.isEmpty) return false;
+    final code = (d['code'] ?? '').toString().toLowerCase();
+    final name = (d['name_en'] ?? d['name'] ?? '').toString().toLowerCase().replaceAll(RegExp(r'\bdepartment\b|\bdept\b|&|\band\b'), ' ');
+    final words = name.split(RegExp(r'[^a-z0-9]+')).where((w) => w.isNotEmpty && w != 'of' && w != 'the' && w != 'for').toList();
+    if (code.isNotEmpty && (code == token.replaceAll(' ', '') || (token.length >= 3 && code.startsWith(token)))) return true;
+    if (words.isEmpty) return false;
+    if (!token.contains(' ')) {
+      if (words.map((w) => w[0]).join() == token) return true; // pr → public relations
+      return token.length >= 3 && words.first.startsWith(token); // fin → finance, evang → evangelism
+    }
+    return words.join(' ').startsWith(token);
   }
 
   bool _locationRoleMatches(Map<String, dynamic> r) {

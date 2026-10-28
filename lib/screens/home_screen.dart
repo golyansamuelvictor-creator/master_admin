@@ -25,6 +25,7 @@ import 'forms_screen.dart';
 import 'notification_center_screen.dart';
 import '../services/device_accounts.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/app_sizes.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -517,7 +518,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _visitedTabs.add(_selectedIndex);
     double width = MediaQuery.of(context).size.width;
     bool isDesktop = width > 900;
-    double cardPadding = isDesktop ? 28 : 16;
+    double cardPadding = isDesktop ? 16 : AppSizes.gutter;
 
     if (isLoading) {
       return Scaffold(
@@ -606,7 +607,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Center(
                     child: Container(
-                      constraints: const BoxConstraints(maxWidth: 1350),
+                      constraints: const BoxConstraints(maxWidth: double.infinity),
                       child: Row(
                         children: _dynamicTabs.map((tab) {
                           int idx = _dynamicTabs.indexOf(tab);
@@ -754,7 +755,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SliverToBoxAdapter(
           child: Center(
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 1350),
+              constraints: const BoxConstraints(maxWidth: double.infinity),
               padding: EdgeInsets.symmetric(horizontal: cardPadding, vertical: 16),
               child: Column(
                 children: [
