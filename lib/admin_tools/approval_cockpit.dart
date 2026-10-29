@@ -8,16 +8,23 @@ import 'package:master_admin/core/app_palette.dart';
 import 'package:flutter/services.dart';
 import '../widgets/app_menus.dart';
 import '../core/compilation_rules.dart';
+import '../core/group_scope.dart';
 import '../services/evidence_service.dart';
 import 'package:master_admin/core/offering_categories.dart';
 
 class ApprovalCockpit extends StatefulWidget {
   final String role, unitName, selectedDuty;
+  /// Roles with two views (DualMode): the toggle's title and labels. The
+  /// second view keeps only the reviewer's own department at church level.
+  final String? dualTitle;
+  final (String, String) dualLabels;
   const ApprovalCockpit({
     super.key,
     required this.role,
     required this.unitName,
     required this.selectedDuty,
+    this.dualTitle,
+    this.dualLabels = const ("Church-wide", "Department only"),
   });
 
   @override
@@ -316,13 +323,45 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     return true;
   }
 
+  /// Dual-mode roles: own department at church level only.
+  bool _deptOnly = false;
+
   /// Final guard on every row: is this member inside the reviewer's units?
   bool _inScope(Map<String, dynamic> m) {
     for (final c in _scopeColumns[_scope] ?? const <String>[]) {
       if (_clean(m[c]) != _unit[c]) return false;
     }
+    if (widget.dualTitle != null && _deptOnly) {
+      if (!DualMode.isChurchLevel(m['location'])) return false;
+      final dept = _unit['department'] ?? '';
+      if (dept.isNotEmpty && _clean(m['department']) != dept) return false;
+    }
     return true;
   }
+
+  Widget _dualBar() => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        child: Center(
+          child: FittedBox(
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text("${widget.dualTitle}  ", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(_accent))),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: [
+                  ButtonSegment(value: false, label: Text(widget.dualLabels.$1)),
+                  ButtonSegment(value: true, label: Text(widget.dualLabels.$2)),
+                ],
+                selected: {_deptOnly},
+                onSelectionChanged: (v) {
+                  setState(() => _deptOnly = v.first);
+                  _loadAllReports();
+                },
+              ),
+            ]),
+          ),
+        ),
+      );
 
   bool _isChurchBatch(Map<String, dynamic> m) {
     final loc = _clean(m['location']);
@@ -717,6 +756,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                     ? _buildInspectionView()
                     : Column(
                         children: [
+                          if (widget.dualTitle != null) _dualBar(),
                           _buildScopeBanner(),
                           Expanded(
                             child: TabBarView(

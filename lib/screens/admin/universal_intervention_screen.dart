@@ -21,6 +21,12 @@ class UniversalInterventionScreen extends StatefulWidget {
   /// Church-wide group (장년회, 부녀회 ...) for group leaders.
   final String? group;
 
+  /// Roles with two views (DualMode): the toggle's title and labels, and the
+  /// own-department view (the wide view is [scope] / [group]).
+  final String? dualTitle;
+  final (String, String) dualLabels;
+  final Map<String, String>? deptScope;
+
   const UniversalInterventionScreen({
     super.key,
     required this.duty,
@@ -28,6 +34,9 @@ class UniversalInterventionScreen extends StatefulWidget {
     this.buttonTitle,
     this.scope,
     this.group,
+    this.dualTitle,
+    this.dualLabels = const ("Church-wide", "Department only"),
+    this.deptScope,
   });
 
   @override
@@ -57,6 +66,8 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
   bool _isLoading = true;
   String _screenTitle = "";
   final Set<String> _hiddenColumns = {};
+  bool _wide = true; // dual-mode roles: the wide view (true) or own department (false)
+  bool get _dual => widget.dualTitle != null && widget.deptScope != null;
 
   // Period / Date Range (Default: Last 30 Days)
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
@@ -167,8 +178,8 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       final res = await AbsenteeLogic.getDetailedInterventionList(
         duty: widget.duty,
         unitName: widget.unitName,
-        scope: widget.scope,
-        group: widget.group,
+        scope: _dual && !_wide ? widget.deptScope : widget.scope,
+        group: _dual && !_wide ? null : widget.group,
         startDate: _startDate,
         endDate: _endDate,
       );
@@ -330,6 +341,32 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
             onPressed: _exportAsExcelCsv,
           ),
         ],
+        bottom: !_dual
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(46),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: FittedBox(
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text("${widget.dualTitle}  ", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(const Color(0xFF4A148C)))),
+                      SegmentedButton<bool>(
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                        segments: [
+                          ButtonSegment(value: true, label: Text(widget.dualLabels.$1)),
+                          ButtonSegment(value: false, label: Text(widget.dualLabels.$2)),
+                        ],
+                        selected: {_wide},
+                        onSelectionChanged: (v) {
+                          setState(() => _wide = v.first);
+                          _load();
+                        },
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
       ),
       body: Column(
         children: [

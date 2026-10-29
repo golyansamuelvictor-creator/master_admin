@@ -193,7 +193,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
   String get _moduleLevel =>
       (_isGroupLeader && CompLevel.of(_currentLevel) == CompLevel.group) ? 'Dept status' : _currentLevel;
 
+  /// Theology Department: its dashboard toggles between its members at
+  /// church level and the Theology department across the locations.
+  bool get _isTheologyDept => GroupScope.deptNo(_grouping) == '18' || widget.role.toLowerCase().startsWith('theology_dept');
+
   bool get _isGroupLeader {
+    if (_isTheologyDept) return _dualModeIsChurch; // across the locations
     if (_groupDept != null) return true;
     String r = widget.role.toLowerCase();
     if (r.contains('cell') || r.contains('team') || r.startsWith('dept_') || r.startsWith('sub_loc') || r.startsWith('loc_')) {
@@ -256,12 +261,13 @@ class _CompilationEngineState extends State<CompilationEngine> {
     String r = widget.role.toLowerCase();
     String d = widget.dept.trim().toLowerCase();
     return (r.contains('admin_dept') || d.contains('행정서무') || 
-            _grouping.startsWith('24-Dept 11') || _grouping.startsWith('24-Dept 12') || _grouping.startsWith('24-Dept 13')) &&
+            GroupScope.isAdministrationGrouping(_grouping)) &&
            r != 'admin';
   }
 
   bool get _hasDualModeForCurrentDuty {
     final d = widget.selectedDuty.trim();
+    if (_isTheologyDept) return true;
     if (_isInternalAffairs) return true;
 
     if (_isEvangelismDept && 
@@ -283,6 +289,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   String _getDualModeTitle() {
+    if (_isTheologyDept) return "Theology Scope";
     if (_isInternalAffairs) return "Internal Affairs Scope";
     if (_isEvangelismDept) return "Evangelism Scope";
     if (_isEducationDept) return "Education Scope";
@@ -751,6 +758,30 @@ class _CompilationEngineState extends State<CompilationEngine> {
       if (lv == CompLevel.cell) return {'loc', 'sub', 'dept', 'team'};
     }
     return {};
+  }
+
+  /// Results By Units: the unit being looked at, level by level (location,
+  /// sub-location, department, team). A picker's choice, or the leader's own
+  /// unit for the levels their role fixes (a location leader's location is
+  /// never a picker, but it is still their location).
+  List<String> _evangelismUnitPath() {
+    bool ok(String v) => v.isNotEmpty && v != 'N/A' && v != 'Church';
+    String pick(String picker, String own, bool fixed) {
+      final s = _sel(picker);
+      if (s.isNotEmpty) return s;
+      return fixed && ok(own) ? own : '';
+    }
+    final team = _isTeamLeader || _isCellLeader;
+    final dept = team || _isDeptLeader;
+    final sub = dept || _isSubLocationLeader;
+    final loc = sub || _isLocationLeader;
+    final d = pick('dept', widget.dept, dept);
+    return [
+      pick('loc', widget.loc, loc),
+      pick('sub', widget.sub, sub),
+      d.isEmpty && _isGroupLeader ? _groupLeaderCleanDept : d,
+      pick('team', widget.team, team),
+    ];
   }
 
   /// The selection for [picker] if it applies at the current level, else ''.
@@ -2378,6 +2409,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return EvangelismResultsModule(
         periodStart: _periodStart,
         periodEnd: _periodEnd,
+        unitPath: _evangelismUnitPath(),
         bbData: _logs,
         logs: _logs,
         masterMembers: _masterMembers,
@@ -2809,7 +2841,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text("Church Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_dualModeIsChurch ? Colors.white : Colors.black87))),
+                                child: Text(_isTheologyDept ? "Across locations" : "Church Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_dualModeIsChurch ? Colors.white : Colors.black87))),
                               ),
                             ),
                           ),
@@ -2830,7 +2862,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 alignment: Alignment.center,
-                                child: Text("Dept Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(!_dualModeIsChurch ? Colors.white : Colors.black87))),
+                                child: Text(_isTheologyDept ? "Church level" : "Dept Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(!_dualModeIsChurch ? Colors.white : Colors.black87))),
                               ),
                             ),
                           ),

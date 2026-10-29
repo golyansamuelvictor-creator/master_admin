@@ -122,7 +122,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     final r = widget.userRole.toLowerCase();
     final d = widget.userDept.toLowerCase();
     return (r.contains('admin_dept') || d.contains('행정서무') || 
-            grouping.startsWith('24-Dept 11') || grouping.startsWith('24-Dept 12') || grouping.startsWith('24-Dept 13')) &&
+            GroupScope.isAdministrationGrouping(grouping)) &&
            r != 'admin';
   }
 
@@ -159,8 +159,11 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
 
     // Church-wide group leaders (Men's, Women's, Young Adults, New Saints,
     // Theology, MOU): their own group across the church.
+    // MOU workers are often saved under an MOU branch location (MOUWakiso …),
+    // which made them look like location workers and listed that location's
+    // members; MOU always lists the members whose department is MOU.
     final group = _groupDept;
-    if (!isLocWorker && group != null) {
+    if (group != null && (!isLocWorker || group == 'MOU')) {
       return await GroupScope.filter(query, group).order('english_name');
     }
 

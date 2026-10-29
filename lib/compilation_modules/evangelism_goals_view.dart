@@ -66,24 +66,34 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   String? _error;
   bool _loading = true;
 
-  /// Units chosen by tapping rows (location, sub-location, …), below the
-  /// compilation screen's own selection.
+  /// The unit opened by tapping a row: its full path (location, sub-location,
+  /// …) from the data; empty = the compilation screen's own selection.
   List<String> _drill = [];
   String _chartUnit = 'General total';
   bool _lineTotals = false; // line chart: new results (false) or totals (true)
 
-  /// The units fixed by the compilation screen's pickers.
-  List<String> get _base {
-    bool set(String v) => v.isNotEmpty && !const {'All', 'Church Wide', 'Sub-location status', 'Dept status', 'Team status'}.contains(v);
-    final out = <String>[];
-    for (final v in [widget.location, widget.subLocation, widget.department, widget.team]) {
-      if (!set(v)) break;
-      out.add(v);
-    }
-    return out;
+  /// The unit path of the compilation screen (its pickers and the leader's
+  /// own units): location, sub-location, department, team. A level may be
+  /// blank while a lower one is set (a location leader at Cell status picks
+  /// only the sub-location, department and team; the location is theirs).
+  /// Before, the path stopped at the first blank level, so those picks were
+  /// dropped and the Cell status tables came out wrong or empty.
+  List<String?> get _base {
+    String? v(String s) => s.trim().isEmpty || const {'All', 'Church Wide', 'Sub-location status', 'Dept status', 'Team status', 'N/A'}.contains(s.trim()) ? null : s.trim();
+    return [v(widget.location), v(widget.subLocation), v(widget.department), v(widget.team), null];
   }
 
-  List<String> get _fixed => [..._base, ..._drill];
+  /// The unit shown: the opened row, or the compilation screen's selection.
+  List<String?> get _fixed => _drill.isNotEmpty ? [..._drill, for (int i = _drill.length; i < 5; i++) null] : _base;
+
+  static int _deepest(List<String?> k) {
+    for (int i = k.length - 1; i >= 0; i--) {
+      if (k[i] != null) return i + 1;
+    }
+    return 0;
+  }
+
+  int get _baseDepth => _deepest(_base);
 
   /// The level the rows are grouped by (1 location … 5 cell).
   int get _depth {
@@ -94,7 +104,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
       CompLevel.cell => 5,
       _ => 1,
     };
-    return math.min(5, math.max(byLevel, _fixed.length + 1));
+    return math.min(5, math.max(byLevel, _deepest(_fixed) + 1));
   }
 
   /// Day / week / month buckets for the line chart; null for a single period.
@@ -134,7 +144,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
 
   Map<String, dynamic> get _params {
     final k = _fixed;
-    String? at(int i) => i < k.length ? k[i] : null;
+    String? at(int i) => k[i];
     return {
       'p_from': _f.format(widget.from),
       'p_to': _f.format(widget.to),
@@ -177,9 +187,9 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   void _open(Map<String, dynamic> row) {
     if (_depth >= 5) return;
     final keys = List<String>.from((row['keys'] as List? ?? const []).map((e) => (e ?? '').toString()));
-    if (keys.length <= _fixed.length || keys.any((k) => k.isEmpty)) return;
+    if (keys.length <= _deepest(_fixed) || keys.any((k) => k.isEmpty)) return;
     setState(() {
-      _drill = keys.sublist(_base.length);
+      _drill = keys;
       _chartUnit = 'General total';
     });
     _load();
@@ -341,13 +351,16 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
     );
   }
 
-  String _path() => _fixed.isEmpty ? 'Whole church' : _fixed.join(' › ');
+  String _path() {
+    final k = _fixed.whereType<String>().toList();
+    return k.isEmpty ? 'Whole church' : k.join(' › ');
+  }
 
   Widget _breadcrumb() {
     final chips = <Widget>[
       ActionChip(
         avatar: const Icon(Icons.home_rounded, size: 16),
-        label: Text(_base.isEmpty ? "Whole church" : _base.join(' › ')),
+        label: Text(_base.whereType<String>().isEmpty ? "Whole church" : _base.whereType<String>().join(' › ')),
         onPressed: _drill.isEmpty
             ? null
             : () {
@@ -356,14 +369,14 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
               },
       ),
     ];
-    for (int i = 0; i < _drill.length; i++) {
+    for (int i = _baseDepth; i < _drill.length; i++) {
       chips.add(const Icon(Icons.chevron_right_rounded, size: 18));
       chips.add(ActionChip(
         label: Text(_drill[i]),
         onPressed: i == _drill.length - 1
             ? null
             : () {
-                setState(() => _drill = _drill.sublist(0, i + 1));
+                setState(() => _drill = i + 1 <= _baseDepth ? [] : _drill.sublist(0, i + 1));
                 _load();
               },
       ));

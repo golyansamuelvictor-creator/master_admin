@@ -174,25 +174,15 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     final d = widget.dept.trim().toLowerCase();
     final grouping = (_roleMetadata?['Grouping'] ?? '').toString();
     return (r.contains('admin_dept') || d.contains('행정서무') || 
-            grouping.startsWith('24-Dept 11') || grouping.startsWith('24-Dept 12') || grouping.startsWith('24-Dept 13')) &&
+            GroupScope.isAdministrationGrouping(grouping)) &&
            r != 'admin';
   }
 
-  bool get _hasDualModeForCurrentDuty {
-    final d = widget.sheetName.trim();
-    if (_isInternalAffairs) return true;
-
-    if (_isEvangelismDept && (d == 'Evangelism' || d == 'Evangelism Part' || d == 'BB File')) {
-      return true;
-    }
-    if (_isEducationDept && (d == 'All Saints Education' || d == 'Workers Education')) {
-      return true;
-    }
-    if (_isAdministrationDept && d == 'Service Attendance Status') {
-      return true;
-    }
-    return false;
-  }
+  /// The Church / Department toggle belongs to the dashboard, the absentee
+  /// list and the approval cockpit only. An entry form always lists the
+  /// department's own members (ICT, Internal Affairs, Evangelism, Education,
+  /// Administration and Theology secretaries included).
+  bool get _hasDualModeForCurrentDuty => false;
 
   int get _pendingCount {
     if (members.isEmpty) return 0;
@@ -422,7 +412,9 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
               .neq('location', 'Church');
         }
 
-        final group = _groupDept;
+        // Theology enters for its department members at church level only
+        // (its dashboard can still look across the locations).
+        final group = _groupDept == '신학부' ? null : _groupDept;
         if (group != null) {
           query = GroupScope.filter(query, group);
         } else if (grouping == '24-Dept MG' || role.startsWith('mg_group')) {
@@ -438,8 +430,12 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           query = query.or('department.eq.새신자,department.ilike.%new saints%').neq('location', 'Mou');
           excludeChurchWorkers();
         } else if (grouping.startsWith('24-Dept 18') || role.startsWith('theology_dept')) {
-          query = query.or('department.eq.신학부,department.ilike.%theology%').neq('location', 'Mou').neq('location', 'New Saints');
-          excludeChurchWorkers();
+          // Theology: its department members at church level, not across the locations
+          final officialDeptId = _roleMetadata?['official_dept_id'];
+          query = officialDeptId != null
+              ? query.eq('official_dept_id', officialDeptId)
+              : query.or('department.eq.신학부,department.ilike.%theology%');
+          query = query.or('location.in.(Church,"Church Workers","Church Main"),location.is.null');
         } else if (grouping == '24-Dept MOU' || role.startsWith('mou_dept')) {
           query = query.eq('department', 'Mou').neq('location', 'Mou').neq('location', 'New Saints');
           excludeChurchWorkers();

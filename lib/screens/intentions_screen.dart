@@ -263,11 +263,12 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
 
     // 5 Category Cards
     List<Widget> cards = [
-      _buildIntentCard("Headquarters", Icons.account_balance_rounded, Colors.orange[900]!, _hqPoints),
-      _buildIntentCard("Tribe", Icons.hub_rounded, const Color(0xFF0D47A1), _tribePoints),
-      _buildIntentCard("Church", Icons.church_rounded, Colors.green[800]!, _churchPoints),
-      _buildIntentCard("Location", Icons.map_rounded, Colors.teal[800]!, _regionPoints),
-      _buildIntentCard("Department", Icons.business_center_rounded, Colors.deepPurple[600]!, _deptPoints),
+      // softer colours (were the deepest shades)
+      _buildIntentCard("Headquarters", Icons.account_balance_rounded, Colors.orange[700]!, _hqPoints),
+      _buildIntentCard("Tribe", Icons.hub_rounded, Colors.blue[600]!, _tribePoints),
+      _buildIntentCard("Church", Icons.church_rounded, Colors.green[600]!, _churchPoints),
+      _buildIntentCard("Location", Icons.map_rounded, Colors.teal[500]!, _regionPoints),
+      _buildIntentCard("Department", Icons.business_center_rounded, Colors.deepPurple[400]!, _deptPoints),
     ];
 
     Widget bodyContent = SizedBox.expand(
@@ -531,7 +532,8 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
     Color accentColor,
     List<dynamic> points,
   ) {
-    final dark = Color.lerp(accentColor, Colors.black, 0.25)!;
+    // a lighter second tone for the gradients (was 25% darker)
+    final dark = Color.lerp(accentColor, Colors.white, 0.22)!;
     return _HoverLift(
       shadow: accentColor,
       child: Column(

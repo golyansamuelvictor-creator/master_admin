@@ -23,6 +23,7 @@ import '../admin_tools/task_manager_screen.dart';
 import 'admin/unit_growth_tracker_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../core/group_scope.dart';
+import 'member_change_approvals_screen.dart';
 import 'duty_panel_screen.dart';
 import 'evangelism/bb_workspace_screen.dart';
 import 'evangelism/evangelism_results_screen.dart';
@@ -378,8 +379,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     List<String> buttons = [];
     if (_dynamicAdminActions.contains('View Member Profiles') || _dynamicAdminActions.contains('Member Bio')) buttons.add("Member Bio");
+    // BB File opens from the Evangelism menu; with an Evangelism duty it
+    // isn't repeated on the main grid.
+    final hasEvangelism = _dynamicDuties.contains('Evangelism') || _dynamicDuties.contains('Evangelism Part');
     for (var d in _dynamicDuties) {
       String label = d == 'Evangelism Part' ? 'Evangelism' : d;
+      if (hasEvangelism && label == 'BB File') continue;
       if (!label.toLowerCase().contains('growth')) buttons.add(label);
     }
     if (_dynamicAdminActions.contains('Strategic Analysis')) buttons.add("Strategic Analysis");
@@ -702,12 +707,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
               _openAbsentees(duty, interventionLabel, _roleForDuty(duty));
             }),
             if (!_roleForDuty(duty).contains('cell')) 
-              _compactActionBtn(Icons.verified_user_rounded, "Approval cockpit", Colors.green[800]!, () { 
+              _compactActionBtn(Icons.verified_user_rounded, "Approval cockpit", Colors.green[800]!, () async { 
+                final dual = await _dualFor(duty, _roleForDuty(duty));
+                if (!mounted) return;
                 Navigator.push(context, MaterialPageRoute(
                   builder: (c) => ApprovalCockpit(
                     role: _roleForDuty(duty), 
                     unitName: _getUnitNameByRole(_roleForDuty(duty)), 
-                    selectedDuty: duty
+                    selectedDuty: duty,
+                    dualTitle: dual?.title,
+                    dualLabels: dual?.labels ?? const ("Church-wide", "Department only"),
                   )
                 )); 
               }),
@@ -817,6 +826,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ? {'department': userDept}
               : {};
     }
+    // Dual-mode roles (Internal Affairs, Evangelism, Education, Administration,
+    // Theology) get the Church-wide / Department only toggle here too.
+    final dual = await _dualFor(duty, role);
+    Map<String, String>? deptScope;
+    if (dual != null) {
+      if (DualMode.isTheology(r, dual.grouping)) {
+        group = '신학부'; // across the locations
+        scope = {};
+      } else {
+        group = null;
+        scope = {}; // whole church
+      }
+      deptScope = {
+        '@church_level': '1',
+        if (dual.officialDeptId != null) 'official_dept_id': dual.officialDeptId! else if (userDept.isNotEmpty) 'department': userDept,
+      };
+    }
     if (!mounted) return;
     Navigator.push(context, MaterialPageRoute(
       builder: (c) => UniversalInterventionScreen(
@@ -825,8 +851,28 @@ class _ReportsScreenState extends State<ReportsScreen> {
         buttonTitle: title,
         scope: scope,
         group: group,
+        dualTitle: dual?.title,
+        dualLabels: dual?.labels ?? const ("Church-wide", "Department only"),
+        deptScope: deptScope,
       ),
     ));
+  }
+
+  /// The dashboard's Church / Department toggle for this role and duty
+  /// (DualMode), with the role's grouping and official department.
+  Future<({String title, (String, String) labels, String grouping, String? officialDeptId})?> _dualFor(String duty, String? role) async {
+    final rk = (role ?? _simulatedRole ?? '').trim();
+    if (rk.isEmpty) return null;
+    String grouping = _roleGrouping;
+    String? deptId;
+    try {
+      final meta = await _supabase.from('app_roles').select('"Grouping", official_dept_id').eq('role_key', rk).maybeSingle();
+      grouping = (meta?['Grouping'] ?? grouping).toString();
+      deptId = meta?['official_dept_id']?.toString();
+    } catch (_) {}
+    final t = DualMode.title(role: rk, grouping: grouping, dept: userDept, duty: duty);
+    if (t == null) return null;
+    return (title: t, labels: DualMode.labels(rk, grouping), grouping: grouping, officialDeptId: deptId);
   }
 
   String _getUnitNameByRole([String? role]) { 
@@ -989,16 +1035,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
         ),
         body: Padding(padding: const EdgeInsets.all(25), child: Column(children: [
           const SizedBox(height: 5),
-          _compactActionBtn(Icons.person_pin_rounded, "View member profiles", Colors.blue, () { 
-            Navigator.push(context, MaterialPageRoute(builder: (c) => MemberDirectoryScreen(
-              userRole: _simulatedRole!, 
-              userLoc: userLoc, 
-              userSub: userSub, 
-              userDept: userDept, 
-              userTeam: userTeam, 
-              userCell: userCell
-            ))); 
-          }),
+          // Member profile: the directory, and the approval of the profile
+          // changes proposed by cell leaders
+          _compactActionBtn(Icons.person_pin_rounded, "Member profile", Colors.blue, () => _showMemberProfileMenu(context)),
           if (isIASec || r == 'admin') ...[
             _compactActionBtn(Icons.sync_lock_rounded, "Database master sync", Colors.red[900]!, () { 
               Navigator.push(context, MaterialPageRoute(builder: (c) => const MemberSyncTool())); 
@@ -1019,6 +1058,37 @@ class _ReportsScreenState extends State<ReportsScreen> {
               Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminUserManagementScreen()));
             }),
         ]))
+      );
+    });
+  }
+
+  void _showMemberProfileMenu(BuildContext ctx) {
+    showGeneralDialog(context: ctx, pageBuilder: (context, anim1, anim2) {
+      return Scaffold(
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
+        appBar: AppBar(
+          backgroundColor: AppPalette.bg(Colors.white),
+          elevation: 0.5,
+          leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+          centerTitle: true,
+          title: Text("Member profile", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold)),
+        ),
+        body: Padding(padding: const EdgeInsets.all(25), child: Column(children: [
+          const SizedBox(height: 5),
+          _compactActionBtn(Icons.person_search_rounded, "View member profile", Colors.blue, () {
+            Navigator.push(context, MaterialPageRoute(builder: (c) => MemberDirectoryScreen(
+              userRole: _simulatedRole!,
+              userLoc: userLoc,
+              userSub: userSub,
+              userDept: userDept,
+              userTeam: userTeam,
+              userCell: userCell
+            )));
+          }),
+          _compactActionBtn(Icons.fact_check_rounded, "Approve member profile changes", Colors.green[800]!, () {
+            Navigator.push(context, MaterialPageRoute(builder: (c) => const MemberChangeApprovalsScreen()));
+          }),
+        ])),
       );
     });
   }

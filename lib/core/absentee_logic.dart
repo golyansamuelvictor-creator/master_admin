@@ -95,7 +95,12 @@ class AbsenteeLogic {
           var q = _supabase.from('members').select(cols);
           scope.forEach((col, val) {
             final v = val.trim();
-            if (v.isNotEmpty && v.toUpperCase() != 'N/A') q = q.eq(col, v);
+            if (col == '@church_level') {
+              // a church department's own members (Department only / Church level view)
+              q = q.or('location.in.(Church,"Church Workers","Church Main"),location.is.null');
+            } else if (v.isNotEmpty && v.toUpperCase() != 'N/A') {
+              q = q.eq(col, v);
+            }
           });
           return q;
         });

@@ -44,6 +44,20 @@ class GroupScope {
     }
   }
 
+  /// The church department number of a '24-Dept …' grouping: the last digit
+  /// is the position, the rest the department ('24-Dept 13' → 1 Administration,
+  /// '24-Dept 113' → 11 ICT, '24-Dept 53' → 5 Evangelism). Null otherwise.
+  static String? deptNo(String grouping) {
+    final m = RegExp(r'^24-Dept (\d+)$').firstMatch(grouping.trim());
+    final n = m?.group(1);
+    if (n == null || n.length < 2) return null;
+    return n.substring(0, n.length - 1);
+  }
+
+  /// Administration Department (24-Dept 11 … 14). ICT (24-Dept 111 …) used to
+  /// match a plain startsWith('24-Dept 11') and got Administration's toggle.
+  static bool isAdministrationGrouping(String grouping) => deptNo(grouping) == '1';
+
   /// The group for this role, or null when the user isn't a group leader.
   static String? detect({required String grouping, required String role, List<String> subDeptNames = const []}) {
     final r = role.toLowerCase();
@@ -78,7 +92,8 @@ class GroupScope {
       case '신학부':
         return noChurchWorkers(q.or('department.eq.신학부,department.ilike.%theology%').neq('location', 'Mou').neq('location', 'New Saints'));
       case 'MOU':
-        return noChurchWorkers(q.ilike('department', 'mou'));
+        // department MOU (also "MOU …" spellings), wherever the member's branch is
+        return noChurchWorkers(q.ilike('department', 'mou%'));
       default:
         return noChurchWorkers(q.eq('department', group).neq('location', 'Mou').neq('location', 'New Saints'));
     }
@@ -93,3 +108,44 @@ class GroupScope {
         _ => group,
       };
 }
+
+/// Roles with two views of a duty (the dashboard's Church / Department
+/// toggle): Internal Affairs (every duty), Evangelism Department (evangelism
+/// duties), Education Department (education duties), Administration
+/// Department (Service Attendance) and Theology (every duty: across the
+/// locations or church level). The same rule is used by the dashboard, the
+/// absentee list and the approval cockpit; entry forms have no toggle.
+class DualMode {
+  DualMode._();
+
+  /// Title of the toggle ("Internal Affairs Scope" …), or null without one.
+  static String? title({required String role, required String grouping, String dept = '', required String duty}) {
+    final r = role.toLowerCase();
+    final d = dept.trim().toLowerCase();
+    final no = GroupScope.deptNo(grouping);
+    final u = duty.trim();
+    if (no == '18' || r.startsWith('theology_dept')) return "Theology Scope";
+    if (GroupScope.detect(grouping: grouping, role: role) != null) return null;
+    if (r.contains('internal_affairs') || r.startsWith('ia_') || d.contains('내무') || no == '3') return "Internal Affairs Scope";
+    final evang = (r.contains('evang_dept') || d.contains('전도') || no == '5') && !r.contains('loc_evang');
+    if (evang && const {'Evangelism', 'Evangelism Part', 'Evangelism Results', 'BB Results', 'BB File'}.contains(u)) return "Evangelism Scope";
+    final edu = (r.contains('edu_dept') || d.contains('교육') || no == '4') && !r.contains('loc_edu');
+    if (edu && const {'All Saints Education', 'Workers Education'}.contains(u)) return "Education Scope";
+    final adm = (r.contains('admin_dept') || d.contains('행정서무') || no == '1') && r != 'admin';
+    if (adm && u == 'Service Attendance Status') return "Administration Scope";
+    return null;
+  }
+
+  static bool isTheology(String role, String grouping) => GroupScope.deptNo(grouping) == '18' || role.toLowerCase().startsWith('theology_dept');
+
+  /// (wide view, own-department view) button labels.
+  static (String, String) labels(String role, String grouping) =>
+      isTheology(role, grouping) ? ("Across locations", "Church level") : ("Church-wide", "Department only");
+
+  /// Church-level members: location Church / Church Workers / Church Main or none.
+  static bool isChurchLevel(dynamic location) {
+    final l = (location ?? '').toString().trim().toLowerCase();
+    return l.isEmpty || l == 'n/a' || l == 'church' || l == 'church workers' || l == 'church main' || l == '교회';
+  }
+}
+
