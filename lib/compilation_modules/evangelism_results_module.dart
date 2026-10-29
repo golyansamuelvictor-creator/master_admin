@@ -66,8 +66,6 @@ class EvangelismResultsModule extends StatefulWidget {
   /// The compilation period (Results By Units compares it with the goals).
   final DateTime? periodStart;
   final DateTime? periodEnd;
-  /// Results By Units: location, sub-location, department, team being viewed.
-  final List<String>? unitPath;
 
   const EvangelismResultsModule({
     super.key,
@@ -96,8 +94,7 @@ class EvangelismResultsModule extends StatefulWidget {
     this.userLoc = '',
     this.userTeam = '',
     this.periodStart,
-    this.periodEnd,
-    this.unitPath,
+    this.periodEnd, required List<String> unitPath,
   });
 
   @override
@@ -874,7 +871,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
   Widget build(BuildContext context) {
     final filteredData = _getFilteredBbData();
     final List<_EvangelismResultUnitStat> unitStats = _calculateUnitStats(filteredData);
-    final _EvangelismResultUnitStat totalStat = _calculateTotalStat(unitStats);
+    _calculateTotalStat(unitStats);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -899,10 +896,10 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
             to: widget.periodEnd ?? DateTime.now(),
             timePeriod: widget.timePeriod,
             level: widget.level,
-            location: widget.unitPath?[0] ?? widget.selectedLocation,
-            subLocation: widget.unitPath?[1] ?? widget.selectedSubLocation,
-            department: widget.unitPath?[2] ?? widget.selectedDepartment,
-            team: widget.unitPath?[3] ?? widget.selectedTeam,
+            location: widget.selectedLocation,
+            subLocation: widget.selectedSubLocation,
+            department: widget.selectedDepartment,
+            team: widget.selectedTeam,
             section: (title, content, {onExport}) => _section(title, content, context, onPdf: onExport),
           ),
         ],
