@@ -573,12 +573,29 @@ class _TranslationEditorScreenState extends State<TranslationEditorScreen> {
 class LanguageQuickButton extends StatelessWidget {
   const LanguageQuickButton({super.key});
 
+  /// Every language switched on in Supabase is listed (it only listed the
+  /// ones already translated, so with none ready the button did nothing).
+  /// A language whose words haven't been translated yet says so.
   Future<void> _pick(BuildContext context) async {
     List<Map<String, dynamic>> langs = [];
+    String? error;
     try {
-      langs = (await I18n.languages()).where((l) => l['code'] == I18n.english || ((l['translated'] ?? 0) as num) > 0).toList();
-    } catch (_) {}
-    if (!context.mounted || langs.length < 2) return;
+      langs = await I18n.languages();
+    } catch (e) {
+      error = "$e";
+    }
+    if (!context.mounted) return;
+    if (langs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error == null ? "No other languages are switched on yet." : "Couldn't load the languages. Check your connection."),
+      ));
+      return;
+    }
+    int pct(Map<String, dynamic> l) {
+      final t = ((l['total'] ?? 0) as num).toInt();
+      return t == 0 ? 0 : (((l['translated'] ?? 0) as num) / t * 100).round();
+    }
+    bool ready(Map<String, dynamic> l) => l['code'] == I18n.english || ((l['translated'] ?? 0) as num) > 0;
     final l = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -588,14 +605,29 @@ class LanguageQuickButton extends StatelessWidget {
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, l),
               child: Row(children: [
-                Expanded(child: Text("${l['native_name']}", style: TextStyle(fontWeight: l['code'] == I18n.code ? FontWeight.w900 : FontWeight.normal))),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text.rich(TextSpan(text: "${l['native_name']}"),
+                        style: TextStyle(fontWeight: l['code'] == I18n.code ? FontWeight.w900 : FontWeight.w600)),
+                    if (l['code'] != I18n.english)
+                      Text(ready(l) ? "${l['name_en']} · ${pct(l)}% translated" : "${l['name_en']} · not translated yet",
+                          style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade600))),
+                  ]),
+                ),
                 if (l['code'] == I18n.code) const Icon(Icons.check_rounded, size: 18),
               ]),
             ),
         ],
       ),
     );
-    if (l == null) return;
+    if (l == null || !context.mounted) return;
+    if (!ready(l)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Text("${l['name_en']} isn't translated yet. After signing in, open Settings › Language and tap ${l['name_en']} › Download: it is prepared once (a few minutes) and is then ready for everyone, here too."),
+      ));
+      return;
+    }
     try {
       await I18n.use(l['code'].toString(), rtl: l['is_rtl'] == true, native: l['native_name']?.toString());
     } catch (_) {}

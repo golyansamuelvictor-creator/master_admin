@@ -2895,6 +2895,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
             ]),
           ),
         ),
+        // Evangelism Results: no detailed results here, the BB File has them
+        if (widget.selectedDuty != 'Evangelism Results' && widget.selectedDuty != 'BB Results')
         Padding(
           padding: const EdgeInsets.all(15),
           child: SizedBox(

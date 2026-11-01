@@ -83,8 +83,24 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
     return [v(widget.location), v(widget.subLocation), v(widget.department), v(widget.team), null];
   }
 
-  /// The unit shown: the opened row, or the compilation screen's selection.
-  List<String?> get _fixed => _drill.isNotEmpty ? [..._drill, for (int i = _drill.length; i < 5; i++) null] : _base;
+  /// The level chosen in the sidebar (1 location … 5 cell).
+  int get _levelDepth => switch (CompLevel.of(widget.level)) {
+        CompLevel.subLocation => 2,
+        CompLevel.dept => 3,
+        CompLevel.team => 4,
+        CompLevel.cell => 5,
+        _ => 1,
+      };
+
+  /// The unit shown: the opened row, or the compilation screen's selection
+  /// cut to the level chosen in the sidebar, so "Location status" lists the
+  /// locations, "Team status" the teams … like Service Attendance does (the
+  /// server still keeps everyone inside their own units).
+  List<String?> get _fixed {
+    if (_drill.isNotEmpty) return [..._drill, for (int i = _drill.length; i < 5; i++) null];
+    final b = _base, keep = _levelDepth - 1;
+    return [for (int i = 0; i < 5; i++) i < keep ? b[i] : null];
+  }
 
   static int _deepest(List<String?> k) {
     for (int i = k.length - 1; i >= 0; i--) {
@@ -93,19 +109,16 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
     return 0;
   }
 
-  int get _baseDepth => _deepest(_base);
+  /// The root of the breadcrumb: the selection cut to the sidebar level
+  List<String?> get _root {
+    final keep = _levelDepth - 1;
+    return [for (int i = 0; i < 5; i++) i < keep ? _base[i] : null];
+  }
+
+  int get _baseDepth => _deepest(_root);
 
   /// The level the rows are grouped by (1 location … 5 cell).
-  int get _depth {
-    final byLevel = switch (CompLevel.of(widget.level)) {
-      CompLevel.subLocation => 2,
-      CompLevel.dept => 3,
-      CompLevel.team => 4,
-      CompLevel.cell => 5,
-      _ => 1,
-    };
-    return math.min(5, math.max(byLevel, _deepest(_fixed) + 1));
-  }
+  int get _depth => _drill.isNotEmpty ? math.min(5, _deepest(_fixed) + 1) : _levelDepth;
 
   /// Day / week / month buckets for the line chart; null for a single period.
   String? get _bucket {
@@ -128,8 +141,10 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   @override
   void didUpdateWidget(covariant EvangelismGoalsView old) {
     super.didUpdateWidget(old);
-    if (old.from != widget.from ||
-        old.to != widget.to ||
+    // compare days, not moments: the screen passes "now" again on every
+    // rebuild, which reloaded (and blinked) the table each time
+    if (_f.format(old.from) != _f.format(widget.from) ||
+        _f.format(old.to) != _f.format(widget.to) ||
         old.level != widget.level ||
         old.location != widget.location ||
         old.subLocation != widget.subLocation ||
@@ -156,11 +171,23 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
     };
   }
 
+  /// Last results per query, so the table stays on screen (no blinking)
+  /// while the compilation screen reloads and rebuilds this view.
+  static final Map<String, (Map<String, dynamic>, List<Map<String, dynamic>>)> _cache = {};
+
+  String get _cacheKey => [..._params.values, _groups[_depth], _bucket].join('|');
+
   Future<void> _load() async {
+    final cached = _cache[_cacheKey];
     setState(() {
       _loading = true;
       _error = null;
+      if (cached != null) {
+        _data = cached.$1;
+        _series = cached.$2;
+      }
     });
+    final key = _cacheKey;
     final db = Supabase.instance.client;
     try {
       final b = _bucket;
@@ -168,10 +195,14 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
         db.rpc('evangelism_results', params: {..._params, 'p_group': _groups[_depth]}),
         if (b != null) db.rpc('evangelism_results_series', params: {..._params, 'p_bucket': b}),
       ]);
-      if (!mounted) return;
+      final data = Map<String, dynamic>.from(r[0] as Map);
+      final series = r.length > 1 ? List<Map<String, dynamic>>.from((r[1] as List).map((e) => Map<String, dynamic>.from(e as Map))) : <Map<String, dynamic>>[];
+      if (_cache.length > 40) _cache.clear();
+      _cache[key] = (data, series);
+      if (!mounted || key != _cacheKey) return; // a newer selection is loading
       setState(() {
-        _data = Map<String, dynamic>.from(r[0] as Map);
-        _series = r.length > 1 ? List<Map<String, dynamic>>.from((r[1] as List).map((e) => Map<String, dynamic>.from(e as Map))) : [];
+        _data = data;
+        _series = series;
         _loading = false;
       });
     } catch (e) {
@@ -198,7 +229,14 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   // ---- data helpers
 
   List<Map<String, dynamic>> get _stages => List<Map<String, dynamic>>.from(((_data?['stages'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
-  List<Map<String, dynamic>> get _rows => List<Map<String, dynamic>>.from(((_data?['rows'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
+  /// The unit rows in the Compilation screen's order
+  List<Map<String, dynamic>> get _rows {
+    final rows = List<Map<String, dynamic>>.from(((_data?['rows'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
+    String name(Map r) => (r['unit'] ?? '').toString();
+    final order = CompLevel.orderNames(rows.map(name), const ['Church', 'Location', 'Sub-location', 'Dept', 'Team', 'Cell'][_depth]);
+    rows.sort((a, b) => order.indexOf(name(a)).compareTo(order.indexOf(name(b))));
+    return rows;
+  }
   Map<String, dynamic> get _total => Map<String, dynamic>.from((_data?['total'] as Map?) ?? const {});
 
   static Color _hex(dynamic h) {
@@ -360,7 +398,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
     final chips = <Widget>[
       ActionChip(
         avatar: const Icon(Icons.home_rounded, size: 16),
-        label: Text(_base.whereType<String>().isEmpty ? "Whole church" : _base.whereType<String>().join(' › ')),
+        label: Text(_root.whereType<String>().isEmpty ? "Whole area" : _root.whereType<String>().join(' › ')),
         onPressed: _drill.isEmpty
             ? null
             : () {

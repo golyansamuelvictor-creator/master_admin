@@ -28,6 +28,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Map<DateTime, List<dynamic>> _events = {};
   bool _isLoading = false;
 
+  /// Categories switched off by the filter (apply to the calendar marks,
+  /// the daily schedule and the upcoming list).
+  final Set<String> _hiddenCats = {};
+  /// Upcoming events: the next week, month or quarter.
+  String _upcomingRange = 'Month';
+  static const _cats = ['Public Holiday', 'Church Events', 'Location Events', 'Task deadline', 'My schedule'];
+
+  static String _catOf(dynamic e) {
+    if (e['type'] == 'task') return 'Task deadline';
+    if (e['type'] == 'personal') return 'My schedule';
+    final c = (e['category'] ?? '').toString();
+    return c.isEmpty ? 'Church Events' : c;
+  }
+
   // Who may add events comes from the role's admin actions (app_roles):
   // church events by "Manage Church Events", location events by "Manage Location Events"
   NoticePermissions _perm = NoticePermissions.none;
@@ -61,7 +75,115 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return DateFormat('h:mm a').format(DateTime(2000, 1, 1, h, m));
   }
 
+  /// My schedule: a private task or appointment only I see.
+  Future<void> _addPersonal([dynamic existing]) async {
+    final title = TextEditingController(text: (existing?['title'] ?? '').toString());
+    final notes = TextEditingController(text: (existing?['notes'] ?? '').toString());
+    DateTime date = DateTime.tryParse((existing?['event_date'] ?? '').toString()) ?? (_selectedDay ?? DateTime.now());
+    TimeOfDay? time;
+    final t0 = (existing?['event_time'] ?? '').toString().split(':');
+    if (t0.length >= 2) time = TimeOfDay(hour: int.tryParse(t0[0]) ?? 9, minute: int.tryParse(t0[1]) ?? 0);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: Text(existing == null ? "Add to my schedule" : "Edit my schedule", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900)),
+          content: SizedBox(
+            width: 380,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(controller: title, autofocus: true, decoration: InputDecoration(labelText: tr("What"), border: const OutlineInputBorder(), isDense: true)),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.event_rounded, size: 18),
+                    label: Text(DateFormat('EEE d MMM yyyy').format(date)),
+                    onPressed: () async {
+                      final d = await showDatePicker(context: ctx, initialDate: date, firstDate: DateTime(2020), lastDate: DateTime(2035));
+                      if (d != null) set(() => date = d);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.schedule_rounded, size: 18),
+                  label: Text(time == null ? "All day" : time!.format(ctx)),
+                  onPressed: () async {
+                    final t = await showTimePicker(context: ctx, initialTime: time ?? const TimeOfDay(hour: 9, minute: 0));
+                    set(() => time = t);
+                  },
+                ),
+              ]),
+              const SizedBox(height: 10),
+              TextField(controller: notes, maxLines: 3, decoration: InputDecoration(labelText: tr("Notes (optional)"), border: const OutlineInputBorder(), isDense: true)),
+              const SizedBox(height: 6),
+              Text("Only you can see your schedule.", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Save")),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || title.text.trim().isEmpty) return;
+    final row = {
+      'title': title.text.trim(),
+      'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
+      'event_date': DateFormat('yyyy-MM-dd').format(date),
+      'event_time': time == null ? null : "${time!.hour.toString().padLeft(2, '0')}:${time!.minute.toString().padLeft(2, '0')}:00",
+    };
+    try {
+      if (existing == null) {
+        await _supabase.from('personal_events').insert(row);
+      } else {
+        await _supabase.from('personal_events').update(row).eq('id', existing['id']);
+      }
+      setState(() {
+        _selectedDay = DateTime(date.year, date.month, date.day);
+        _focusedDay = _selectedDay!;
+      });
+      await _fetchEvents();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Saved to your schedule: ${row['title']}"), backgroundColor: const Color(0xFF2E7D32)));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Couldn't save (run 17_round16.sql): ${e is PostgrestException ? e.message : e}"),
+          backgroundColor: Colors.red.shade700,
+        ));
+      }
+    }
+  }
+
+  Future<void> _personalDetails(dynamic e) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text((e['title'] ?? '').toString(), style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(pPurple))),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text("My schedule  •  ${_timeLabel(e['event_time'])}", style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey[700]), fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          Text((e['notes'] ?? '').toString()),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, 'delete'), child: Text("Remove", style: TextStyle(color: AppPalette.fg(Colors.red.shade700)))),
+          TextButton(onPressed: () => Navigator.pop(ctx, e['done'] == true ? 'undone' : 'done'), child: Text(e['done'] == true ? "Not done" : "Mark done")),
+          TextButton(onPressed: () => Navigator.pop(ctx, 'edit'), child: const Text("Edit")),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close")),
+        ],
+      ),
+    );
+    try {
+      if (action == 'delete') await _supabase.from('personal_events').delete().eq('id', e['id']);
+      if (action == 'done' || action == 'undone') await _supabase.from('personal_events').update({'done': action == 'done'}).eq('id', e['id']);
+      if (action == 'edit') return _addPersonal(e);
+      if (action != null) _fetchEvents();
+    } catch (_) {}
+  }
+
   Future<void> _showEventDetails(dynamic e) async {
+    if (e['type'] == 'personal') return _personalDetails(e);
     final canManage = _canManageEvent(e);
     final action = await showDialog<String>(
       context: context,
@@ -106,9 +228,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final eventRes = await _supabase.from('church_events').select();
-      final taskRes = await _supabase.from('leader_tasks').select();
+      final r = await Future.wait<dynamic>([
+        _supabase.from('church_events').select(),
+        _supabase.from('leader_tasks').select(),
+        // my own schedule (17_round16.sql); before it, nothing
+        _supabase.from('personal_events').select().order('event_date', ascending: true).then<dynamic>((v) => v, onError: (_) => <dynamic>[]),
+        // my accountability tasks with a due date (open ones)
+        _supabase.rpc('my_accountability_tasks').then<dynamic>((v) => v, onError: (_) => <dynamic>[]),
+      ]);
+      final eventRes = r[0], taskRes = r[1];
       Map<DateTime, List<dynamic>> newEvents = {};
+      for (var e in (r[2] as List)) {
+        final DateTime? d = DateTime.tryParse((e['event_date'] ?? '').toString());
+        if (d == null) continue;
+        newEvents.putIfAbsent(DateTime(d.year, d.month, d.day), () => []).add({...e, 'type': 'personal', 'category': 'My schedule'});
+      }
       
       for (var e in (eventRes as List)) {
         final DateTime? parsed = DateTime.tryParse((e['event_date'] ?? '').toString());
@@ -126,6 +260,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
         if (newEvents[key] == null) newEvents[key] = [];
         newEvents[key]!.add({...t, 'type': 'task'});
       }
+      for (var t in (r[3] as List)) {
+        final DateTime? d = DateTime.tryParse((t['due_date'] ?? '').toString());
+        if (d == null || t['status'] == 'Completed') continue;
+        newEvents.putIfAbsent(DateTime(d.year, d.month, d.day), () => []).add({...t, 'type': 'task'});
+      }
       if (mounted) setState(() { _events = newEvents; _isLoading = false; });
     } catch (e) { 
       debugPrint("Calendar load error: $e");
@@ -139,7 +278,29 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
-  List<dynamic> _getEventsForDay(DateTime day) => _events[DateTime(day.year, day.month, day.day)] ?? [];
+  List<dynamic> _getEventsForDay(DateTime day) {
+    final all = _events[DateTime(day.year, day.month, day.day)] ?? const [];
+    if (_hiddenCats.isEmpty) return all;
+    return all.where((e) => !_hiddenCats.contains(_catOf(e))).toList();
+  }
+
+  /// Events from today to the end of the chosen range, soonest first.
+  List<(DateTime, dynamic)> _upcoming() {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    final end = switch (_upcomingRange) {
+      'Week' => start.add(const Duration(days: 7)),
+      'Quarter' => DateTime(start.year, start.month + 3, start.day),
+      _ => DateTime(start.year, start.month + 1, start.day),
+    };
+    final out = <(DateTime, dynamic)>[];
+    for (var d = start; !d.isAfter(end); d = d.add(const Duration(days: 1))) {
+      for (final e in _getEventsForDay(d)) {
+        out.add((d, e));
+      }
+    }
+    return out;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +311,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         child: _isLoading 
         ? Center(child: CircularProgressIndicator(color: pPurple))
         : SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
+            physics: const ClampingScrollPhysics(),
             padding: const EdgeInsets.all(8), // Tightened spacing
             child: Column(children: [
               _buildHeader(isDesktop),
@@ -239,7 +400,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         color: pPurple.withValues(alpha: 0.02),
         child: _card(
           padding: 5, 
-          child: TableCalendar(
+          child: RepaintBoundary(child: TableCalendar(
             firstDay: DateTime.utc(2020), lastDay: DateTime.utc(2030),
             focusedDay: _focusedDay, calendarFormat: CalendarFormat.month,
             headerVisible: false, 
@@ -250,7 +411,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               weekendStyle: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.red), fontWeight: FontWeight.w900),
             ),
             calendarBuilders: _miniCalendarBuilders(),
-          )
+          ))
         ),
       ),
       const SizedBox(height: 8),
@@ -263,10 +424,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: Center(child: Text("CATEGORIES", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: AppPalette.fg(pPurple), letterSpacing: 1.2))),
           ),
           const SizedBox(height: 8),
-          _categorySmallCard("Public holiday", Colors.red),
-          _categorySmallCard("Church events", Colors.blue),
-          _categorySmallCard("Location events", pPurple),
-          _categorySmallCard("Task deadline", Colors.orange),
+          // tap a category to show / hide it everywhere on this screen
+          for (final c in _cats) _categorySmallCard(c, _getCategoryColor(c)),
+          Text("Tap a category to show or hide it", style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey.shade600))),
         ]),
       ),
     ]);
@@ -306,6 +466,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
           style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple), foregroundColor: AppPalette.fg(Colors.white), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
         ),
       )),
+      // everyone: a private schedule, like Google Calendar's own events
+      _card(padding: 8, child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () => _addPersonal(),
+          icon: const Icon(Icons.person_add_alt_1_rounded, size: 19),
+          label: Text("MY SCHEDULE / TASK", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold)),
+          style: OutlinedButton.styleFrom(foregroundColor: AppPalette.fg(pPurple), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        ),
+      )),
       const SizedBox(height: 8),
       _card(child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
         _card(
@@ -313,6 +483,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           color: Colors.blueGrey.withValues(alpha: 0.05),
           child: Center(child: Text("DAILY SCHEDULE", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: AppPalette.fg(Colors.blueGrey), letterSpacing: 1.2)))
         ),
+        if (_selectedDay != null)
+          Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(DateFormat('EEEE d MMMM yyyy').format(_selectedDay!), style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey)))),
         const SizedBox(height: 10),
         if (todayEvents.isEmpty) Center(child: Text("No events found.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontSize: 14))),
         ...todayEvents.map((e) => InkWell(
@@ -320,12 +492,73 @@ class _CalendarScreenState extends State<CalendarScreen> {
               onTap: () => _showEventDetails(e),
               child: _eventItem(
                 (e['title'] ?? e['task_title'] ?? 'Untitled').toString(),
-                e['type'] == 'task' ? "Task deadline" : _timeLabel(e['event_time']),
-                e['type'] == 'task' ? Colors.orange : _getCategoryColor(e['category']),
+                e['type'] == 'task' ? "Task deadline" : "${_timeLabel(e['event_time'])}${e['type'] == 'personal' ? ' · My schedule${e['done'] == true ? ' · done' : ''}' : ''}",
+                e['type'] == 'task' ? Colors.orange : _getCategoryColor(_catOf(e)),
               ),
             )),
       ])),
+      const SizedBox(height: 8),
+      _buildUpcoming(),
     ]);
+  }
+
+  // --- UPCOMING EVENTS: next week / month / quarter ---
+  Widget _buildUpcoming() {
+    final list = _upcoming();
+    return _card(child: Column(children: [
+      _card(
+        padding: 6,
+        color: pPurple.withValues(alpha: 0.05),
+        child: Center(child: Text("UPCOMING EVENTS", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12, color: AppPalette.fg(pPurple), letterSpacing: 1.2))),
+      ),
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        child: SegmentedButton<String>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          segments: const [
+            ButtonSegment(value: 'Week', label: Text("1 week")),
+            ButtonSegment(value: 'Month', label: Text("1 month")),
+            ButtonSegment(value: 'Quarter', label: Text("3 months")),
+          ],
+          selected: {_upcomingRange},
+          onSelectionChanged: (v) => setState(() => _upcomingRange = v.first),
+        ),
+      ),
+      const SizedBox(height: 8),
+      if (list.isEmpty)
+        Padding(padding: const EdgeInsets.all(10), child: Text("Nothing coming up in this period.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey), fontSize: 13))),
+      for (final (d, e) in list.take(60))
+        InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => _showEventDetails(e),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFFBFBFE)), borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              Container(
+                width: 46,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                decoration: BoxDecoration(color: AppPalette.bg(_getCategoryColor(_catOf(e)).withValues(alpha: 0.12)), borderRadius: BorderRadius.circular(8)),
+                child: Column(children: [
+                  Text(DateFormat('MMM').format(d).toUpperCase(), style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(_getCategoryColor(_catOf(e))))),
+                  Text("${d.day}", style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.w900, color: AppPalette.fg(_getCategoryColor(_catOf(e))))),
+                ]),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text((e['title'] ?? e['task_title'] ?? 'Untitled').toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                  Text("${DateFormat('EEE').format(d)} · ${e['type'] == 'task' ? 'Task deadline' : _timeLabel(e['event_time'])} · ${_catOf(e)}",
+                      style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.blueGrey))),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      if (list.length > 60) Text("+ ${list.length - 60} more", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
+    ]));
   }
 
   List<Widget> _buildDynamicCalendarContent() {
@@ -354,7 +587,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              TableCalendar(
+              RepaintBoundary(child: TableCalendar(
                 firstDay: DateTime.utc(2020), lastDay: DateTime.utc(2030),
                 focusedDay: monthDate,
                 rowHeight: 48, 
@@ -369,7 +602,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
                 onDaySelected: (sel, foc) => setState(() { _selectedDay = sel; _focusedDay = foc; }),
                 selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-              ),
+              )),
             ],
           ),
         ),
@@ -404,7 +637,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         SizedBox(
           height: 500,
           child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
+            physics: const ClampingScrollPhysics(),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -495,21 +728,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   // --- UI HELPERS ---
-  Widget _categorySmallCard(String title, Color color) => Container(
+  Widget _categorySmallCard(String title, Color color) => InkWell(
+    borderRadius: BorderRadius.circular(8),
+    onTap: () => setState(() => _hiddenCats.contains(title) ? _hiddenCats.remove(title) : _hiddenCats.add(title)),
+    child: Opacity(opacity: _hiddenCats.contains(title) ? 0.4 : 1, child: Container(
     margin: const EdgeInsets.only(bottom: 4),
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
       color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(8),
       border: Border.all(color: AppPalette.line(color.withValues(alpha: 0.2))),
-      boxShadow: [BoxShadow(color: color.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 3))],
+      boxShadow: [BoxShadow(color: color.withValues(alpha: 0.12), blurRadius: 3, offset: const Offset(0, 2))],
     ),
     child: Row(children: [
       Container(width: 8, height: 8, decoration: BoxDecoration(color: AppPalette.bg(color), borderRadius: BorderRadius.circular(2))),
       const SizedBox(width: 10),
       Expanded(child: Text(title, style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)))),
+      Icon(_hiddenCats.contains(title) ? Icons.visibility_off_rounded : Icons.check_rounded, size: 13, color: AppPalette.fg(color)),
     ]),
-  );
+  )));
 
   Widget _card({required Widget child, double padding = 15, String? title, Color? color}) => Container(
     padding: EdgeInsets.all(padding), margin: const EdgeInsets.only(bottom: 8),
@@ -518,10 +755,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       color: AppPalette.bg(color ?? Colors.white), 
       borderRadius: BorderRadius.circular(15), 
       // Raised cards (were flat)
-      boxShadow: [
-        BoxShadow(color: pPurple.withValues(alpha: 0.10), blurRadius: 18, offset: const Offset(0, 8)),
-        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 2)),
-      ],
+      // one light shadow: several large blurred shadows per card made
+      // scrolling slow on phones
+      boxShadow: [BoxShadow(color: pPurple.withValues(alpha: 0.10), blurRadius: 8, offset: const Offset(0, 4))],
       border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.10)))
     ),
     child: Column(children: [
@@ -539,7 +775,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         color: AppPalette.bg(const Color(0xFFFBFBFE)),
         borderRadius: BorderRadius.circular(10),
         border: Border(left: BorderSide(color: AppPalette.line(c), width: 4)),
-        boxShadow: [BoxShadow(color: c.withValues(alpha: 0.18), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: c.withValues(alpha: 0.15), blurRadius: 4, offset: const Offset(0, 2))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
         Text(title, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(Colors.black87)), maxLines: 2, overflow: TextOverflow.ellipsis),
@@ -551,6 +787,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (cat == "Public Holiday") return Colors.red;
     if (cat == "Church Events") return Colors.blue;
     if (cat == "Location Events") return pPurple;
+    if (cat == "My schedule") return Colors.teal;
     return Colors.orange;
   }
 }

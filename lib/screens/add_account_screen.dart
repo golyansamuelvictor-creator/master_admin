@@ -121,6 +121,23 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
   bool get _isPrefilledMember => widget.memberData != null;
 
+  /// Choices for the secondary role. Theology workers also serve in cell
+  /// groups, so Cell Leader, Assistant Cell Leader and Cell Secretary are
+  /// added to their list (from app_roles, not typed here).
+  List<String> get _secondaryRoles {
+    final out = dynamicRoles.where((r) => r != selectedChurchRole).toList();
+    if (_isTheologyLocationDept && !_isChurchWorker) {
+      for (final r in _roleDataMap) {
+        final key = (r['role_key'] ?? '').toString().toLowerCase();
+        final name = (r['display_name'] ?? '').toString();
+        final grouping = (r['Grouping'] ?? r['grouping'] ?? '').toString();
+        if (r['category'] != 'Worker' || grouping.startsWith('24-Dept') || key.startsWith('church_')) continue;
+        if ((key.contains('cell') || name.toLowerCase().contains('cell')) && !out.contains(name) && name != selectedChurchRole) out.add(name);
+      }
+    }
+    return out;
+  }
+
   /// Text shown inside the role dropdown. An empty dropdown is drawn greyed-out
   /// by Flutter, which looked like a bug; now it says why it is empty.
   String get _roleHint {
@@ -530,7 +547,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     }
 
     if (!dynamicRoles.contains(selectedChurchRole)) selectedChurchRole = null;
-    if (!dynamicRoles.contains(selectedSecondaryRole) || selectedSecondaryRole == selectedChurchRole) selectedSecondaryRole = null;
+    if (!_secondaryRoles.contains(selectedSecondaryRole)) selectedSecondaryRole = null;
     _isDualTeamSecretary = false;
     debugPrint("Roles: total ${_roleDataMap.length}, shown ${dynamicRoles.length} "
         "(type=$selectedAccountType, dept=${selectedOfficialDeptCode ?? '-'})");
@@ -737,9 +754,17 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
       }
       final role = _roleDataMap.firstWhere((r) => r['display_name'] == selectedChurchRole, orElse: () => const {});
       final scope = (role['approval_scope'] ?? '').toString();
-      final depth = selectedAccountType == "Saint"
-          ? 5
-          : switch (scope) { 'location' => 1, 'sub_location' => 2, 'department' => 3, 'team' => 4, _ => 5 };
+      int depthOf(String s) => switch (s) { 'location' => 1, 'sub_location' => 2, 'department' => 3, 'team' => 4, _ => 5 };
+      final second = selectedSecondaryRole == null
+          ? const <String, dynamic>{}
+          : _roleDataMap.firstWhere((r) => r['display_name'] == selectedSecondaryRole, orElse: () => const {});
+      var depth = selectedAccountType == "Saint" ? 5 : depthOf(scope);
+      // a secondary role lower down (e.g. a Theology worker who is also a
+      // Cell Leader) needs that unit too
+      if (second.isNotEmpty) {
+        final d2 = depthOf((second['approval_scope'] ?? '').toString());
+        if (d2 > depth) depth = d2;
+      }
       final needed = <(String, String?, String)>[
         ('location', selectedLocation, "location"),
         ('sub_location', selectedSubLocation, "sub-location"),
@@ -833,16 +858,17 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   Future<void> _ensureNoExistingProfile(String uid) async {
     final existing = await _supabase
         .from('profiles')
-        .select('scj_id, is_approved, approval_status')
+        .select('scj_id, role, is_approved, approval_status')
         .eq('id', uid)
         .maybeSingle();
     if (existing == null) return;
 
-    final hasId = _str(existing['scj_id']).isNotEmpty;
-    if (!hasId) return; // half-created row: safe to complete
-
     final status = _str(existing['approval_status']).toLowerCase();
     final approved = existing['is_approved'] == true || status == 'approved';
+    final hasId = _str(existing['scj_id']).isNotEmpty;
+    // half-created row (no SCJ ID or no role, never approved): safe to complete
+    if (!approved && status != 'rejected' && (!hasId || _str(existing['role']).isEmpty)) return;
+
     throw _FriendlyException(
       approved
           ? "This account is already registered and approved. Please sign in."
@@ -1249,10 +1275,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
               // Optional second role in the same unit; its duties are added to the
               // primary role's (Reports screen shows both sets of duties).
-              if (selectedAccountType != "Saint" && selectedChurchRole != null && dynamicRoles.length > 1)
+              if (selectedAccountType != "Saint" && selectedChurchRole != null && _secondaryRoles.isNotEmpty)
                 _sideBySideDropdown(
                   "Secondary Role (optional)",
-                  ["None", ...dynamicRoles.where((r) => r != selectedChurchRole)],
+                  ["None", ..._secondaryRoles],
                   selectedSecondaryRole ?? "None",
                   (v) => setState(() {
                     selectedSecondaryRole = (v == null || v == "None") ? null : v;

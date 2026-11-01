@@ -139,7 +139,27 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     return "Department";
   }
 
+  /// Every member of my unit. The server returns at most 1000 rows per
+  /// request, so the list is fetched in batches of 1000 until all are in;
+  /// search and filters then work on the whole unit, and the list is shown
+  /// 1000 at a time with previous / next buttons.
   Future<List<dynamic>> _getFilteredMembers() async {
+    const batch = 1000;
+    final all = <dynamic>[];
+    for (var from = 0; ; from += batch) {
+      final rows = await _scopedQuery().range(from, from + batch - 1);
+      all.addAll(rows);
+      if (rows.length < batch || from > 200000) break;
+    }
+    if (mounted) setState(() => _page = 0);
+    return all;
+  }
+
+  /// Page shown (1000 members per page).
+  int _page = 0;
+  static const _pageSize = 1000;
+
+  PostgrestTransformBuilder<PostgrestList> _scopedQuery() {
     var query = _supabase.from('members').select('''
       *,
       introduced_by:introduced_by_id(english_name)
@@ -164,14 +184,14 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     // members; MOU always lists the members whose department is MOU.
     final group = _groupDept;
     if (group != null && (!isLocWorker || group == 'MOU')) {
-      return await GroupScope.filter(query, group).order('english_name');
+      return GroupScope.filter(query, group).order('english_name').order('id');
     }
 
     // ==============================================================
     // A. CHURCH-WIDE ADMIN / DUAL-MODE WORKERS IN CHURCH MODE
     // ==============================================================
     if (!isLocWorker && (scope == 'church' || (_hasDualMode && _dualModeChurchView) || role == 'admin' || role.startsWith('church_') || role.startsWith('korean_worker_'))) {
-      return await query.order('english_name');
+      return query.order('english_name').order('id');
     }
 
     // ==============================================================
@@ -243,7 +263,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
         }
       }
 
-      return await query.order('english_name');
+      return query.order('english_name').order('id');
     }
 
     // ==============================================================
@@ -290,7 +310,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
       }
     }
 
-    return await query.order('english_name');
+    return query.order('english_name').order('id');
   }
 
   void _openMember(dynamic member) => Navigator.push(
@@ -343,7 +363,10 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
       padding: const EdgeInsets.only(right: 8),
       child: PopupMenuButton<String>(
         tooltip: tr("Filter by ${_filterLabels[key]}"),
-        onSelected: (v) => setState(() => _filters[key] = v == '__all' ? null : v),
+        onSelected: (v) => setState(() {
+          _filters[key] = v == '__all' ? null : v;
+          _page = 0;
+        }),
         itemBuilder: (_) => [
           PopupMenuItem(value: '__all', child: Text("All ${_filterLabels[key]!.toLowerCase()}s")),
           const PopupMenuDivider(),
@@ -443,7 +466,10 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
             padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 12, AppSizes.gutter, 6),
             child: TextField(
               controller: _controller,
-              onChanged: (v) => setState(() => _searchQuery = v),
+              onChanged: (v) => setState(() {
+                _searchQuery = v;
+                _page = 0;
+              }),
               decoration: InputDecoration(
                 hintText: tr("Search by name or SCJ ID..."),
                 prefixIcon: Icon(Icons.search, color: AppPalette.fg(const Color(0xFF4A148C))),
@@ -474,7 +500,12 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                 }
 
                 final all = snapshot.data ?? [];
-                final members = _apply(all);
+                final matched = _apply(all);
+                final pages = (matched.length / _pageSize).ceil();
+                final page = pages == 0 ? 0 : _page.clamp(0, pages - 1);
+                final members = matched.skip(page * _pageSize).take(_pageSize).toList();
+                final first = matched.isEmpty ? 0 : page * _pageSize + 1;
+                final last = page * _pageSize + members.length;
                 final anyFilter = _filters.values.any((v) => v != null);
                 return Column(children: [
                   // Filters in the middle; they scroll sideways when they don't fit
@@ -499,9 +530,33 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 0, AppSizes.gutter, 6),
                     child: Center(
-                      child: Text(
-                        members.length == all.length ? "${all.length} members" : "${members.length} of ${all.length} members",
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppPalette.fg(Colors.grey.shade700)),
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        children: [
+                          if (pages > 1)
+                            OutlinedButton.icon(
+                              onPressed: page == 0 ? null : () => setState(() => _page = page - 1),
+                              icon: const Icon(Icons.chevron_left_rounded, size: 18),
+                              label: const Text("Previous 1000"),
+                              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                            ),
+                          Text(
+                            [
+                              matched.length == all.length ? "Total: ${all.length} members" : "${matched.length} of ${all.length} members",
+                              if (pages > 1) "showing $first–$last",
+                            ].join(' • '),
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppPalette.fg(Colors.grey.shade700)),
+                          ),
+                          if (pages > 1)
+                            OutlinedButton.icon(
+                              onPressed: page >= pages - 1 ? null : () => setState(() => _page = page + 1),
+                              icon: const Icon(Icons.chevron_right_rounded, size: 18),
+                              label: const Text("Next 1000"),
+                              style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                            ),
+                        ],
                       ),
                     ),
                   ),

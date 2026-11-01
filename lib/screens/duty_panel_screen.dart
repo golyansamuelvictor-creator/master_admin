@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/app_palette.dart';
 import '../core/app_sizes.dart';
 import '../core/i18n.dart';
+import 'admin/target_setter_screen.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -69,7 +70,13 @@ class _DutyPanelScreenState extends State<DutyPanelScreen> {
   Widget build(BuildContext context) {
     final tabs = <(String, IconData, Widget)>[
       ("Policies & standards", Icons.gavel_rounded, PoliciesView(duty: _duty, canManage: widget.canManage)),
-      ("Goals", Icons.flag_rounded, GoalsView(duty: _duty, canManage: widget.canManage)),
+      // Evangelism: the detailed goals table (who sets which level follows the
+      // cascade: Evangelism Department → locations → … → cell groups); the
+      // one-by-one goals list stays for the other duties
+      ("Goals", Icons.flag_rounded,
+          _isEvangelism
+              ? TargetSetterScreen(initialDuty: _duty, embedded: true, userLoc: '', userSub: '', userDept: '')
+              : GoalsView(duty: _duty, canManage: widget.canManage)),
       if (_isEvangelism && widget.canManage) ...[
         ("Opening months", Icons.calendar_month_rounded, const _OpeningMonthsView()),
         ("Centers", Icons.location_city_rounded, const _CentersView()),
@@ -505,6 +512,14 @@ class _GoalsViewState extends State<GoalsView> {
             _load();
           },
         ),
+        // the cascading goals table (church → location → … → cell group)
+        if (widget.duty == 'Service Attendance Status')
+          ElevatedButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TargetSetterScreen(initialDuty: widget.duty, userLoc: '', userSub: '', userDept: ''))),
+            icon: const Icon(Icons.table_chart_rounded),
+            label: const Text("Goals table by unit"),
+            style: ElevatedButton.styleFrom(backgroundColor: _kPurple, foregroundColor: Colors.white),
+          ),
         if (widget.canManage) ...[
           ElevatedButton.icon(onPressed: () => _edit(), icon: const Icon(Icons.add_rounded), label: const Text("Add goal")),
           OutlinedButton.icon(onPressed: _copyLastMonth, icon: const Icon(Icons.copy_all_rounded), label: const Text("Copy last month")),
@@ -593,10 +608,11 @@ class _OpeningMonthsViewState extends State<_OpeningMonthsView> {
       Center(child: ElevatedButton.icon(onPressed: _add, icon: const Icon(Icons.add_rounded), label: const Text("Add opening month"))),
       const SizedBox(height: 8),
       for (final m in _rows)
-        Card(
+        Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: Card(
           elevation: 0.5,
           margin: const EdgeInsets.symmetric(vertical: 3),
           child: SwitchListTile(
+            contentPadding: const EdgeInsets.only(left: 4, right: 8),
             value: m['is_open'] == true,
             title: Text("${m['label']} ${DateTime.tryParse(m['month_start'].toString())?.year ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text(m['is_open'] == true ? "Open" : "Closed"),
@@ -613,7 +629,7 @@ class _OpeningMonthsViewState extends State<_OpeningMonthsView> {
               _load();
             },
           ),
-        ),
+        ))),
     ]);
   }
 }
@@ -739,22 +755,23 @@ class _CentersViewState extends State<_CentersView> {
     }
   }
 
+  // rows at 60% of the earlier height, like an Excel sheet
   Widget _cell(String t, double w, {bool head = false, bool bold = false, Color? fg, Color? bg}) => Container(
         width: w,
-        height: head ? 36 : 40,
+        height: 24,
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 6),
         decoration: BoxDecoration(color: bg == null ? null : AppPalette.bg(bg), border: Border.all(color: AppPalette.line(Colors.black26), width: 0.5)),
         child: Text(t,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: GoogleFonts.merriweather(fontSize: head ? 11 : 11.5, fontWeight: head || bold ? FontWeight.bold : FontWeight.normal, color: AppPalette.fg(fg ?? (head ? Colors.white : Colors.black87)))),
+            style: GoogleFonts.merriweather(fontSize: head ? 10.5 : 11, fontWeight: head || bold ? FontWeight.bold : FontWeight.normal, color: AppPalette.fg(fg ?? (head ? Colors.white : Colors.black87)))),
       );
 
   Widget _box(Widget child, double w, Color? bg) => Container(
         width: w,
-        height: 40,
+        height: 24,
         alignment: Alignment.center,
         decoration: BoxDecoration(color: bg == null ? null : AppPalette.bg(bg), border: Border.all(color: AppPalette.line(Colors.black26), width: 0.5)),
         child: child,
@@ -764,7 +781,7 @@ class _CentersViewState extends State<_CentersView> {
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)));
-    const w = [40.0, 170.0, 130.0, 140.0, 80.0, 70.0, 56.0];
+    const w0 = [40.0, 170.0, 130.0, 140.0, 80.0, 70.0, 56.0];
     const head = ["No.", "Center place", "Location", "Sub-location", "Opening", "In use", ""];
     return ListView(padding: AppSizes.page, children: [
       Text("Each center belongs to a location and sub-location of the church. \"Opening\" centers are listed in the Summary's Opening Centers table; switch off a center that is no longer used.",
@@ -773,7 +790,12 @@ class _CentersViewState extends State<_CentersView> {
       Center(child: ElevatedButton.icon(onPressed: () => _edit(), icon: const Icon(Icons.add_rounded), label: const Text("Add center"))),
       const SizedBox(height: 10),
       LayoutBuilder(
-        builder: (context, box) => SingleChildScrollView(
+        builder: (context, box) {
+          // stretch the columns over the whole width (small margin each side)
+          final sum = w0.fold<double>(0, (a, b) => a + b);
+          final k = box.maxWidth > sum ? box.maxWidth / sum : 1.0;
+          final w = [for (final x in w0) x * k];
+          return box.maxWidth < 640 ? _phoneList() : SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
             constraints: BoxConstraints(minWidth: box.maxWidth),
@@ -795,6 +817,8 @@ class _CentersViewState extends State<_CentersView> {
                       _cell((c['sub_location'] ?? '').toString().isEmpty ? 'Not set' : c['sub_location'].toString(), w[3], fg: (c['sub_location'] ?? '').toString().isEmpty ? Colors.red.shade700 : null, bg: bg),
                       _box(
                           Checkbox(
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             value: c['is_opening'] == true,
                             onChanged: (v) async {
                               await _db.from('evangelism_centers').update({'is_opening': v == true}).eq('name', c['name']);
@@ -805,7 +829,7 @@ class _CentersViewState extends State<_CentersView> {
                           bg),
                       _box(
                           Transform.scale(
-                            scale: 0.8,
+                            scale: 0.55,
                             child: Switch(
                               value: !off,
                               onChanged: (v) async {
@@ -816,14 +840,74 @@ class _CentersViewState extends State<_CentersView> {
                           ),
                           w[5],
                           bg),
-                      _box(IconButton(tooltip: tr("Edit"), icon: Icon(Icons.edit_rounded, size: 18, color: AppPalette.fg(_kPurple)), onPressed: () => _edit(c)), w[6], bg),
+                      _box(InkWell(onTap: () => _edit(c), child: Tooltip(message: tr("Edit"), child: Icon(Icons.edit_rounded, size: 16, color: AppPalette.fg(_kPurple)))), w[6], bg),
                     ]);
                   }),
               ]),
             ),
           ),
-        ),
+        );
+        },
       ),
+    ]);
+  }
+}
+
+extension on _CentersViewState {
+  /// Phones: one card per center instead of the wide table
+  Widget _phoneList() {
+    if (_rows.isEmpty) {
+      return Padding(padding: const EdgeInsets.all(20), child: Center(child: Text("No centers yet. Tap \"Add center\".", style: TextStyle(color: AppPalette.fg(Colors.grey)))));
+    }
+    return Column(children: [
+      for (int r = 0; r < _rows.length; r++)
+        Builder(builder: (_) {
+          final c = _rows[r];
+          final off = c['is_active'] == false;
+          final loc = (c['location'] ?? '').toString(), sub = (c['sub_location'] ?? '').toString();
+          return Card(
+            elevation: 0.5,
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 6),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Text("${r + 1}. ", style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Expanded(child: Text(c['name'].toString(), style: TextStyle(fontWeight: FontWeight.bold, color: AppPalette.fg(off ? Colors.grey : Colors.black87)))),
+                  IconButton(tooltip: tr("Edit"), icon: Icon(Icons.edit_rounded, size: 18, color: AppPalette.fg(_kPurple)), onPressed: () => _edit(c)),
+                ]),
+                Text(loc.isEmpty || sub.isEmpty ? "Location / sub-location not set" : "$loc › $sub",
+                    style: TextStyle(fontSize: 12, color: AppPalette.fg(loc.isEmpty || sub.isEmpty ? Colors.red.shade700 : Colors.blueGrey.shade700))),
+                Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 4, children: [
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Checkbox(
+                      value: c['is_opening'] == true,
+                      onChanged: (v) async {
+                        await _db.from('evangelism_centers').update({'is_opening': v == true}).eq('name', c['name']);
+                        _load();
+                      },
+                    ),
+                    const Text("Opening", style: TextStyle(fontSize: 12)),
+                  ]),
+                  const SizedBox(width: 8),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Transform.scale(
+                      scale: 0.8,
+                      child: Switch(
+                        value: !off,
+                        onChanged: (v) async {
+                          await _db.from('evangelism_centers').update({'is_active': v}).eq('name', c['name']);
+                          _load();
+                        },
+                      ),
+                    ),
+                    const Text("In use", style: TextStyle(fontSize: 12)),
+                  ]),
+                ]),
+              ]),
+            ),
+          );
+        }),
     ]);
   }
 }
@@ -860,20 +944,49 @@ class _StagesViewState extends State<_StagesView> {
       Text("Overall = the stages ticked \"Overall\". Students = the stages ticked \"Students\". The order here is the order of the columns.",
           textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
       const SizedBox(height: 8),
-      for (final s in _rows)
-        Card(
-          elevation: 0.5,
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          child: ListTile(
-            leading: CircleAvatar(radius: 12, backgroundColor: Color(0xFF000000 | (int.tryParse(s['color_hex'].toString().replaceAll('#', ''), radix: 16) ?? 0x4A148C))),
-            title: Text(s['stage'].toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
-            trailing: Wrap(spacing: 4, children: [
-              FilterChip(label: const Text("Overall"), selected: s['in_overall'] == true, onSelected: (v) => _set(s, 'in_overall', v)),
-              FilterChip(label: const Text("Students"), selected: s['in_students'] == true, onSelected: (v) => _set(s, 'in_students', v)),
-              FilterChip(label: const Text("Shown"), selected: s['is_active'] != false, onSelected: (v) => _set(s, 'is_active', v)),
-            ]),
-          ),
-        ),
+      // The stages as cards stacked in the centre, narrowing like a funnel /
+      // pyramid from the first stage to the last; each card has its colour.
+      LayoutBuilder(builder: (context, box) {
+        final maxW = box.maxWidth.clamp(0.0, 720.0);
+        final n = _rows.length;
+        return Column(children: [
+          for (int i = 0; i < n; i++)
+            () {
+              final s = _rows[i];
+              final c = Color(0xFF000000 | (int.tryParse(s['color_hex'].toString().replaceAll('#', ''), radix: 16) ?? 0x4A148C));
+              final width = n <= 1 ? maxW : maxW * (1.0 - 0.38 * i / (n - 1));
+              final off = s['is_active'] == false;
+              return Container(
+                width: width < 300 ? (maxW < 300 ? maxW : 300) : width,
+                margin: const EdgeInsets.only(bottom: 5),
+                decoration: BoxDecoration(
+                  color: AppPalette.bg(off ? Colors.grey.shade100 : c.withValues(alpha: 0.10)),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppPalette.line(c.withValues(alpha: off ? 0.2 : 0.55)), width: 1.2),
+                  boxShadow: [BoxShadow(color: c.withValues(alpha: 0.18), blurRadius: 6, offset: const Offset(0, 3))],
+                ),
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                child: Column(children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    CircleAvatar(radius: 11, backgroundColor: c, child: Text("${i + 1}", style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(s['stage'].toString(),
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13.5, color: AppPalette.fg(off ? Colors.grey : Colors.black87))),
+                    ),
+                  ]),
+                  const SizedBox(height: 4),
+                  Wrap(alignment: WrapAlignment.center, spacing: 4, runSpacing: 4, children: [
+                    FilterChip(visualDensity: VisualDensity.compact, label: const Text("Overall", style: TextStyle(fontSize: 11)), selected: s['in_overall'] == true, onSelected: (v) => _set(s, 'in_overall', v)),
+                    FilterChip(visualDensity: VisualDensity.compact, label: const Text("Students", style: TextStyle(fontSize: 11)), selected: s['in_students'] == true, onSelected: (v) => _set(s, 'in_students', v)),
+                    FilterChip(visualDensity: VisualDensity.compact, label: const Text("Shown", style: TextStyle(fontSize: 11)), selected: s['is_active'] != false, onSelected: (v) => _set(s, 'is_active', v)),
+                  ]),
+                ]),
+              );
+            }(),
+        ]);
+      }),
     ]);
   }
 }

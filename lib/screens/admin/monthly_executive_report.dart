@@ -5,11 +5,13 @@ import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../../core/table_export.dart';
 import '../../core/app_sizes.dart';
+import '../../core/compilation_rules.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 /// One duty in the report: this period against the period before.
@@ -49,7 +51,7 @@ class DutyStat {
   String get title => label.isEmpty ? dutyName : label;
 }
 
-/// Monthly executive report: every duty of the role compiled into one report
+/// Performance Report (was the Monthly executive report): every duty of the role compiled into one report
 /// for the leader's own unit (location, sub-location, department, team, cell
 /// or church-wide group), with the period before for comparison.
 ///
@@ -125,6 +127,21 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   int dropouts = 0;
   int successfulRecoveries = 0;
   int netGrowth = 0;
+  int transfersIn = 0;
+  int transfersOut = 0;
+
+  // Performance comparison (units of the same level inside the same parent)
+  String? _cmpDuty;
+  String _cmpLevel = 'location';
+  bool _cmpLoading = false;
+  String? _cmpError;
+  List<Map<String, String>> _cmpBuckets = [];
+  List<Map<String, dynamic>> _cmpRows = []; // {unit, mine, rates: {label: rate}}
+  int _cmpReq = 0;
+
+  // AI compiled insights (not saved until "Save")
+  Map<String, dynamic>? _ai;
+  bool _aiBusy = false;
 
   double attendanceCompliance = 0.0;
   double churchAvgAttendance = 0.0;
@@ -310,7 +327,15 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       newConvertsPrev = i(j['new_members_prev']);
       dropouts = i(j['dropouts']);
       successfulRecoveries = i(j['recoveries']);
-      netGrowth = newConverts - dropouts;
+      try {
+        final t = await _supabase.rpc('report_transfers', params: {'p_from': _d(_curStart), 'p_to': _d(_curEnd), 'p_focus': focus});
+        transfersIn = i((t as Map?)?['transfers_in']);
+        transfersOut = i(t?['transfers_out']);
+      } catch (_) {
+        transfersIn = 0;
+        transfersOut = 0;
+      }
+      netGrowth = newConverts - dropouts + transfersIn - transfersOut;
 
       _dutyStats = [
         for (final raw in (j['duties'] as List? ?? const []))
@@ -371,7 +396,12 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         _managerInsights = {};
       }
 
+      _ai = null;
       if (mounted && req == _req) setState(() => _isLoading = false);
+      if (_dutyStats.isNotEmpty) {
+        if (_cmpDuty == null || !_dutyStats.any((d) => d.dutyName == _cmpDuty)) _cmpDuty = _dutyStats.first.dutyName;
+        _loadComparison();
+      }
     } catch (e) {
       debugPrint("Report aggregate error: $e");
       if (mounted && req == _req) {
@@ -421,7 +451,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   String get _autoActions {
     final weak = ([..._dutyStats.where((d) => d.currentCount > 0)]..sort((a, b) => a.currentRate.compareTo(b.currentRate))).take(2).map((d) => d.title).toList();
     return [
-      if (missingUnits.isNotEmpty) "Follow up the units that have not reported (see the accountability table).",
+      if (missingUnits.isNotEmpty) "Follow up the units that have not reported every duty.",
       if (weak.isNotEmpty) "Focus pastoral follow-up and education on ${weak.join(' and ')}.",
       if (dropouts > 0) "Visit the $dropouts member${dropouts == 1 ? '' : 's'} who dropped out and record the care in the absentee list.",
       "Review this report with unit leaders before the next period.",
@@ -434,9 +464,9 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   }
 
   Future<void> _editInsights() async {
-    final obs = TextEditingController(text: _insight('observation', _autoSummary));
-    final root = TextEditingController(text: _insight('root_cause', _autoProblems));
-    final act = TextEditingController(text: _insight('recommended_action', _autoActions));
+    final obs = TextEditingController(text: _aiText('executive_summary') ?? _insight('observation', _autoSummary));
+    final root = TextEditingController(text: _aiText('problems') ?? _insight('root_cause', _autoProblems));
+    final act = TextEditingController(text: _aiText('actions') ?? _insight('recommended_action', _autoActions));
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -478,7 +508,10 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         await _supabase.from('manager_insights').insert(row);
       }
       if (!mounted) return;
-      setState(() => _managerInsights = {..._managerInsights, ...row});
+      setState(() {
+        _managerInsights = {..._managerInsights, ...row};
+        _ai = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Findings saved"), behavior: SnackBarBehavior.floating));
     } catch (e) {
       if (!mounted) return;
@@ -490,7 +523,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   // EXPORTS (Excel, PDF, Print)
   // ==========================================
   ExportTable _dutyTable() => ExportTable(
-        title: "Executive report – $_unitKey",
+        title: "Performance report – $_unitKey",
         subtitle: "$_periodText (previous: $_prevText) · ${_includePending ? 'approved and pending reports' : 'approved reports only'}",
         headers: const ['Duty', 'Reports', 'Done', 'Sessions', 'Rate %', 'Previous %', 'Change'],
         rows: [
@@ -540,6 +573,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         for (final r in duty.rows) pad(r),
         pad([]),
         pad(['Members', '$totalSaints', 'New', '$newConverts', 'Dropouts', '$dropouts', 'Recovered', '$successfulRecoveries']),
+        pad(['Transfers in', '$transfersIn', 'Transfers out', '$transfersOut']),
         pad([]),
         pad(unit.headers),
         for (final r in unit.rows) pad(r),
@@ -558,7 +592,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
     } catch (_) {
       theme = pw.ThemeData();
     }
-    final doc = pw.Document(theme: theme, title: 'Executive report');
+    final doc = pw.Document(theme: theme, title: 'Performance report');
     final duty = _dutyTable(), unit = _unitTable();
     pw.Widget table(ExportTable t, double fs) => pw.TableHelper.fromTextArray(
           headers: t.headers,
@@ -594,7 +628,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       pageFormat: format,
       margin: const pw.EdgeInsets.all(26),
       header: (ctx) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        pw.Text("EXECUTIVE PERFORMANCE REPORT", style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: PdfColors.purple900)),
+        pw.Text("PERFORMANCE REPORT", style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: PdfColors.purple900)),
         pw.Text("${_formatRole(_activeRole)} · $_unitKey · $_periodText (previous: $_prevText)", style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700)),
         pw.SizedBox(height: 8),
       ]),
@@ -608,6 +642,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           box("New members", "+$newConverts"),
           box("Dropouts", "-$dropouts"),
           box("Recovered", "$successfulRecoveries"),
+          box("Transfers in / out", "+$transfersIn / -$transfersOut"),
           box("Service attendance", "${churchAvgAttendance.toStringAsFixed(1)}%"),
           box("Units complete", "${attendanceCompliance.toStringAsFixed(0)}%"),
         ]),
@@ -661,8 +696,8 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          "Executive performance report",
-          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 16),
+          "Performance Report",
+          style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 21),
         ),
         centerTitle: true,
       ),
@@ -688,35 +723,51 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
               else ...[
                 // Growth performance card
                 _buildGrowthCard(),
-                const SizedBox(height: 12),
-
-                // KPI Grid
-                _buildKPIGrid(width),
                 const SizedBox(height: 14),
 
-                // Operational duties performance
+                // Operational duties performance (tap a card for its trend)
                 _sectionTitle("Operational duties performance and trends"),
                 const SizedBox(height: 8),
                 _buildDutyGrid(width),
-                const SizedBox(height: 12),
-                _buildDutyTable(),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
 
-                // Accountability drilldown
-                _sectionTitle("Reporting compliance and unit accountability"),
+                // Performance comparison with the units of the same level
+                _sectionTitle("Performance comparison"),
                 const SizedBox(height: 8),
-                _buildAccountabilityDrilldownCard(),
-                const SizedBox(height: 14),
+                _buildComparison(),
+                const SizedBox(height: 16),
 
                 // Managerial insights
-                Row(children: [
-                  Expanded(child: _sectionTitle("Managerial insights and recommendations")),
-                  TextButton.icon(onPressed: _editInsights, icon: const Icon(Icons.edit_note_rounded, size: 18), label: const Text("Write findings")),
+                Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  _sectionTitle("Managerial insights and recommendations"),
+                  Wrap(spacing: 4, children: [
+                    TextButton.icon(
+                      onPressed: _aiBusy ? null : _compileWithAi,
+                      icon: _aiBusy
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.auto_awesome_rounded, size: 18),
+                      label: const Text("Compile with AI"),
+                    ),
+                    TextButton.icon(onPressed: _editInsights, icon: const Icon(Icons.edit_note_rounded, size: 18), label: const Text("Write findings")),
+                  ]),
                 ]),
                 const SizedBox(height: 6),
-                _build14PointCard(1, "Executive summary", _insight('observation', _autoSummary)),
-                _build14PointCard(11, "Problem areas and root causes", _insight('root_cause', _autoProblems)),
-                _build14PointCard(13, "Recommended leadership actions", _insight('recommended_action', _autoActions)),
+                if (_ai != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: _raised().copyWith(color: AppPalette.bg(const Color(0xFFFFF8E1))),
+                    child: Row(children: [
+                      Icon(Icons.auto_awesome_rounded, size: 18, color: AppPalette.fg(Colors.amber.shade900)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text("Compiled by AI from ${_ai!['findings_used'] ?? 0} leaders' findings and the numbers above. Check it, then save it as the findings.",
+                          style: const TextStyle(fontSize: 12))),
+                      TextButton(onPressed: _editInsights, child: const Text("Review & save")),
+                    ]),
+                  ),
+                _build14PointCard(1, "Executive summary", _aiText('executive_summary') ?? _insight('observation', _autoSummary)),
+                _build14PointCard(11, "Problem areas and root causes", _aiText('problems') ?? _insight('root_cause', _autoProblems)),
+                _build14PointCard(13, "Recommended leadership actions", _aiText('actions') ?? _insight('recommended_action', _autoActions)),
                 const SizedBox(height: 35),
               ],
             ],
@@ -788,12 +839,10 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       ),
     ]);
     return Container(
+      // as wide as the cards below it
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppPalette.bg(Colors.white),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.18))),
-      ),
+      decoration: _raised(),
       child: Wrap(
         alignment: WrapAlignment.center,
         crossAxisAlignment: WrapCrossAlignment.center,
@@ -862,7 +911,10 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: [AppPalette.solid(pPurple), AppPalette.solid(const Color(0xFF1E1B4B))], begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: pPurple.withValues(alpha: 0.2), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(color: pPurple.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(0, 2)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -888,10 +940,10 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
             runSpacing: 8,
             children: [
               _metricCol("New members", "+$newConverts", Colors.greenAccent),
-              _metricCol("Previous period", "+$newConvertsPrev", Colors.white70),
+              _metricCol("Previous Number", "+$newConvertsPrev", Colors.white70),
               _metricCol("Dropouts", "-$dropouts", Colors.redAccent),
-              _metricCol("Recoveries", "$successfulRecoveries", Colors.amberAccent),
-              _metricCol("Service attendance", "${churchAvgAttendance.toStringAsFixed(1)}%", Colors.white),
+              _metricCol("Transfers in", "+$transfersIn", Colors.lightBlueAccent),
+              _metricCol("Transfers out", "-$transfersOut", Colors.orangeAccent),
             ],
           ),
         ],
@@ -907,50 +959,29 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         ],
       );
 
-  Widget _buildKPIGrid(double width) {
-    final cards = [
-      _kpiCard("Units that sent every duty", "${attendanceCompliance.toStringAsFixed(1)}%", Icons.assignment_turned_in, Colors.blue[800]!),
-      _kpiCard("Service attendance", "${churchAvgAttendance.toStringAsFixed(1)}%", Icons.people_alt, Colors.green[800]!),
-      _kpiCard("Average of all duties", "${overallRate.toStringAsFixed(1)}%", Icons.insights_rounded, Colors.purple[800]!),
-      _kpiCard("Recovery results", "$successfulRecoveries recovered", Icons.refresh, Colors.orange[800]!),
-    ];
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: width >= 900 ? 4 : 2,
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: width >= 900 ? 4.2 : 2.7,
-      children: cards,
-    );
-  }
-
-  Widget _kpiCard(String t, String v, IconData i, Color c) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppPalette.bg(Colors.white),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.16))),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4)],
-        ),
-        child: Row(
-          children: [
-            Icon(i, color: AppPalette.fg(c), size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(v, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.w900, color: AppPalette.fg(c)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(t, style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.grey[700]), fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
-              ),
-            ),
-          ],
-        ),
+  /// Every card of the report: white, raised from the page with a soft
+  /// shadow underneath ([strong] for the Performance comparison).
+  BoxDecoration _raised({bool strong = false}) => BoxDecoration(
+        color: AppPalette.bg(Colors.white),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: pPurple.withValues(alpha: strong ? 0.22 : 0.12), blurRadius: strong ? 22 : 12, offset: Offset(0, strong ? 10 : 5)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 3, offset: const Offset(0, 1)),
+        ],
       );
 
+  /// Performance comparison: table or column chart
+  bool _cmpChart = false;
+
+  // ==========================================
+  // CHANGE COLOURS (green up, red down, grey no change)
+  // ==========================================
+  static Color _changeColor(double diff) => diff > 0.05 ? Colors.green.shade700 : (diff < -0.05 ? Colors.red.shade700 : Colors.grey.shade600);
+  static String _changeText(double diff) => diff.abs() <= 0.05 ? "0.0%" : "${diff > 0 ? '+' : ''}${diff.toStringAsFixed(1)}%";
+
+  // ==========================================
+  // DUTY CARDS (tap for the trend)
+  // ==========================================
   Widget _buildDutyGrid(double width) {
     if (_dutyStats.isEmpty) {
       return Padding(
@@ -962,229 +993,612 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _dutyStats.length,
+      padding: const EdgeInsets.only(bottom: 4),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: width >= 1300 ? 5 : (width >= 900 ? 4 : (width >= 560 ? 3 : 2)),
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
         mainAxisExtent: 112,
       ),
       itemBuilder: (context, i) {
         final d = _dutyStats[i];
-        bool up = d.isPositive;
-        return Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppPalette.bg(Colors.white),
+        final c = _changeColor(d.diff);
+        // floating card: raised, opens the trend when touched
+        return Material(
+          color: AppPalette.bg(Colors.white),
+          elevation: 5,
+          shadowColor: d.color.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.16))),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4)],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
+            onTap: () => _openTrend(d),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(d.icon, color: AppPalette.fg(d.color), size: 18),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: AppPalette.bg(up ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1)), borderRadius: BorderRadius.circular(6)),
-                    child: Text("${up ? '+' : ''}${d.diff.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(up ? Colors.green[800] : Colors.red[800]))),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Icon(d.icon, color: AppPalette.fg(d.color), size: 18),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: AppPalette.bg(c.withValues(alpha: 0.12)), borderRadius: BorderRadius.circular(6)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(d.diff > 0.05 ? Icons.arrow_upward_rounded : (d.diff < -0.05 ? Icons.arrow_downward_rounded : Icons.remove_rounded), size: 12, color: AppPalette.fg(c)),
+                          Text(_changeText(d.diff), style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(c))),
+                        ]),
+                      ),
+                    ],
                   ),
+                  Text(d.title, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[900])), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(d.currentCount == 0 ? "No reports" : "${d.currentRate.toStringAsFixed(1)}%",
+                      style: GoogleFonts.merriweather(fontSize: d.currentCount == 0 ? 13 : 17, fontWeight: FontWeight.w900, color: AppPalette.fg(d.currentCount == 0 ? Colors.grey : d.color))),
+                  Row(children: [
+                    Expanded(child: Text("Previous: ${d.previousRate.toStringAsFixed(1)}%", maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey[600])))),
+                    Icon(Icons.show_chart_rounded, size: 15, color: AppPalette.fg(Colors.grey[500])),
+                  ]),
                 ],
               ),
-              Text(d.title, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[900])), maxLines: 1, overflow: TextOverflow.ellipsis),
-              Text(d.currentCount == 0 ? "No reports" : "${d.currentRate.toStringAsFixed(1)}%",
-                  style: GoogleFonts.merriweather(fontSize: d.currentCount == 0 ? 13 : 17, fontWeight: FontWeight.w900, color: AppPalette.fg(d.currentCount == 0 ? Colors.grey : d.color))),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Flexible(child: Text("Prior: ${d.previousRate.toStringAsFixed(1)}%", maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey[600])))),
-                  Flexible(child: Text("${d.currentCount} logs", maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey[600]), fontWeight: FontWeight.bold))),
-                ],
-              ),
-            ],
+            ),
           ),
         );
       },
     );
   }
 
-  /// The compiled table of all duties (what the PDF and Excel contain).
-  Widget _buildDutyTable() {
-    final t = _dutyTable();
-    return _tableCard(
-      title: "Compiled duties · $_periodText",
-      headers: t.headers,
-      rows: t.rows,
-      footnote: "Rate = reports marked done ÷ (sessions × ${_dutyStats.any((d) => d.forWorkers) ? 'members, or workers for worker duties' : 'members'}). "
-          "Previous period: $_prevText.",
-    );
+  List<Map<String, dynamic>> get _focusJson => [for (final f in _focus) {'col': _levelCols[f.key], 'op': 'eq', 'val': f.value}];
+
+  /// The duty's trend in the report's own area, one point per SESSION as it
+  /// is reported (each Wednesday / Sunday service, each week …), this period
+  /// and the one before (perf_trend, 18_round17.sql).
+  Future<(List<String>, List<double?>, List<double?>)> _trend(DutyStat d) async {
+    final r = await _supabase.rpc('perf_trend', params: {
+      'p_duty': d.dutyName,
+      'p_from': _d(_curStart),
+      'p_to': _d(_curEnd),
+      'p_prev_from': _d(_prevStart),
+      'p_prev_to': _d(_prevEnd),
+      'p_include_pending': _includePending,
+      'p_focus': _focusJson,
+    });
+    final rows = List<Map<String, dynamic>>.from((r as List).map((e) => Map<String, dynamic>.from(e as Map)));
+    var cur = rows.where((x) => x['period'] == 'cur').toList();
+    var prev = rows.where((x) => x['period'] == 'prev').toList();
+    if (cur.length > 16) cur = cur.sublist(cur.length - 16);
+    // the sessions before, matched from the end (latest with latest)
+    if (prev.length > cur.length) prev = prev.sublist(prev.length - cur.length);
+    final labels = [for (final x in cur) x['bucket'].toString()];
+    double? v(Map x) => ((x['reports'] as num?) ?? 0) == 0 ? null : (x['rate'] as num?)?.toDouble();
+    final a = [for (final x in cur) v(x)];
+    final pad = cur.length - prev.length;
+    final b = [for (int i = 0; i < pad; i++) null, for (final x in prev) v(x)];
+    return (labels, a, b);
   }
 
-  Widget _tableCard({required String title, required List<String> headers, required List<List<String>> rows, String? footnote, void Function(int row)? onRowTap}) {
+  void _openTrend(DutyStat d) {
+    final future = _trend(d);
+    Navigator.push(context, MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (ctx) => Scaffold(
+        backgroundColor: AppPalette.bg(Colors.white),
+        appBar: AppBar(
+          backgroundColor: AppPalette.bg(Colors.white),
+          elevation: 0.5,
+          centerTitle: true,
+          title: Text(d.title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: AppPalette.fg(pPurple))),
+        ),
+        body: SafeArea(
+          child: FutureBuilder<(List<String>, List<double?>, List<double?>)>(
+            future: future,
+            builder: (ctx, snap) {
+              if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+              if (snap.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't load the trend (run 18_round17.sql): ${snap.error}", textAlign: TextAlign.center)));
+              final (labels, a, b) = snap.data!;
+              LineChartBarData line(List<double?> v, Color c, {bool dashed = false}) => LineChartBarData(
+                    spots: [for (var i = 0; i < v.length; i++) if (v[i] != null) FlSpot(i.toDouble(), v[i]!)],
+                    isCurved: true,
+                    preventCurveOverShooting: true,
+                    color: c,
+                    barWidth: dashed ? 2 : 3.5,
+                    dashArray: dashed ? [6, 4] : null,
+                    dotData: const FlDotData(show: true),
+                    belowBarData: BarAreaData(show: !dashed, color: c.withValues(alpha: 0.10)),
+                  );
+              final c = _changeColor(d.diff);
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(12, 16, 20, 16),
+                child: Column(children: [
+                  Text("$_unitKey · $_periodText", textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 12.5, color: AppPalette.fg(Colors.blueGrey.shade700))),
+                  const SizedBox(height: 6),
+                  Wrap(alignment: WrapAlignment.center, spacing: 14, runSpacing: 4, children: [
+                    Text("${d.currentRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 22, fontWeight: FontWeight.w900, color: AppPalette.fg(d.color))),
+                    Text(_changeText(d.diff), style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold, color: AppPalette.fg(c))),
+                    Text("Previous ${d.previousRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade700))),
+                  ]),
+                  const SizedBox(height: 6),
+                  Wrap(alignment: WrapAlignment.center, spacing: 16, children: [
+                    Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 18, height: 4, color: d.color), const SizedBox(width: 6), const Text("This period (each session)", style: TextStyle(fontSize: 12))]),
+                    Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 18, height: 2, color: Colors.grey), const SizedBox(width: 6), Text("Previous ($_prevText)", style: const TextStyle(fontSize: 12))]),
+                  ]),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: labels.isEmpty || (a.every((x) => x == null) && b.every((x) => x == null))
+                        ? Center(child: Text("No reports in this period.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
+                        : LineChart(LineChartData(
+                            minY: 0,
+                            maxY: 100,
+                            minX: 0,
+                            maxX: labels.length < 2 ? 1 : (labels.length - 1).toDouble(),
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: false,
+                              horizontalInterval: 20,
+                              getDrawingHorizontalLine: (v) => FlLine(color: AppPalette.line(Colors.grey.withValues(alpha: 0.18)), strokeWidth: 1),
+                            ),
+                            borderData: FlBorderData(show: true, border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black38)), left: BorderSide(color: AppPalette.line(Colors.black38)))),
+                            titlesData: FlTitlesData(
+                              leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 36, interval: 20, getTitlesWidget: (v, m) => Text("${v.toInt()}%", style: const TextStyle(fontSize: 10)))),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  interval: 1,
+                                  reservedSize: 30,
+                                  getTitlesWidget: (v, m) {
+                                    final i = v.toInt();
+                                    if (i < 0 || i >= labels.length || v != i.toDouble()) return const SizedBox();
+                                    return Padding(padding: const EdgeInsets.only(top: 6), child: Text(labels[i], style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)));
+                                  },
+                                ),
+                              ),
+                              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            ),
+                            lineBarsData: [line(b, Colors.grey, dashed: true), line(a, d.color)],
+                          )),
+                  ),
+                ]),
+              );
+            },
+          ),
+        ),
+      ),
+    ));
+  }
+
+  // ==========================================
+  // PERFORMANCE COMPARISON
+  // ==========================================
+  static const _levelTitles = {
+    'book_of_life': 'Groups',
+    'location': 'Locations',
+    'sub_location': 'Sub-locations',
+    'department': 'Departments',
+    'team': 'Teams',
+    'cell_group': 'Cell groups',
+  };
+  // as the Compilation screen calls them
+  static const _statusNames = {
+    'book_of_life': 'Group status',
+    'location': 'Location status',
+    'sub_location': 'Sub-location status',
+    'department': 'Dept status',
+    'team': 'Team status',
+    'cell_group': 'Cell status',
+  };
+  static const _cmpLevelKey = {
+    'book_of_life': 'Group',
+    'location': 'Location',
+    'sub_location': 'Sub-location',
+    'department': 'Dept',
+    'team': 'Team',
+    'cell_group': 'Cell',
+  };
+
+  List<String> _cmpLevels = []; // the levels this viewer may compare at
+  String? _cmpPick; // the level picked (null = the viewer's own)
+  final List<MapEntry<String, String>> _cmpFocus = []; // units opened in the comparison
+  bool _cmpByRank = false; // list order: Compilation order (default) or by rank
+
+  Future<void> _loadComparison() async {
+    final duty = _cmpDuty;
+    if (duty == null) return;
+    final req = ++_cmpReq;
+    setState(() {
+      _cmpLoading = true;
+      _cmpError = null;
+    });
+    try {
+      final focus = [
+        ..._focusJson,
+        for (final f in _cmpFocus) {'col': f.key, 'op': 'eq', 'val': f.value},
+      ];
+      final r = await Future.wait<dynamic>([
+        _supabase.rpc('perf_compare_v2', params: {
+          'p_duty': duty,
+          'p_from': _d(_curStart),
+          'p_to': _d(_curEnd),
+          'p_prev_from': _d(_prevStart),
+          'p_prev_to': _d(_prevEnd),
+          'p_include_pending': _includePending,
+          'p_focus': focus,
+          'p_level': _cmpPick,
+        }),
+        _supabase.rpc('perf_levels', params: {'p_focus': _focusJson}),
+      ]);
+      if (!mounted || req != _cmpReq) return;
+      final byUnit = <String, Map<String, dynamic>>{};
+      final buckets = <int, String>{};
+      String level = 'location';
+      for (final raw in (r[0] as List)) {
+        final x = Map<String, dynamic>.from(raw as Map);
+        final u = x['unit'].toString();
+        level = (x['level'] ?? level).toString();
+        buckets[(x['ord'] as num).toInt()] = x['bucket'].toString();
+        final row = byUnit.putIfAbsent(u, () => {'unit': u, 'mine': x['is_mine'] == true, 'rates': <String, double?>{}});
+        (row['rates'] as Map<String, double?>)[x['bucket'].toString()] = ((x['reports'] as num?) ?? 0) == 0 ? null : (x['rate'] as num?)?.toDouble();
+      }
+      // rank = by this period's rate
+      final ranked = byUnit.values.toList()
+        ..sort((a, b) => (((b['rates'] as Map)['This period'] as double?) ?? -1).compareTo((((a['rates'] as Map)['This period'] as double?) ?? -1)));
+      for (var i = 0; i < ranked.length; i++) {
+        ranked[i]['rank'] = ((ranked[i]['rates'] as Map)['This period']) == null ? null : i + 1;
+      }
+      setState(() {
+        _cmpBuckets = [for (final k in (buckets.keys.toList()..sort())) {'label': buckets[k]!}];
+        _cmpRows = ranked;
+        _cmpLevel = level;
+        _cmpLevels = [for (final x in (r[1] as List? ?? const [])) x.toString()];
+        _cmpLoading = false;
+      });
+    } catch (e) {
+      if (!mounted || req != _cmpReq) return;
+      setState(() {
+        _cmpLoading = false;
+        _cmpError = "Couldn't compare: ${e is PostgrestException ? e.message : e}. Ask the admin to run 18_round17.sql.";
+      });
+    }
+  }
+
+  /// The rows in the Compilation screen's unit order, or by rank
+  List<Map<String, dynamic>> get _cmpShown {
+    if (_cmpByRank) return _cmpRows;
+    final order = CompLevel.orderNames(_cmpRows.map((r) => r['unit'].toString()), _cmpLevelKey[_cmpLevel] ?? 'Location');
+    return [..._cmpRows]..sort((a, b) => order.indexOf(a['unit'].toString()).compareTo(order.indexOf(b['unit'].toString())));
+  }
+
+  void _cmpOpen(Map<String, dynamic> row) {
+    const next = {'location': 'sub_location', 'sub_location': 'department', 'department': 'team', 'team': 'cell_group'};
+    final n = next[_cmpLevel];
+    if (n == null) return; // cells and groups: nothing below
+    setState(() {
+      _cmpFocus.add(MapEntry(_cmpLevel, row['unit'].toString()));
+      _cmpPick = n;
+    });
+    _loadComparison();
+  }
+
+  Widget _buildComparison() {
+    final dutyItems = [for (final d in _dutyStats) DropdownMenuItem(value: d.dutyName, child: Text(d.title, overflow: TextOverflow.ellipsis))];
+    String r(double? v) => v == null ? '—' : "${v.toStringAsFixed(1)}%";
+    Widget pill(Widget child) => Container(
+          height: 34,
+          constraints: const BoxConstraints(maxWidth: 260),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF3E5F5)), borderRadius: BorderRadius.circular(8)),
+          child: DropdownButtonHideUnderline(child: child),
+        );
+    final ownLevel = _cmpLevels.isEmpty ? null : _cmpLevels.firstWhere((l) => l != 'book_of_life', orElse: () => _cmpLevels.first);
+    final atOwn = _cmpFocus.isEmpty && (_cmpPick == null || _cmpPick == ownLevel) && _cmpLevel != 'book_of_life';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppPalette.bg(Colors.white),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2))),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(title, style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800]))),
-        const SizedBox(height: 8),
-        LayoutBuilder(builder: (context, c) {
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: c.maxWidth),
-              child: DataTable(
-                headingRowHeight: 36,
-                dataRowMinHeight: 32,
-                dataRowMaxHeight: 36,
-                columnSpacing: 18,
-                horizontalMargin: 8,
-                headingRowColor: WidgetStateProperty.all(AppPalette.bg(const Color(0xFFF3E5F5))),
-                showCheckboxColumn: false,
-                columns: [
-                  for (int i = 0; i < headers.length; i++)
-                    DataColumn(
-                      numeric: i > 0,
-                      label: Text(headers[i], style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
-                    ),
-                ],
-                rows: [
-                  for (int r = 0; r < rows.length; r++)
-                    DataRow(
-                      onSelectChanged: onRowTap == null ? null : (_) => onRowTap(r),
-                      cells: [
-                        for (int i = 0; i < headers.length; i++)
-                          DataCell(Text(
-                            i < rows[r].length ? rows[r][i] : '',
-                            style: GoogleFonts.merriweather(
-                              fontSize: 11.5,
-                              fontWeight: i == 0 ? FontWeight.bold : FontWeight.normal,
-                              color: AppPalette.fg(i > 0 && (i < rows[r].length && rows[r][i] == '—') ? Colors.red.shade700 : Colors.black87),
-                            ),
-                          )),
-                      ],
-                    ),
-                ],
+      // stands out: raised higher, with a purple edge
+      decoration: _raised(strong: true).copyWith(border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.35)), width: 1.4)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 10, runSpacing: 6, children: [
+          // the Compilation screen's levels: Group / Location / … / Cell status
+          if (_cmpLevels.length > 1)
+            pill(DropdownButton<String>(
+              value: _cmpLevels.contains(_cmpPick ?? _cmpLevel) ? (_cmpPick ?? _cmpLevel) : null,
+              isDense: true,
+              icon: const Icon(Icons.keyboard_arrow_down_rounded),
+              style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
+              items: [for (final l in _cmpLevels) DropdownMenuItem(value: l, child: Text(_statusNames[l] ?? l))],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() {
+                  _cmpPick = v;
+                  _cmpFocus.clear();
+                });
+                _loadComparison();
+              },
+            )),
+          Text("ranked on", style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800]))),
+          pill(DropdownButton<String>(
+            value: _dutyStats.any((d) => d.dutyName == _cmpDuty) ? _cmpDuty : null,
+            isDense: true,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
+            items: dutyItems,
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _cmpDuty = v);
+              _loadComparison();
+            },
+          )),
+          FilterChip(
+            label: Text(_cmpByRank ? "Sorted by rank" : "Unit order"),
+            selected: _cmpByRank,
+            onSelected: (v) => setState(() => _cmpByRank = v),
+          ),
+          // switch between the table and the column chart
+          SegmentedButton<bool>(
+            showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            segments: const [
+              ButtonSegment(value: false, icon: Icon(Icons.table_rows_rounded, size: 16), label: Text("Table")),
+              ButtonSegment(value: true, icon: Icon(Icons.bar_chart_rounded, size: 16), label: Text("Chart")),
+            ],
+            selected: {_cmpChart},
+            onSelectionChanged: (v) => setState(() => _cmpChart = v.first),
+          ),
+        ]),
+        if (_cmpFocus.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 4, children: [
+              ActionChip(
+                avatar: const Icon(Icons.arrow_upward_rounded, size: 16),
+                label: const Text("Back"),
+                onPressed: () {
+                  setState(() {
+                    final last = _cmpFocus.removeLast();
+                    _cmpPick = last.key;
+                  });
+                  _loadComparison();
+                },
               ),
-            ),
-          );
-        }),
-        if (footnote != null) ...[
-          const SizedBox(height: 6),
-          Text(footnote, style: GoogleFonts.merriweather(fontSize: 10, fontStyle: FontStyle.italic, color: AppPalette.fg(Colors.black54))),
-        ],
+              Text(_cmpFocus.map((f) => f.value).join(' › '), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+            ]),
+          ),
+        const SizedBox(height: 4),
+        Text(
+          atOwn
+              ? "Your unit against the other ${(_levelTitles[_cmpLevel] ?? 'units').toLowerCase()} of the same level in your parent unit. One column per session as reported."
+              : "${_levelTitles[_cmpLevel] ?? 'Units'} inside ${_cmpFocus.isEmpty ? 'your area' : _cmpFocus.last.value}. Tap a unit to open the units inside it.",
+          textAlign: TextAlign.center,
+          style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700)),
+        ),
+        const SizedBox(height: 8),
+        if (_cmpLoading)
+          const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator()))
+        else if (_cmpError != null)
+          Padding(padding: const EdgeInsets.all(12), child: Text(_cmpError!, textAlign: TextAlign.center, style: TextStyle(color: AppPalette.fg(Colors.red.shade800))))
+        else if (_cmpRows.isEmpty)
+          Padding(padding: const EdgeInsets.all(12), child: Text("No units to compare.", textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
+        else if (_cmpChart)
+          _cmpBarChart()
+        else
+          LayoutBuilder(builder: (context, c) {
+            final rows = _cmpShown;
+            final canOpen = const {'location', 'sub_location', 'department', 'team'}.contains(_cmpLevel);
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: c.maxWidth),
+                child: DataTable(
+                  headingRowHeight: 38,
+                  dataRowMinHeight: 34,
+                  dataRowMaxHeight: 40,
+                  columnSpacing: 16,
+                  horizontalMargin: 8,
+                  showCheckboxColumn: false,
+                  headingRowColor: WidgetStateProperty.all(AppPalette.bg(const Color(0xFFF3E5F5))),
+                  columns: [
+                    DataColumn(label: Text("Rank", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)))),
+                    DataColumn(label: Text((_levelTitles[_cmpLevel] ?? 'Unit').replaceAll(RegExp(r's$'), ''), style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)))),
+                    for (final b in _cmpBuckets)
+                      DataColumn(numeric: true, label: Text(b['label']!, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)))),
+                    DataColumn(numeric: true, label: Text("Change", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)))),
+                  ],
+                  rows: [
+                    for (final row in rows)
+                      () {
+                        final rates = row['rates'] as Map<String, double?>;
+                        final cur = rates['This period'], prev = rates['Previous'];
+                        final diff = (cur ?? 0) - (prev ?? 0);
+                        final mine = row['mine'] == true;
+                        final st = GoogleFonts.merriweather(fontSize: 11.5, fontWeight: mine ? FontWeight.w900 : FontWeight.normal);
+                        return DataRow(
+                          color: WidgetStateProperty.all(AppPalette.bg(mine ? Colors.amber.withValues(alpha: 0.14) : Colors.transparent)),
+                          onSelectChanged: canOpen ? (_) => _cmpOpen(row) : null,
+                          cells: [
+                            DataCell(Text(row['rank'] == null ? '–' : "#${row['rank']}", style: st.copyWith(fontWeight: FontWeight.bold))),
+                            DataCell(Text("${row['unit']}${mine ? '  (you)' : ''}${canOpen ? '  ›' : ''}", style: st.copyWith(fontWeight: FontWeight.bold))),
+                            for (final b in _cmpBuckets) DataCell(Text(r(rates[b['label']]), style: st)),
+                            DataCell(Text(cur == null || prev == null ? '—' : _changeText(diff), style: st.copyWith(fontWeight: FontWeight.bold, color: AppPalette.fg(_changeColor(diff))))),
+                          ],
+                        );
+                      }(),
+                  ],
+                ),
+              ),
+            );
+          }),
       ]),
     );
   }
 
-  Widget _buildAccountabilityDrilldownCard() {
-    final t = _unitTable();
-    final nextLevel = _drillLevels.indexOf(_drilldownLevel) + 1 < _drillLevels.length ? _drillLevels[_drillLevels.indexOf(_drilldownLevel) + 1] : null;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppPalette.bg(Colors.white),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2))),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 10,
-            runSpacing: 6,
-            children: [
-              Text("Show units by:", style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800]))),
-              Container(
-                height: 32,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF3E5F5)), borderRadius: BorderRadius.circular(6)),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _drillLevels.contains(_drilldownLevel) ? _drilldownLevel : _drillLevels.first,
-                    isDense: true,
-                    style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
-                    items: _drillLevels
-                        .where((l) => !_focus.any((f) => f.key == l))
-                        .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) {
-                        setState(() => _drilldownLevel = v);
-                        _loadReportData();
-                      }
-                    },
+  /// Column chart of the comparison: this period (and the period before) for
+  /// each unit, in the same order as the table; tap a column to open the
+  /// units inside it.
+  Widget _cmpBarChart() {
+    final rows = _cmpShown;
+    final canOpen = const {'location', 'sub_location', 'department', 'team'}.contains(_cmpLevel);
+    double? v(Map r, String k) => (r['rates'] as Map)[k] as double?;
+    final width = (rows.length * 64.0).clamp(300.0, 4000.0);
+    return Column(children: [
+      Wrap(alignment: WrapAlignment.center, spacing: 16, children: [
+        Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 12, height: 12, decoration: BoxDecoration(color: pPurple, borderRadius: BorderRadius.circular(3))), const SizedBox(width: 6), const Text("This period", style: TextStyle(fontSize: 12))]),
+        Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(3))), const SizedBox(width: 6), const Text("Previous", style: TextStyle(fontSize: 12))]),
+        Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.amber.shade700, borderRadius: BorderRadius.circular(3))), const SizedBox(width: 6), const Text("Your unit", style: TextStyle(fontSize: 12))]),
+      ]),
+      const SizedBox(height: 10),
+      LayoutBuilder(builder: (context, c) => SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: width < c.maxWidth ? c.maxWidth : width,
+              height: 300,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 16, 12, 4),
+                child: BarChart(BarChartData(
+                  maxY: 100,
+                  minY: 0,
+                  alignment: BarChartAlignment.spaceAround,
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: 20,
+                    getDrawingHorizontalLine: (x) => FlLine(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2)), strokeWidth: 1),
                   ),
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 16),
-          Text(
-            _units.isEmpty
-                ? "No $_drilldownLevel units with members in your area."
-                : missingUnits.isEmpty
-                    ? "All ${_units.length} $_drilldownLevel units submitted their duties successfully."
-                    : "${missingUnits.length} of ${_units.length} $_drilldownLevel units are missing a duty report:",
-            style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(missingUnits.isEmpty ? Colors.green[800] : Colors.red[900])),
-          ),
-          if (missingUnits.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 150),
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: missingUnits.length,
-                itemBuilder: (c, i) => Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(color: AppPalette.bg(Colors.red.withValues(alpha: 0.04)), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppPalette.line(Colors.red.withValues(alpha: 0.15)))),
-                  child: Text(missingUnits[i], style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.red[900]))),
-                ),
+                  borderData: FlBorderData(show: true, border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black38)), left: BorderSide(color: AppPalette.line(Colors.black38)))),
+                  barTouchData: BarTouchData(
+                    touchCallback: (event, resp) {
+                      if (!canOpen || event is! FlTapUpEvent || resp?.spot == null) return;
+                      final i = resp!.spot!.touchedBarGroupIndex;
+                      if (i >= 0 && i < rows.length) _cmpOpen(rows[i]);
+                    },
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipItem: (g, gi, rod, ri) => BarTooltipItem(
+                        "${rows[g.x]['unit']}\n${ri == 0 ? 'This period' : 'Previous'}: ${rod.toY.toStringAsFixed(1)}%",
+                        const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 36, interval: 20, getTitlesWidget: (x, m) => Text("${x.toInt()}%", style: const TextStyle(fontSize: 10)))),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 34,
+                        getTitlesWidget: (x, m) {
+                          final i = x.toInt();
+                          if (i < 0 || i >= rows.length) return const SizedBox();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: SizedBox(
+                              width: 60,
+                              child: Text(rows[i]['unit'].toString(),
+                                  textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 9.5, fontWeight: rows[i]['mine'] == true ? FontWeight.w900 : FontWeight.w600)),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  barGroups: [
+                    for (var i = 0; i < rows.length; i++)
+                      BarChartGroupData(x: i, barsSpace: 3, barRods: [
+                        BarChartRodData(
+                          toY: (v(rows[i], 'This period') ?? 0).clamp(0, 100).toDouble(),
+                          width: 14,
+                          color: rows[i]['mine'] == true ? Colors.amber.shade700 : pPurple,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                        ),
+                        BarChartRodData(
+                          toY: (v(rows[i], 'Previous') ?? 0).clamp(0, 100).toDouble(),
+                          width: 10,
+                          color: Colors.grey.shade400,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                        ),
+                      ]),
+                  ],
+                )),
               ),
             ),
-          ],
-        ]),
-      ),
-      const SizedBox(height: 10),
-      if (_units.isNotEmpty)
-        _tableCard(
-          title: "Each $_drilldownLevel by duty${nextLevel == null ? '' : ' · tap a row to open it'}",
-          headers: t.headers,
-          rows: t.rows,
-          footnote: "— = no report this period.",
-          onRowTap: nextLevel == null
-              ? null
-              : (r) {
-                  final unit = _units[r]['unit'].toString();
-                  if (unit == '(not set)') return;
-                  setState(() {
-                    _focus.add(MapEntry(_drilldownLevel, unit));
-                    _drilldownLevel = nextLevel;
-                  });
-                  _loadReportData();
-                },
+          )),
+      if (canOpen)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text("Tap a column to open the units inside it.", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
         ),
     ]);
+  }
+
+  // ==========================================
+  // AI: managerial insights from the leaders' findings
+  // ==========================================
+  String? _aiText(String key) {
+    final v = _ai?[key];
+    if (v == null) return null;
+    if (v is List) {
+      if (v.isEmpty) return null;
+      if (key == 'problems') {
+        final roots = (_ai?['root_causes'] as List?) ?? const [];
+        return [
+          for (final x in v) "• $x",
+          if (roots.isNotEmpty) "\nRoot causes:",
+          for (final x in roots) "• $x",
+        ].join('\n');
+      }
+      return [for (final x in v) "• $x"].join('\n');
+    }
+    final s = v.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  Future<void> _compileWithAi() async {
+    setState(() => _aiBusy = true);
+    try {
+      final focus = [for (final f in _focus) {'col': _levelCols[f.key], 'op': 'eq', 'val': f.value}];
+      final res = await _supabase.functions.invoke('report-insights-ai', body: {
+        'from': _d(_curStart),
+        'to': _d(_curEnd),
+        'focus': focus,
+        'unit': _unitKey,
+        'numbers': {
+          'members': totalSaints,
+          'workers': totalWorkers,
+          'new_members': newConverts,
+          'new_members_previous': newConvertsPrev,
+          'dropouts': dropouts,
+          'recoveries': successfulRecoveries,
+          'transfers_in': transfersIn,
+          'transfers_out': transfersOut,
+          'duties': [
+            for (final d in _dutyStats) {'duty': d.title, 'rate': d.currentRate, 'previous_rate': d.previousRate, 'reports': d.currentCount},
+          ],
+          'comparison': [
+            for (final r in _cmpRows.take(30)) {'unit': r['unit'], 'mine': r['mine'], 'rates': r['rates']},
+          ],
+        },
+      });
+      final data = res.data is Map ? Map<String, dynamic>.from(res.data as Map) : <String, dynamic>{};
+      if (data['error'] != null) throw data['error'];
+      if (mounted) setState(() => _ai = data);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: Colors.red.shade700,
+          content: Text("AI summary isn't available: ${e is FunctionException ? (e.details ?? e.reasonPhrase ?? e.status) : e}. "
+              "The administrator deploys the report-insights-ai function."),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _aiBusy = false);
+    }
   }
 
   Widget _build14PointCard(int point, String title, String content) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppPalette.bg(Colors.white),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.16))),
-      ),
+      decoration: _raised(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

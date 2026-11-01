@@ -72,6 +72,10 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
   String _selectedTrendMetric = "General Attendance"; 
   String _selectedServiceDay = "Sun"; 
+  /// Real time (checked on the service day, with the make-up column) or
+  /// Pre-attendance (checked before: Mon/Tue for Wednesday, Fri/Sat for Sunday).
+  bool _pre = false;
+  String get _attField => _pre ? 'attendance_pre' : 'attendance_realtime';
 
 
 
@@ -227,7 +231,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       return f == flat(kind);
     }
 
-    final rows = logsList.map((x) => x['attendance_realtime']).toList();
+    final rows = logsList.map((x) => x[_attField]).toList();
     final rIp = rows.where((v) => isKind(v, 'in-person')).length;
     final rOnl = rows.where((v) => isKind(v, 'on-line')).length;
     final rCall = rows.where((v) => isKind(v, 'call')).length;
@@ -252,11 +256,11 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
 
     Map<String, dynamic> regData(String r) => {
       "act": {
-        "ip": regCount(r, 'attendance_realtime', 'in-person'),
-        "on": regCount(r, 'attendance_realtime', 'on-line'),
-        "cl": regCount(r, 'attendance_realtime', 'call'),
-        "mt": regCount(r, 'attendance_realtime', 'meet'),
-        "sm": regCount(r, 'attendance_realtime', 'summary')
+        "ip": regCount(r, _attField, 'in-person'),
+        "on": regCount(r, _attField, 'on-line'),
+        "cl": regCount(r, _attField, 'call'),
+        "mt": regCount(r, _attField, 'meet'),
+        "sm": regCount(r, _attField, 'summary')
       },
       "mu": {
         "ip": regCount(r, 'attendance_makeup', 'in-person'),
@@ -265,7 +269,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         "mt": regCount(r, 'attendance_makeup', 'meet'),
         "sm": regCount(r, 'attendance_makeup', 'summary')
       },
-      "abs": per(logsList.where((x) => (x['geo_category'] ?? '').toString().toLowerCase() == r.toLowerCase() && (x['attendance_realtime'] ?? '').toString().toLowerCase() == "absentee").length)
+      "abs": per(logsList.where((x) => (x['geo_category'] ?? '').toString().toLowerCase() == r.toLowerCase() && (x[_attField] ?? '').toString().toLowerCase() == "absentee").length)
     };
 
     num absentees = n > att ? (n - att) : 0;
@@ -337,7 +341,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     return Column(children: [
       _buildToolbar(),
       _section(
-        sessions > 1 ? "Attendance summary table (average of $sessions services)" : "Attendance summary table",
+        "${_pre ? 'Pre-attendance' : 'Real-time attendance'} summary table${sessions > 1 ? ' (average of $sessions services)' : ''}",
         _buildExcelGrid(hqS, enS, totS),
         context,
       ),
@@ -346,11 +350,28 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     ]);
   }
 
-  Widget _buildToolbar() => Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildToolbar() => Wrap(
+    alignment: WrapAlignment.spaceBetween,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    runSpacing: 4,
     children: [
-      Row(children: [
+      Row(mainAxisSize: MainAxisSize.min, children: [
         TableExport.buttons(context, _exportTable),
+        const SizedBox(width: 8),
+        // the summary tables and charts switch between the two checks
+        Container(
+          height: 28,
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: AppPalette.bg(const Color(0xFFE3F2FD)),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppPalette.line(Colors.blue.shade200)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            _sourceTab(false, "Real time"),
+            _sourceTab(true, "Pre-attendance"),
+          ]),
+        ),
         const SizedBox(width: 8),
 
         if (widget.timePeriod != "Current status")
@@ -380,6 +401,21 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       ),
     ],
   );
+
+  Widget _sourceTab(bool pre, String label) {
+    final isSel = _pre == pre;
+    return InkWell(
+      onTap: () {
+        if (_pre != pre) setState(() => _pre = pre);
+      },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(color: AppPalette.bg(isSel ? Colors.blue.shade700 : Colors.transparent), borderRadius: BorderRadius.circular(6)),
+        child: Text(label, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(isSel ? Colors.white : Colors.black87))),
+      ),
+    );
+  }
 
   Widget _serviceDayTab(String key, String label) {
     final isSel = _selectedServiceDay == key;

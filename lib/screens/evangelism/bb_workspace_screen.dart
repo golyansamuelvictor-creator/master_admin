@@ -136,6 +136,7 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
       ("BB File", Icons.table_chart_rounded),
       ("Attendance", Icons.how_to_reg_rounded),
       ("Missed & reasons", Icons.report_problem_outlined),
+      ("Dropped", Icons.person_off_outlined),
       ("Student cards", Icons.badge_outlined),
     ];
     return DefaultTabController(
@@ -161,6 +162,7 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
                     BbSheet(key: ValueKey('bb$_rev'), attendance: false, cfg: _cfg, students: _students, attended: _attended, canEdit: widget.canEdit, onSaved: _load),
                     BbSheet(key: ValueKey('at$_rev'), attendance: true, cfg: _cfg, students: _students, attended: _attended, canEdit: widget.canEdit, onSaved: _load),
                     _MissedTab(key: ValueKey('mis$_rev')),
+                    _DroppedTab(key: ValueKey('drop$_rev'), students: _students, canEdit: widget.canEdit, onSaved: _load),
                     _FileTab(cfg: _cfg, students: _students, canEdit: widget.canEdit, onOpen: _openStudent),
                   ]),
       ),
@@ -609,6 +611,169 @@ class _FileTabState extends State<_FileTab> {
 }
 
 // ---------------------------------------------------------------------------
+// Dropped: date, stage at the time and the reason (the same student record
+// as the BB File: setting the status to Dropped there puts them here)
+
+class _DroppedTab extends StatefulWidget {
+  final List<Map<String, dynamic>> students;
+  final bool canEdit;
+  final VoidCallback onSaved;
+  const _DroppedTab({super.key, required this.students, required this.canEdit, required this.onSaved});
+  @override
+  State<_DroppedTab> createState() => _DroppedTabState();
+}
+
+class _DroppedTabState extends State<_DroppedTab> {
+  String _q = '';
+
+  List<Map<String, dynamic>> get _dropped => widget.students
+      .where((s) => (s['bb_status'] ?? '').toString().toLowerCase().startsWith('drop'))
+      .where((s) => _q.isEmpty || "${s['student_name']} ${s['guide_name']} ${s['center_place']}".toLowerCase().contains(_q.toLowerCase()))
+      .toList()
+    ..sort((a, b) => (b['dropped_at'] ?? '').toString().compareTo((a['dropped_at'] ?? '').toString()));
+
+  Future<void> _edit(Map<String, dynamic> s) async {
+    final reason = TextEditingController(text: (s['drop_reason'] ?? '').toString());
+    DateTime date = DateTime.tryParse((s['dropped_at'] ?? '').toString()) ?? DateTime.now();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, set) => AlertDialog(
+            title: Text("Dropped: ${s['student_name']}", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15)),
+            content: SizedBox(
+              width: 380,
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.event_rounded, size: 18),
+                  label: Text("Dropped on ${DateFormat('d MMM yyyy').format(date)}"),
+                  onPressed: () async {
+                    final d = await showDatePicker(context: ctx, initialDate: date, firstDate: DateTime(2023), lastDate: DateTime.now());
+                    if (d != null) set(() => date = d);
+                  },
+                ),
+                const SizedBox(height: 8),
+                Text("Stage when dropped: ${s['drop_stage'] ?? s['level_status'] ?? '-'}", style: const TextStyle(fontSize: 12)),
+                const SizedBox(height: 8),
+                TextField(controller: reason, maxLines: 3, decoration: InputDecoration(labelText: tr("Reason"), border: const OutlineInputBorder())),
+              ]),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Save")),
+            ],
+          )),
+    );
+    if (ok != true) return;
+    try {
+      await Supabase.instance.client.from('bb_students').update({
+        'drop_reason': reason.text.trim().isEmpty ? null : reason.text.trim(),
+        'dropped_at': DateFormat('yyyy-MM-dd').format(date),
+      }).eq('id', s['id']);
+      widget.onSaved();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't save (run 18_round17.sql): ${e is PostgrestException ? e.message : e}"), backgroundColor: Colors.red.shade700));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = _dropped;
+    String d(dynamic v) {
+      final t = DateTime.tryParse((v ?? '').toString());
+      return t == null ? '' : DateFormat('d MMM yyyy').format(t);
+    }
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+        child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 6, children: [
+          SizedBox(
+            width: 240,
+            child: TextField(
+              onChanged: (v) => setState(() => _q = v),
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search student, guide, center"), isDense: true, border: const OutlineInputBorder()),
+            ),
+          ),
+          Text("${list.length} dropped", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.red.shade800))),
+          IconButton(
+            tooltip: tr('Excel / PDF / Print'),
+            icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)),
+            onPressed: () => TableExport.showMenu(
+              context,
+              () => ExportTable(
+                title: "BB File – dropped students",
+                subtitle: DateFormat('d MMM yyyy').format(DateTime.now()),
+                headers: const ["No.", "Student", "Center", "Month", "Dropped on", "Stage when dropped", "Reason", "Guide", "Teacher"],
+                rows: [
+                  for (final s in list)
+                    [
+                      '${s['student_no'] ?? ''}',
+                      '${s['student_name'] ?? ''}',
+                      '${s['center_place'] ?? ''}',
+                      '${s['month'] ?? ''}',
+                      d(s['dropped_at']),
+                      '${s['drop_stage'] ?? s['level_status'] ?? ''}',
+                      '${s['drop_reason'] ?? ''}',
+                      '${s['guide_name'] ?? ''}',
+                      '${s['teacher_name'] ?? ''}',
+                    ]
+                ],
+              ),
+            ),
+          ),
+        ]),
+      ),
+      Expanded(
+        child: list.isEmpty
+            ? Center(child: Text("No dropped students. A student appears here when their status in the BB File is set to Dropped.",
+                textAlign: TextAlign.center, style: TextStyle(color: AppPalette.fg(Colors.grey))))
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 0, AppSizes.gutter, 24),
+                itemCount: list.length,
+                itemBuilder: (_, i) {
+                  final s = list[i];
+                  final reason = (s['drop_reason'] ?? '').toString();
+                  // rows at 60% of the earlier height, like Missed & reasons
+                  return Card(
+                    elevation: 0.5,
+                    margin: const EdgeInsets.symmetric(vertical: 1.5),
+                    child: ListTile(
+                      dense: true,
+                      minTileHeight: 32,
+                      visualDensity: const VisualDensity(vertical: -4),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                      leading: CircleAvatar(radius: 11, backgroundColor: AppPalette.bg(Colors.red.withValues(alpha: 0.12)), child: Icon(Icons.person_off_rounded, size: 13, color: AppPalette.fg(Colors.red.shade700))),
+                      title: Text('${s['student_name'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+                      subtitle: Text(
+                        [
+                          if (d(s['dropped_at']).isNotEmpty) "Dropped ${d(s['dropped_at'])}",
+                          "at ${s['drop_stage'] ?? s['level_status'] ?? '-'}",
+                          reason.isEmpty ? "no reason yet" : reason,
+                          if ((s['guide_name'] ?? '').toString().isNotEmpty) "guide ${s['guide_name']}",
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10.5, color: AppPalette.fg(reason.isEmpty ? Colors.orange.shade900 : Colors.black87)),
+                      ),
+                      trailing: widget.canEdit
+                          ? IconButton(
+                              tooltip: tr("Reason and date"),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                              icon: const Icon(Icons.edit_note_rounded, size: 20),
+                              onPressed: () => _edit(s))
+                          : null,
+                      onTap: widget.canEdit ? () => _edit(s) : null,
+                    ),
+                  );
+                },
+              ),
+      ),
+    ]);
+  }
+}
+
 // Missed & reasons
 
 class _MissedTab extends StatefulWidget {
@@ -712,23 +877,31 @@ class _MissedTabState extends State<_MissedTab> {
                       final r = list[i];
                       final reasons = List<Map<String, dynamic>>.from(r['reasons'] ?? const []);
                       final missed = ((r['missed'] ?? 0) as num).toInt();
+                      // rows at 60% of the earlier height
                       return Card(
                         elevation: 0.5,
-                        margin: const EdgeInsets.symmetric(vertical: 3),
+                        margin: const EdgeInsets.symmetric(vertical: 1.5),
                         child: ExpansionTile(
                           shape: const Border(),
                           dense: true,
+                          minTileHeight: 32,
+                          visualDensity: const VisualDensity(vertical: -4),
+                          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
                           leading: CircleAvatar(
-                            radius: 15,
+                            radius: 11,
                             backgroundColor: AppPalette.bg((missed > 0 ? Colors.red : Colors.green).withValues(alpha: 0.12)),
                             child: Text('$missed', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(missed > 0 ? Colors.red.shade700 : Colors.green.shade800))),
                           ),
-                          title: Text('${r['student_name']}', style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold)),
-                          subtitle: Text(
-                            "Missed $missed · attended ${r['attended']}${r['last_attended'] == null ? '' : ' · last came ${r['last_attended']}'} · ${r['guide_unit'] ?? ''}",
+                          title: Text.rich(
+                            TextSpan(children: [
+                              TextSpan(text: '${r['student_name']}', style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+                              TextSpan(
+                                text: "   Missed $missed · attended ${r['attended']}${r['last_attended'] == null ? '' : ' · last came ${r['last_attended']}'} · ${r['guide_unit'] ?? ''}",
+                                style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.blueGrey.shade700)),
+                              ),
+                            ]),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11),
                           ),
                           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                           expandedCrossAxisAlignment: CrossAxisAlignment.start,

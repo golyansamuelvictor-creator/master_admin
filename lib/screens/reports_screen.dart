@@ -41,6 +41,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
   
   String? selectedRole; 
   String? _simulatedRole; 
+  // Someone with two roles chooses which one they are working as (or both),
+  // like the administrator's switcher: the duties, buttons and actions follow.
+  String? _ownPrimary, _ownSecondary;
+  String _roleMode = 'both'; // both | primary | secondary
   String? _secondaryRole; 
   bool _isLoading = true;
   bool _hasRedirected = false; 
@@ -69,6 +73,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
     super.initState(); 
     _fetchDutyConfig(); 
     _identifyUser(); 
+    _checkGoalSetter();
+  }
+
+  /// Sets goals for the units below (goal_setters, 17_round16.sql)
+  bool _isGoalSetter = false;
+  Future<void> _checkGoalSetter() async {
+    try {
+      for (final d in const ['Service Attendance Status', 'Evangelism']) {
+        final r = await _supabase.rpc('goal_my_levels', params: {'p_duty': d});
+        if (r is List && r.isNotEmpty) {
+          if (mounted) setState(() => _isGoalSetter = true);
+          return;
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _identifyUser() async {
@@ -78,6 +97,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
         selectedRole = data['role']; 
         _simulatedRole = data['role']; 
         _secondaryRole = data['secondary_role']; 
+        _ownPrimary = data['role'];
+        _ownSecondary = (data['secondary_role'] ?? '').toString().isEmpty ? null : data['secondary_role'];
         userLoc = data['location'] ?? ""; 
         userSub = data['sub_location'] ?? ""; 
         userDept = data['department'] ?? ""; 
@@ -122,8 +143,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
               // (the Notification Center added for every reporter doesn't count)
               final buttons = _getMainGridButtons()
                   .where((b) => b != "Notification Center" || _dynamicAdminActions.contains('Notification Center'))
+                  .where((b) => b != "Strategic Analysis" || _dynamicAdminActions.contains('Strategic Analysis'))
                   .toList();
-              const nonDuty = ["Member Bio", "Strategic Analysis", "Notification Center"];
+              const nonDuty = ["Member Bio", "Strategic Analysis", "Notification Center", "Set unit targets", "Accountability Tasks", "Performance Report"];
               if (buttons.length == 1 && !nonDuty.contains(buttons.first)) {
                 final only = buttons.first;
                 if (only == "Evangelism") {
@@ -141,6 +163,41 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } finally { 
       if (mounted) setState(() => _isLoading = false); 
     }
+  }
+
+  Future<void> _setRoleMode(String mode) async {
+    if (_ownPrimary == null || _ownSecondary == null) return;
+    setState(() {
+      _roleMode = mode;
+      _simulatedRole = mode == 'secondary' ? _ownSecondary : _ownPrimary;
+      _secondaryRole = mode == 'both' ? _ownSecondary : null;
+      _isLoading = true;
+    });
+    await _fetchRolePermissions(_simulatedRole!);
+    await _fetchDutyConfig();
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Widget _buildRoleModeSwitcher(double hPadding) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(hPadding, 8, hPadding, 0),
+      child: Center(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<String>(
+            showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            segments: [
+              ButtonSegment(value: 'primary', icon: const Icon(Icons.badge_outlined, size: 16), label: Text(_formatRoleToTitleCase(_ownPrimary))),
+              ButtonSegment(value: 'secondary', icon: const Icon(Icons.badge_rounded, size: 16), label: Text(_formatRoleToTitleCase(_ownSecondary))),
+              const ButtonSegment(value: 'both', icon: Icon(Icons.layers_rounded, size: 16), label: Text("Both")),
+            ],
+            selected: {_roleMode},
+            onSelectionChanged: (v) => _setRoleMode(v.first),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _fetchAvailableRoles() async {
@@ -387,7 +444,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (hasEvangelism && label == 'BB File') continue;
       if (!label.toLowerCase().contains('growth')) buttons.add(label);
     }
-    if (_dynamicAdminActions.contains('Strategic Analysis')) buttons.add("Strategic Analysis");
+    // Strategic Analysis for everyone: Accountability tasks and the Performance
+    // Report (and Set unit targets for goal setters) are only in there, not
+    // repeated on this grid. Track growth stays for the roles that had it.
+    buttons.add("Strategic Analysis");
     // Everyone who saves reports can follow their status (Pending / Approved / Rejected)
     if (_dynamicAdminActions.contains('Notification Center') || _dynamicDuties.isNotEmpty || _dynamicAdminActions.contains('Request Member Transfer')) {
       buttons.add("Notification Center");
@@ -412,6 +472,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
       body: _isLoading ? const Center(child: CircularProgressIndicator(color: Color(0xFF4A148C))) : Column(children: [
         if (selectedRole == 'admin') _buildAdminSwitcher(hPadding),
+        if (selectedRole != 'admin' && _ownSecondary != null) _buildRoleModeSwitcher(hPadding),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: hPadding, vertical: 10), 
           child: Container(
@@ -441,7 +502,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             itemCount: allButtons.length, 
             itemBuilder: (context, index) {
               String title = allButtons[index];
-              bool isPrimary = ["Member Bio", "Strategic Analysis", "Notification Center"].contains(title);
+              bool isPrimary = ["Member Bio", "Strategic Analysis", "Notification Center", "Set unit targets", "Accountability Tasks", "Performance Report"].contains(title);
               return Container(
                 // elevated (raised) duty cards
                 decoration: BoxDecoration(color: AppPalette.bg(isPrimary ? pPurple : Colors.white), borderRadius: BorderRadius.circular(15), border: Border.all(color: AppPalette.line(Colors.black.withValues(alpha: 0.06))), boxShadow: [BoxShadow(color: pPurple.withValues(alpha: isPrimary ? 0.30 : 0.14), blurRadius: 12, offset: const Offset(0, 5)), BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 3, offset: const Offset(0, 1))]), 
@@ -462,6 +523,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
     else if (title == "Member Bio") _showMemberBioDialog();
     else if (title == "Strategic Analysis") _showStrategicAnalysisDialog();
+    else if (title == "Performance Report") {
+      Navigator.push(context, MaterialPageRoute(builder: (c) => MonthlyExecutiveReport(userRole: _simulatedRole ?? widget.userRole)));
+    }
+    else if (title == "Accountability Tasks") {
+      Navigator.push(context, MaterialPageRoute(builder: (c) => const TaskManagerScreen()));
+    }
+    else if (title == "Set unit targets") {
+      Navigator.push(context, MaterialPageRoute(builder: (c) => TargetSetterScreen(
+        allowedDuties: _dynamicDuties, userRole: _simulatedRole ?? widget.userRole, userLoc: userLoc, userSub: userSub, userDept: userDept)));
+    }
     else if (title == "Notification Center") Navigator.push(context, MaterialPageRoute(builder: (c) => NotificationCenterScreen(
           userRole: _simulatedRole,
           // The transfer approvals inbox stays with the roles that had it
@@ -1062,7 +1133,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
     });
   }
 
-  void _showMemberProfileMenu(BuildContext ctx) {
+  Future<void> _showMemberProfileMenu(BuildContext ctx) async {
+    // Only the people on the approval route (cell leaders who propose, the
+    // team / department / sub-location / location / Internal Affairs /
+    // Administration workers who approve, and the 24 departments) see the
+    // approvals button (member_change_access, 17_round16.sql).
+    // checked for the role being used now (an administrator looking at the
+    // app as another role sees what that role sees)
+    bool approvals = false;
+    try {
+      approvals = (await _supabase.rpc('member_change_access', params: {'p_role': _simulatedRole})) == true;
+    } catch (_) {
+      try {
+        approvals = (await _supabase.rpc('member_change_access')) == true; // before 18_round17.sql
+      } catch (_) {}
+    }
+    if (!ctx.mounted) return;
     showGeneralDialog(context: ctx, pageBuilder: (context, anim1, anim2) {
       return Scaffold(
         backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
@@ -1085,9 +1171,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
               userCell: userCell
             )));
           }),
-          _compactActionBtn(Icons.fact_check_rounded, "Approve member profile changes", Colors.green[800]!, () {
-            Navigator.push(context, MaterialPageRoute(builder: (c) => const MemberChangeApprovalsScreen()));
-          }),
+          if (approvals)
+            _compactActionBtn(Icons.fact_check_rounded, "Approve member profile changes", Colors.green[800]!, () {
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const MemberChangeApprovalsScreen()));
+            }),
         ])),
       );
     });
@@ -1096,7 +1183,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   void _showStrategicAnalysisDialog() {
     showGeneralDialog(context: context, pageBuilder: (context, anim1, anim2) {
       String r = _simulatedRole?.toLowerCase() ?? "";
-      bool canSetTargets = r == 'admin' || r.contains('internal_affairs');
+      bool canSetTargets = r == 'admin' || r.contains('internal_affairs') || _isGoalSetter;
 
       return Scaffold(
         backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
@@ -1122,6 +1209,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               )); 
             }),
             
+          if (_dynamicAdminActions.contains('Strategic Analysis') || r == 'admin')
           _compactActionBtn(Icons.trending_up_rounded, "Track growth", Colors.blue, () { 
             Navigator.push(context, MaterialPageRoute(builder: (c) => UnitGrowthTrackerScreen(
               userRole: _simulatedRole ?? widget.userRole, 
@@ -1137,8 +1225,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
             Navigator.push(context, MaterialPageRoute(builder: (c) => const TaskManagerScreen())); 
           }),
           
-          _compactActionBtn(Icons.assessment_rounded, "Monthly performance report", Colors.purple, () { 
-            Navigator.push(context, MaterialPageRoute(builder: (c) => const MonthlyExecutiveReport())); 
+          _compactActionBtn(Icons.assessment_rounded, "Performance Report", Colors.purple, () { 
+            Navigator.push(context, MaterialPageRoute(builder: (c) => MonthlyExecutiveReport(userRole: _simulatedRole ?? widget.userRole))); 
           }),
         ]))
       );

@@ -18,6 +18,7 @@ import 'services/device_accounts.dart';
 import 'services/device_sessions.dart';
 import 'services/call_service.dart';
 import 'services/media_playback.dart';
+import 'services/demo_mode.dart';
 import 'widgets/media_mini_player.dart';
 import 'widgets/app_lock_settings.dart';
 import 'widgets/two_step.dart';
@@ -33,12 +34,20 @@ const Color kLightBg = Color(0xFFF6F2FA);
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 
+/// The church's (live) Supabase project.
+const String kLiveSupabaseUrl = 'https://bbottkhzcpzjsufeyryv.supabase.co';
+const String kLiveSupabaseKey =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJib3R0a2h6Y3B6anN1ZmV5cnl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNTg1NTEsImV4cCI6MjA4NDkzNDU1MX0.EwHg23bzbS27WB6-F4lvp1VI2kZ3YmnENVw-OkvSsHk';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ICT demo mode connects to the separate DEMO project (generated data only)
+  final demo = await DemoMode.savedBackend();
+  DemoMode.active = demo != null;
   await Supabase.initialize(
-    url: 'https://bbottkhzcpzjsufeyryv.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJib3R0a2h6Y3B6anN1ZmV5cnl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkzNTg1NTEsImV4cCI6MjA4NDkzNDU1MX0.EwHg23bzbS27WB6-F4lvp1VI2kZ3YmnENVw-OkvSsHk',
+    url: demo?.$1 ?? kLiveSupabaseUrl,
+    anonKey: demo?.$2 ?? kLiveSupabaseKey,
   );
 
   // Reads the device copy right away; the account copy loads in the background.
@@ -93,6 +102,12 @@ void main() async {
     ]).timeout(const Duration(milliseconds: 2500));
   } catch (_) {}
 
+  // after switching real ⇄ demo (phones and computers; the web reloads):
+  // start again from the sign-in check on the new project
+  DemoMode.restart.addListener(() {
+    appNavigatorKey.currentState?.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const AuthWrapper()), (r) => false);
+  });
+
   runApp(const MasterAdminApp());
 }
 
@@ -122,7 +137,10 @@ class MasterAdminApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
+    // rebuilt from scratch when switching between the real and the demo system
+    return ValueListenableBuilder<int>(
+      valueListenable: DemoMode.restart,
+      builder: (_, int gen, __) => ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (_, ThemeMode currentMode, __) {
         return MaterialApp(
@@ -182,13 +200,21 @@ class MasterAdminApp extends StatelessWidget {
               // Right-to-left languages (Arabic, Hebrew ...) mirror the screens
               child: Directionality(
                 textDirection: I18n.isRtl ? TextDirection.rtl : TextDirection.ltr,
-                child: _AppShell(child: child ?? const SizedBox.shrink()),
+                child: _AppShell(
+                  child: DemoMode.active
+                      ? Column(children: [
+                          DemoBanner(onExit: () => DemoMode.exit(liveUrl: kLiveSupabaseUrl, liveKey: kLiveSupabaseKey)),
+                          Expanded(child: child ?? const SizedBox.shrink()),
+                        ])
+                      : (child ?? const SizedBox.shrink()),
+                ),
               ),
             );
           },
           home: const AuthWrapper(),
         );
       },
+    ),
     );
   }
 }

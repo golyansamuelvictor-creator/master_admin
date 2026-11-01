@@ -58,6 +58,8 @@ class _HomeScreenState extends State<HomeScreen> {
     {'label': 'Surveys', 'icon_name': 'fact_check_rounded'},
   ];
   List<Map<String, dynamic>> _quickPicks = [];
+  /// Quick Reminders: the active policies & standards (duty_policies), by duty.
+  List<Map<String, dynamic>> _policies = [];
 
   // SUPABASE LIVE DATA: QUOTES (app_quotes)
   List<Map<String, dynamic>> _liveQuotes = [];
@@ -140,6 +142,18 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final tabRes = await _supabase.from('master_tabs').select().eq('is_active', true);
       final pickRes = await _supabase.from('home_quick_picks').select().order('sort_order');
+      try {
+        final pol = await _supabase
+            .from('duty_policies')
+            .select('id, duty_name, level, category, title, body, sort_order')
+            .eq('is_active', true)
+            .order('duty_name', ascending: true)
+            .order('sort_order', ascending: true)
+            .limit(300);
+        _policies = List<Map<String, dynamic>>.from(pol);
+      } catch (_) {
+        _policies = []; // before 12_round11.sql
+      }
 
       if (mounted) {
         List<String> correctOrder = ['Home', 'Intentions', 'Calendar', 'Surveys'];
@@ -1333,74 +1347,110 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==========================================
   // QUICK PICKS (LIVE home_quick_picks)
   // ==========================================
-  Widget _buildQuickPicks() {
-    return _modernCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.bolt_rounded, color: AppPalette.fg(Colors.amber[800]), size: 20),
-                  const SizedBox(width: 6),
-                  Text(
-                    "Quick picks",
-                    style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(pAccent)),
-                  ),
-                ],
-              ),
-              Text(
-                "Priority items",
-                style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(_lift(pBlue)), fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const Divider(height: 18),
-          if (_quickPicks.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text("No active alerts at this moment.", style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey))),
-            )
-          else
-            ..._quickPicks.map((pick) => _pickItem(_getIcon(pick['icon_name']), pick['title'] ?? "")),
-        ],
+  // ==========================================
+  // QUICK REMINDERS: policies of Evangelism, Service Attendance and others,
+  // three lines per group rolling upwards; a touch stops them, the arrow
+  // opens the policy.
+  // ==========================================
+  static const Map<String, String> _reminderGroups = {
+    'Evangelism': 'Evangelism Department',
+    'Service Attendance Status': 'Service Attendance Status',
+  };
+
+  void _openPolicy(Map<String, dynamic> p) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text((p['title'] ?? '').toString(), style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16)),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              [p['duty_name'], if ((p['category'] ?? '').toString().isNotEmpty) p['category'], if ((p['level'] ?? 'all') != 'all') "Level: ${p['level']}"].join(' · '),
+              style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700)),
+            ),
+            const SizedBox(height: 10),
+            Text((p['body'] ?? '').toString().isEmpty ? "No details written yet." : p['body'].toString(), style: const TextStyle(fontSize: 14, height: 1.4)),
+          ]),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close"))],
       ),
     );
   }
 
-  Widget _pickItem(IconData i, String t) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppPalette.bg(pSoft),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.12))),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(5),
-            decoration: BoxDecoration(
-              color: AppPalette.bg(pBlue.withValues(alpha: 0.08)),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(i, size: 15, color: AppPalette.fg(_lift(pBlue))),
-          ),
-          const SizedBox(width: 10),
+  Widget _buildQuickPicks() {
+    // Always the three groups: Evangelism Department, Service Attendance
+    // Status and Others (other duties' policies and the quick picks).
+    final groups = <String, List<Map<String, dynamic>>>{for (final g in _reminderGroups.values) g: [], 'Others': []};
+    for (final p in _policies) {
+      groups[_reminderGroups[p['duty_name']] ?? 'Others']!.add(p);
+    }
+    for (final q in _quickPicks) {
+      if ((q['title'] ?? '').toString().trim().isEmpty) continue;
+      groups['Others']!.add({'title': q['title'], 'body': (q['body'] ?? q['description'] ?? q['subtitle'] ?? '').toString(), 'duty_name': 'Others', 'category': 'Reminder'});
+    }
+    final order = [..._reminderGroups.values, 'Others'];
+    return _modernCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.notifications_active_rounded, color: AppPalette.fg(Colors.amber[800]), size: 20),
+          const SizedBox(width: 6),
           Expanded(
-            child: Text(
-              t,
-              style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pInk)),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text("Quick Reminders", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(pAccent))),
           ),
-          Icon(Icons.arrow_forward_ios_rounded, size: 11, color: AppPalette.fg(_cs.onSurface.withValues(alpha: 0.25))),
+          Text("Touch to pause", style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(_lift(pBlue)), fontWeight: FontWeight.bold)),
+        ]),
+        const Divider(height: 18),
+        for (final g in order) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.fromLTRB(10, 8, 6, 6),
+            decoration: BoxDecoration(
+              color: AppPalette.bg(pSoft),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.12))),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(g, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: AppPalette.fg(pInk))),
+              const SizedBox(height: 4),
+              if (groups[g]!.isEmpty)
+                SizedBox(
+                  height: 34,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text("No reminders yet.", style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.grey))),
+                  ),
+                )
+              else
+                // 3 lines that keep moving up; touching stops them
+                VerticalMarquee(
+                  count: groups[g]!.length,
+                  visible: 3,
+                  itemHeight: 34,
+                  itemBuilder: (_, i) {
+                    final p = groups[g]![i];
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => _openPolicy(p),
+                      child: Row(children: [
+                        Icon(Icons.circle, size: 6, color: AppPalette.fg(_lift(pBlue))),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text((p['title'] ?? '').toString(),
+                              maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w600, color: AppPalette.fg(pInk))),
+                        ),
+                        // the arrow opens the details of that policy
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Icon(Icons.arrow_forward_rounded, size: 16, color: AppPalette.fg(_lift(pBlue))),
+                        ),
+                      ]),
+                    );
+                  },
+                ),
+            ]),
+          ),
         ],
-      ),
+      ]),
     );
   }
 

@@ -40,6 +40,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
   String? _error;
   String? _scope;
   bool _isAdmin = false;
+  /// 'admin' | 'location' (Location Secretary) | null: who may change roles
+  String? _roleRights;
   int _total = 0;
   List<Map<String, dynamic>> _rows = [];
   Map<String, List<Map<String, dynamic>>> _facets = {};
@@ -67,6 +69,11 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
       ]);
       _scope = r[0]?.toString();
       _isAdmin = r[1] == true;
+      try {
+        _roleRights = (await _db.rpc('role_change_rights'))?.toString();
+      } catch (_) {
+        _roleRights = _isAdmin ? 'admin' : null; // before 18_round17.sql
+      }
       _appRoles = List<Map<String, dynamic>>.from(r[2] as List);
       final depts = List<Map<String, dynamic>>.from(r[3] as List);
       String label(Map d) {
@@ -210,198 +217,205 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
   // ==========================================
   // 2. CHANGE ROLE (MATCHING YOUR APP_ROLES TABLE)
   // ==========================================
+  // ==========================================
+  // 2. CHANGE ROLE (change_user_role, 18_round17.sql)
+  // ==========================================
+  static const _levels = <String, String>{
+    'all': 'All levels',
+    'cell': 'Cell group',
+    'team': 'Team',
+    'department': 'Department',
+    'sub_location': 'Sub-location',
+    'location': 'Location',
+    'church': 'Church / 24 departments',
+  };
+
+  /// Church / 24-department roles (and admin) — never offered to Location
+  /// Secretaries, and not mixed into a location worker's list.
+  bool _isChurchRole(Map r) {
+    final key = (r['role_key'] ?? '').toString();
+    final scope = (r['approval_scope'] ?? '').toString().toLowerCase();
+    final grouping = (r['Grouping'] ?? '').toString();
+    return key.toLowerCase() == 'admin' || key == 'Master' || key.startsWith('church_') || key.startsWith('korean') ||
+        scope == 'church' || scope == 'church_department' || grouping.startsWith('24-Dept') || grouping.startsWith('Church') ||
+        r['official_dept_id'] != null;
+  }
+
+  String _levelOf(Map r) {
+    final scope = (r['approval_scope'] ?? '').toString().toLowerCase();
+    final key = (r['role_key'] ?? '').toString().toLowerCase();
+    final grouping = (r['Grouping'] ?? '').toString().toLowerCase();
+    if (_isChurchRole(r)) return 'church';
+    if (scope == 'cell' || grouping.startsWith('cell') || key.contains('cell')) return 'cell';
+    if (scope == 'team' || grouping.startsWith('team') || key.contains('team')) return 'team';
+    if (scope == 'department' || grouping.startsWith('dept') || key.startsWith('dept')) return 'department';
+    if (scope == 'sub_location' || grouping.startsWith('sub') || key.startsWith('sub_loc')) return 'sub_location';
+    if (scope == 'location' || grouping.startsWith('location') || key.startsWith('loc_')) return 'location';
+    return 'cell';
+  }
+
+  bool _userIsChurchWorker(Map user) {
+    final loc = _v(user, 'location').toLowerCase();
+    return _v(user, 'unit_category').toLowerCase().contains('church') || loc == 'church' || loc == 'church workers' || loc == 'church main';
+  }
+
   void _openChangeRoleDialog(Map<String, dynamic> user) {
-    String selectedWorkerType = "location"; // "location" or "church"
-    String selectedDeptLabel = "All / General";
-    String selectedUnitLevel = "All Levels";
-    // profiles.role stores the role_key (e.g. cell_leader); the dropdown shows display names.
-    String? selectedRoleKey = user['role']?.toString();
-    final currentRole = _appRoles.firstWhere((r) => r['role_key'] == selectedRoleKey, orElse: () => <String, dynamic>{});
-    String? selectedRoleName = (currentRole['display_name'] ?? selectedRoleKey)?.toString();
-    // Optional second role (its duties are added to the primary role's)
-    String? selectedSecondaryKey = (user['secondary_role'] ?? '').toString().isEmpty ? null : user['secondary_role'].toString();
-    if (selectedSecondaryKey != null && !_appRoles.any((r) => r['role_key'] == selectedSecondaryKey)) selectedSecondaryKey = null;
+    final onlyLocation = _roleRights != 'admin';
+    // the user's own kind of roles first: location workers see location
+    // roles, church workers church / 24-department roles
+    String kind = (!onlyLocation && _userIsChurchWorker(user)) ? 'church' : 'location';
+    String level = 'all';
+    String? deptId; // church roles: one of the 24 departments
+    String? roleKey = user['role']?.toString();
+    String? secondKey = (user['secondary_role'] ?? '').toString().isEmpty ? null : user['secondary_role'].toString();
+    String search = '';
+    bool saving = false;
+
+    String name(Map r) {
+      final ko = (r['display_name_ko'] ?? '').toString();
+      final n = (r['display_name'] ?? r['role_key']).toString();
+      return ko.isEmpty || ko == n ? n : "$n ($ko)";
+    }
 
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDState) {
-          final targetDeptUUID = _deptOptions[selectedDeptLabel];
-
-          // Filter app_roles based on approval_scope, official_dept_id, and level
-          final filteredRoles = _appRoles.where((r) {
-            final scope = (r['approval_scope'] ?? '').toString().toLowerCase();
-            final deptId = r['official_dept_id']?.toString();
-            final level = r['approval_level']?.toString();
-            final grouping = (r['Grouping'] ?? '').toString();
-
-            // 1. Worker Scope filter (Location vs Church)
-            bool scopeMatch = true;
-            if (selectedWorkerType == "location") {
-              scopeMatch = scope == 'team' || scope == 'sub_location' || scope == 'location' || grouping.startsWith('Location') || grouping.startsWith('Cell') || grouping.startsWith('Team');
-            } else {
-              scopeMatch = scope == 'church' || scope == 'church_department' || grouping.startsWith('Church') || grouping.startsWith('24-Dept');
-            }
-
-            // 2. Department UUID filter
-            bool deptMatch = true;
-            if (targetDeptUUID != null) {
-              deptMatch = deptId == targetDeptUUID || grouping.contains(selectedDeptLabel.split(' ').first);
-            }
-
-            // 3. Level filter
-            bool levelMatch = true;
-            if (selectedUnitLevel == "Cell") {
-              levelMatch = grouping.toLowerCase().contains("cell");
-            } else if (selectedUnitLevel == "Team (Level 1)") {
-              levelMatch = level == "1";
-            } else if (selectedUnitLevel == "Dept (Level 2)") {
-              levelMatch = level == "2";
-            } else if (selectedUnitLevel == "Sub-Location (Level 3)") {
-              levelMatch = level == "3";
-            } else if (selectedUnitLevel == "Location (Level 4)") {
-              levelMatch = level == "4";
-            } else if (selectedUnitLevel == "Church / 24-Dept (Level 5)") {
-              levelMatch = level == "5";
-            }
-
-            return scopeMatch && deptMatch && levelMatch;
-          }).toList();
-
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Text("Change Role: ${user['full_name'] ?? 'Member'}",
-                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: AppPalette.fg(pPurple))),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Worker Category
-                  const Text("1. Worker Category Scope:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedWorkerType,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.all(10)),
-                    items: const [
-                      DropdownMenuItem(value: "location", child: Text("Location Workers (지회/지부/팀/구역)")),
-                      DropdownMenuItem(value: "church", child: Text("Church & 24 Departments (교회/총회/24부서)")),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+        bool inKind(Map r) => kind == 'church' ? _isChurchRole(r) && (r['role_key'] != 'admin' || !onlyLocation) : !_isChurchRole(r);
+        final roles = _appRoles.where((r) {
+          if (r['role_key'] == null) return false;
+          if (onlyLocation && _isChurchRole(r)) return false;
+          if (!inKind(r)) return false;
+          if (level != 'all' && _levelOf(r) != level) return false;
+          if (kind == 'church' && deptId != null && r['official_dept_id']?.toString() != deptId) return false;
+          if (search.isNotEmpty && !"${name(r)} ${r['role_key']}".toLowerCase().contains(search.toLowerCase())) return false;
+          return true;
+        }).toList()
+          ..sort((a, b) => name(a).compareTo(name(b)));
+        final seconds = _appRoles.where((r) => r['role_key'] != null && (!onlyLocation || !_isChurchRole(r))).toList()
+          ..sort((a, b) => name(a).compareTo(name(b)));
+        final current = _appRoles.firstWhere((r) => r['role_key'] == roleKey, orElse: () => <String, dynamic>{});
+        Widget label(String t) => Padding(padding: const EdgeInsets.only(top: 10, bottom: 4), child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)));
+        InputDecoration deco([String? hint]) => InputDecoration(border: const OutlineInputBorder(), isDense: true, hintText: hint, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10));
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text("Change role: ${_name(user)}", maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: AppPalette.fg(pPurple))),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text("Now: ${current.isEmpty ? (roleKey ?? '-') : name(current)}${_v(user, 'location').isEmpty ? '' : ' · ${_v(user, 'location')}'}",
+                    style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.blueGrey.shade700))),
+                if (onlyLocation)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text("As Location Secretary you can give only the roles of the location levels, to people of your location.",
+                        style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.orange.shade900))),
+                  ),
+                if (!onlyLocation) ...[
+                  label("1. Kind of worker"),
+                  SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: 'location', label: Text("Location workers")),
+                      ButtonSegment(value: 'church', label: Text("Church & 24 departments")),
                     ],
-                    onChanged: (v) => setDState(() {
-                      selectedWorkerType = v!;
-                      selectedRoleName = null;
+                    selected: {kind},
+                    onSelectionChanged: (v) => set(() {
+                      kind = v.first;
+                      level = 'all';
+                      deptId = null;
                     }),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 2. Department
-                  const Text("2. Department / Group:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedDeptLabel,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.all(10)),
-                    isExpanded: true,
-                    items: _deptOptions.keys.map((k) => DropdownMenuItem(value: k, child: Text(k, overflow: TextOverflow.ellipsis))).toList(),
-                    onChanged: (v) => setDState(() {
-                      selectedDeptLabel = v!;
-                      selectedRoleName = null;
-                    }),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 3. Unit Level
-                  const Text("3. Unit Level:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedUnitLevel,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.all(10)),
-                    items: const [
-                      DropdownMenuItem(value: "All Levels", child: Text("All Levels")),
-                      DropdownMenuItem(value: "Cell", child: Text("Cell Group (구역)")),
-                      DropdownMenuItem(value: "Team (Level 1)", child: Text("Team (Level 1 - 팀)")),
-                      DropdownMenuItem(value: "Dept (Level 2)", child: Text("Department (Level 2 - 부서)")),
-                      DropdownMenuItem(value: "Sub-Location (Level 3)", child: Text("Sub-Location (Level 3 - 부지역)")),
-                      DropdownMenuItem(value: "Location (Level 4)", child: Text("Location (Level 4 - 지역)")),
-                      DropdownMenuItem(value: "Church / 24-Dept (Level 5)", child: Text("Church / General (Level 5 - 총회/교회)")),
-                    ],
-                    onChanged: (v) => setDState(() {
-                      selectedUnitLevel = v!;
-                      selectedRoleName = null;
-                    }),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 4. DYNAMIC ROLE DROPDOWN FROM APP_ROLES
-                  const Text("4. Designated Role (display_name):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    initialValue: filteredRoles.any((r) => r['display_name'] == selectedRoleName) ? selectedRoleName : null,
-                    hint: Text(filteredRoles.isEmpty ? "No roles match criteria" : "Select Role"),
-                    decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.all(10)),
-                    items: filteredRoles.map((r) {
-                      final ko = r['display_name_ko'] != null ? " (${r['display_name_ko']})" : "";
-                      return DropdownMenuItem<String>(
-                        value: r['display_name'].toString(),
-                        child: Text("${r['display_name']}$ko", overflow: TextOverflow.ellipsis),
-                      );
-                    }).toList(),
-                    onChanged: (v) {
-                      final match = filteredRoles.firstWhere((r) => r['display_name'] == v, orElse: () => {});
-                      setDState(() {
-                        selectedRoleName = v;
-                        selectedRoleKey = match['role_key']?.toString();
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 5. OPTIONAL SECONDARY ROLE
-                  const Text("5. Secondary Role (optional):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                  const SizedBox(height: 4),
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedSecondaryKey ?? '',
-                    isExpanded: true,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.all(10)),
-                    items: [
-                      const DropdownMenuItem<String>(value: '', child: Text("None")),
-                      ...(_appRoles.where((r) => r['role_key'] != null).toList()
-                            ..sort((a, b) => (a['display_name'] ?? '').toString().compareTo((b['display_name'] ?? '').toString())))
-                          .map((r) => DropdownMenuItem<String>(
-                                value: r['role_key'].toString(),
-                                child: Text((r['display_name'] ?? r['role_key']).toString(), overflow: TextOverflow.ellipsis),
-                              )),
-                    ],
-                    onChanged: (v) => setDState(() => selectedSecondaryKey = (v == null || v.isEmpty) ? null : v),
                   ),
                 ],
-              ),
+                if (kind == 'church') ...[
+                  label("Department"),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: deptId ?? '',
+                    decoration: deco(),
+                    items: [
+                      for (final e in _deptOptions.entries)
+                        DropdownMenuItem(value: e.value ?? '', child: Text(e.key.trim(), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (v) => set(() => deptId = (v ?? '').isEmpty ? null : v),
+                  ),
+                ] else ...[
+                  label("Level"),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: level,
+                    decoration: deco(),
+                    items: [
+                      for (final e in _levels.entries)
+                        if (e.key != 'church') DropdownMenuItem(value: e.key, child: Text(e.value, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (v) => set(() => level = v ?? 'all'),
+                  ),
+                ],
+                label("Role (${roles.length})"),
+                TextField(onChanged: (v) => set(() => search = v), decoration: deco("Find a role").copyWith(prefixIcon: const Icon(Icons.search, size: 18))),
+                const SizedBox(height: 6),
+                Container(
+                  height: 220,
+                  decoration: BoxDecoration(border: Border.all(color: AppPalette.line(Colors.grey.shade300)), borderRadius: BorderRadius.circular(8)),
+                  child: roles.isEmpty
+                      ? const Center(child: Text("No roles match."))
+                      : ListView.builder(
+                          itemCount: roles.length,
+                          itemBuilder: (_, i) {
+                            final r = roles[i];
+                            final sel = r['role_key'] == roleKey;
+                            return ListTile(
+                              dense: true,
+                              selected: sel,
+                              selectedTileColor: pPurple.withValues(alpha: 0.08),
+                              leading: Icon(sel ? Icons.radio_button_checked : Icons.radio_button_off, size: 18, color: AppPalette.fg(pPurple)),
+                              title: Text(name(r), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
+                              subtitle: Text("${r['role_key']} · ${_levels[_levelOf(r)]}", maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5)),
+                              onTap: () => set(() => roleKey = r['role_key'].toString()),
+                            );
+                          },
+                        ),
+                ),
+                label("Secondary role (optional)"),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: seconds.any((r) => r['role_key'] == secondKey) ? secondKey : '',
+                  decoration: deco(),
+                  items: [
+                    const DropdownMenuItem<String>(value: '', child: Text("None")),
+                    for (final r in seconds)
+                      DropdownMenuItem<String>(value: r['role_key'].toString(), child: Text(name(r), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (v) => set(() => secondKey = (v == null || v.isEmpty) ? null : v),
+                ),
+              ]),
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple)),
-                onPressed: (selectedRoleName == null || selectedRoleKey == null) ? null : () async {
-                  // Saves the role_key, which the rest of the app looks roles up by
-                  // (it used to save the display name, e.g. "Cell Leader", so the new
-                  // role matched nothing). app_role_id isn't a profiles column, and
-                  // forcing department to 내무부 moved users out of their own reports.
-                  await _db.from('profiles').update({
-                    'role': selectedRoleKey,
-                    'secondary_role': selectedSecondaryKey == selectedRoleKey ? null : selectedSecondaryKey,
-                  }).eq('id', user['id']);
-
-                  Navigator.pop(ctx);
-                  _load();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Role updated to '$selectedRoleName'"), backgroundColor: Colors.green),
-                  );
-                },
-                child: Text("Save Role", style: TextStyle(color: AppPalette.fg(Colors.white))),
-              ),
-            ],
-          );
-        },
-      ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple), foregroundColor: Colors.white),
+              onPressed: roleKey == null || saving
+                  ? null
+                  : () async {
+                      set(() => saving = true);
+                      try {
+                        await _db.rpc('change_user_role', params: {'p_user': user['id'], 'p_role': roleKey, 'p_secondary': secondKey});
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _load();
+                        _snack("Role changed. The administrators${_userIsChurchWorker(user) ? '' : ' and the location leader and general secretary'} were notified.");
+                      } catch (e) {
+                        set(() => saving = false);
+                        _snack("Couldn't change the role: ${e is PostgrestException ? e.message : e}", error: true);
+                      }
+                    },
+              child: const Text("Save role"),
+            ),
+          ],
+        );
+      }),
     );
   }
 
@@ -413,7 +427,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text("Remove User: ${_name(user)}", style: TextStyle(color: AppPalette.fg(Colors.red))),
-        content: const Text("Are you sure you want to remove this user from the profiles table? This cannot be undone."),
+        content: const Text("This deletes the user's profile and sign-in, so they can no longer open the system. "
+            "If records they entered must keep their name, the account is blocked instead. This cannot be undone."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
           ElevatedButton(
@@ -427,12 +442,43 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
 
     if (confirm == true) {
       try {
-        await _db.from('profiles').delete().eq('id', user['id']);
+        // A plain delete of the profiles row was refused by the database
+        // (no permission) and left the sign-in behind; the server does it now.
+        final res = await _db.rpc('admin_delete_user', params: {'p_user': user['id']});
         _load();
-        _snack("User removed successfully.");
+        _snack(res == 'blocked'
+            ? "${_name(user)} is linked to saved records, so the account was blocked and hidden instead of deleted."
+            : "${_name(user)} was deleted.");
       } catch (e) {
-        _snack("Couldn't remove: $e", error: true);
+        _snack("Couldn't remove: ${e is PostgrestException ? e.message : e}", error: true);
       }
+    }
+  }
+
+  /// Deletes every registration that was started but never finished.
+  Future<void> _purgeIncomplete() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Remove unfinished registrations"),
+        content: const Text("Deletes accounts that were started more than 3 days ago but never completed (no SCJ ID or no role) and were never approved."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Remove"),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final n = await _db.rpc('admin_purge_incomplete', params: {'p_days': 3});
+      _load();
+      _snack("$n unfinished registration(s) removed.");
+    } catch (e) {
+      _snack("Couldn't remove: ${e is PostgrestException ? e.message : e}", error: true);
     }
   }
 
@@ -449,7 +495,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Icon(i, size: 17, color: AppPalette.fg(Colors.grey.shade600)),
               const SizedBox(width: 8),
-              SizedBox(width: 110, child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5))),
+              SizedBox(width: 96, child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
               Expanded(child: SelectableText(t, style: const TextStyle(fontSize: 12.5))),
             ]),
           );
@@ -486,7 +532,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
       if (ctx != null) Navigator.pop(ctx);
     }
     return [
-      if (st != 'approved')
+      // an unfinished registration has nothing to approve yet
+      if (st != 'approved' && st != 'incomplete')
         full
             ? ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
@@ -496,7 +543,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                 },
                 icon: const Icon(Icons.check_rounded, size: 18),
                 label: const Text("Approve"))
-            : IconButton(tooltip: tr("Approve"), icon: Icon(Icons.check_circle_rounded, color: AppPalette.fg(Colors.green.shade700)), onPressed: () => _decide(r, true)),
+            : IconButton(tooltip: tr("Approve"), visualDensity: VisualDensity.compact, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 30, minHeight: 30), icon: Icon(Icons.check_circle_rounded, size: 22, color: AppPalette.fg(Colors.green.shade700)), onPressed: () => _decide(r, true)),
       if (st != 'rejected')
         full
             ? OutlinedButton.icon(
@@ -507,8 +554,9 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                 },
                 icon: const Icon(Icons.close_rounded, size: 18),
                 label: const Text("Reject"))
-            : IconButton(tooltip: tr("Reject"), icon: Icon(Icons.cancel_rounded, color: AppPalette.fg(Colors.red.shade700)), onPressed: () => _decide(r, false)),
-      if (_isAdmin && full) ...[
+            : IconButton(tooltip: tr("Reject"), visualDensity: VisualDensity.compact, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 30, minHeight: 30), icon: Icon(Icons.cancel_rounded, size: 22, color: AppPalette.fg(Colors.red.shade700)), onPressed: () => _decide(r, false)),
+      // Location Secretaries change roles too (own location, location roles)
+      if (_roleRights != null && full)
         OutlinedButton.icon(
             onPressed: () {
               close();
@@ -516,6 +564,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
             },
             icon: const Icon(Icons.manage_accounts_rounded, size: 18),
             label: const Text("Change role")),
+      if (_isAdmin && full) ...[
         OutlinedButton.icon(
             style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),
             onPressed: () {
@@ -588,6 +637,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                 child: SegmentedButton<String>(
                   segments: const [
                     ButtonSegment(value: 'pending', icon: Icon(Icons.hourglass_top_rounded, size: 18), label: Text("Pending")),
+                    ButtonSegment(value: 'incomplete', icon: Icon(Icons.pending_outlined, size: 18), label: Text("Unfinished")),
                     ButtonSegment(value: 'approved', icon: Icon(Icons.verified_rounded, size: 18), label: Text("Approved")),
                     ButtonSegment(value: 'rejected', icon: Icon(Icons.block_rounded, size: 18), label: Text("Rejected")),
                     ButtonSegment(value: 'all', icon: Icon(Icons.groups_rounded, size: 18), label: Text("All")),
@@ -600,6 +650,20 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                 ),
               ),
             ),
+            if (_status == 'incomplete')
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Column(children: [
+                  Text("Registrations that were started but never completed. They are not sent for approval.",
+                      textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
+                  if (_isAdmin)
+                    TextButton.icon(
+                      onPressed: _purgeIncomplete,
+                      icon: Icon(Icons.delete_sweep_rounded, color: AppPalette.fg(Colors.red.shade700)),
+                      label: Text("Remove unfinished registrations", style: TextStyle(color: AppPalette.fg(Colors.red.shade700))),
+                    ),
+                ]),
+              ),
             const SizedBox(height: 8),
             TextField(
               onChanged: (v) => _search = v,

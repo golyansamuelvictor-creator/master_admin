@@ -71,7 +71,7 @@ class _MemberChangeApprovalsScreenState extends State<MemberChangeApprovalsScree
       await _db.rpc('member_change_decide', params: {'p_id': r['id'], 'p_approve': approve, 'p_note': note});
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(approve ? "Approved: ${r['member_name']}'s profile is updated." : "Rejected. The cell leader is told why."),
+          content: Text(approve ? "Approved for ${r['member_name']}: forwarded to the next step (the last step updates the member list)." : "Rejected. The person who proposed it is told why."),
           backgroundColor: approve ? const Color(0xFF2E7D32) : null,
         ));
       }
@@ -146,6 +146,28 @@ class _MemberChangeApprovalsScreenState extends State<MemberChangeApprovalsScree
             ],
           ),
         ),
+        if (status == 'pending' && (r['step_label'] ?? '').toString().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+            child: Row(children: [
+              Icon(Icons.route_rounded, size: 16, color: AppPalette.fg(_purple)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  "Now with: ${r['step_label']} (step ${r['step_no']} of ${r['steps_total']})${r['mine'] == true ? ' · your proposal' : ''}",
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(_purple)),
+                ),
+              ),
+            ]),
+          ),
+        for (final h in List<Map<String, dynamic>>.from(((r['history'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map))))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 2),
+            child: Text(
+              "${h['decision'] == 'approved' ? '✓' : '✗'} ${h['step']}: ${_fmt(h['by'])}${(h['note'] ?? '').toString().isEmpty ? '' : ' — ${h['note']}'}",
+              style: TextStyle(fontSize: 11, color: AppPalette.fg(h['decision'] == 'approved' ? const Color(0xFF2E7D32) : Colors.red.shade700)),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 2, 14, 10),
           child: Text(

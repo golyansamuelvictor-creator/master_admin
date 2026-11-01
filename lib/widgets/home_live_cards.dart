@@ -25,6 +25,103 @@ enum TickerStyle { rollUp, fade, slideLeft, flip }
 
 /// Shows [visible] of [count] items and moves on by one every few seconds,
 /// while the screen is idle. [styles] are used in turn (one per move).
+/// Quick Reminders: [visible] lines that keep moving up one line at a time,
+/// like a news ticker. It stops the moment it is touched (or the mouse is on
+/// it) and moves again 4 seconds after the finger leaves.
+class VerticalMarquee extends StatefulWidget {
+  final int count;
+  final int visible;
+  final double itemHeight;
+  final IndexedWidgetBuilder itemBuilder;
+  final Duration every;
+
+  const VerticalMarquee({
+    super.key,
+    required this.count,
+    required this.itemBuilder,
+    this.visible = 3,
+    this.itemHeight = 34,
+    this.every = const Duration(milliseconds: 2600),
+  });
+
+  @override
+  State<VerticalMarquee> createState() => _VerticalMarqueeState();
+}
+
+class _VerticalMarqueeState extends State<VerticalMarquee> {
+  final _ctrl = ScrollController();
+  Timer? _timer;
+  Timer? _release;
+  bool _held = false;
+  bool _hover = false;
+  int _pos = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(widget.every, (_) => _step());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _release?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _step() async {
+    if (!mounted || _held || _hover || widget.count < 2 || !_ctrl.hasClients) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    _pos++;
+    await _ctrl.animateTo(_pos * widget.itemHeight, duration: const Duration(milliseconds: 700), curve: Curves.easeInOutCubic);
+    // after the last line the copy of the first lines is showing: jump back
+    if (mounted && _pos >= widget.count && _ctrl.hasClients) {
+      _pos = 0;
+      _ctrl.jumpTo(0);
+    }
+  }
+
+  void _hold() {
+    _release?.cancel();
+    _held = true;
+    if (_ctrl.hasClients) _ctrl.jumpTo(_ctrl.offset); // stop a move that is running
+  }
+
+  void _letGo() {
+    _release?.cancel();
+    _release = Timer(const Duration(seconds: 4), () => _held = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = widget.count;
+    final shown = n < widget.visible ? n : widget.visible;
+    // the list plus a copy of its first lines, so the loop has no gap
+    final total = n < 2 ? n : n + shown;
+    return MouseRegion(
+      onEnter: (_) => _hover = true,
+      onExit: (_) => _hover = false,
+      child: Listener(
+        onPointerDown: (_) => _hold(),
+        onPointerUp: (_) => _letGo(),
+        onPointerCancel: (_) => _letGo(),
+        child: SizedBox(
+          height: shown * widget.itemHeight,
+          child: ListView.builder(
+            controller: _ctrl,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemExtent: widget.itemHeight,
+            itemCount: total,
+            itemBuilder: (c, i) => widget.itemBuilder(c, i % n),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AutoTicker extends StatefulWidget {
   final int count;
   final int visible;
@@ -49,9 +146,22 @@ class AutoTicker extends StatefulWidget {
 
 class _AutoTickerState extends State<AutoTicker> {
   Timer? _timer;
+  Timer? _release;
   int _start = 0;
   int _moves = 0;
   bool _hover = false;
+  bool _held = false; // a finger / mouse button is on it: it stops at once
+
+  void _hold() {
+    _release?.cancel();
+    _held = true;
+  }
+
+  // moving again a few seconds after the finger leaves
+  void _letGo() {
+    _release?.cancel();
+    _release = Timer(const Duration(seconds: 4), () => _held = false);
+  }
 
   @override
   void initState() {
@@ -62,11 +172,12 @@ class _AutoTickerState extends State<AutoTicker> {
   @override
   void dispose() {
     _timer?.cancel();
+    _release?.cancel();
     super.dispose();
   }
 
   void _step() {
-    if (!mounted || _hover || !HomeActivity.idle || widget.count <= widget.visible) return;
+    if (!mounted || _hover || _held || !HomeActivity.idle || widget.count <= widget.visible) return;
     // nothing moves while the app is in the background or under another screen
     if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
     setState(() {
@@ -121,7 +232,12 @@ class _AutoTickerState extends State<AutoTicker> {
       onEnter: (_) => _hover = true,
       onExit: (_) => _hover = false,
       child: Listener(
-        onPointerDown: (_) => HomeActivity.touch(),
+        onPointerDown: (_) {
+          HomeActivity.touch();
+          _hold();
+        },
+        onPointerUp: (_) => _letGo(),
+        onPointerCancel: (_) => _letGo(),
         child: SizedBox(
           height: shown * widget.itemHeight,
           child: AnimatedSwitcher(

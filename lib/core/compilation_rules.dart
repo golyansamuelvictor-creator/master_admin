@@ -192,6 +192,20 @@ class CompLevel {
     return v.isNotEmpty ? v : 'Other';
   }
 
+  /// Unit names in the Compilation screen's order (known locations /
+  /// departments first, then numbers in order: Team 2 before Team 10).
+  static List<String> orderNames(Iterable<String> names, String level) {
+    final keys = names.toSet();
+    final lv = of(level);
+    List<String> preferred = const [];
+    if (lv == church || lv == location) preferred = orderedLocations;
+    if (lv == group) preferred = orderedBOLGroups;
+    if (lv == dept) preferred = orderedDepartments;
+    final first = preferred.where(keys.contains).toList();
+    final rest = keys.where((k) => !preferred.contains(k) && k != 'Other').toList();
+    return [...first, ...naturalSort(rest), if (keys.contains('Other')) 'Other'];
+  }
+
   /// Every unit present in members or logs, in a stable order.
   /// The table rows, chart bars and legend must all use this same list.
   static List<String> orderedUnits(Iterable<dynamic> members, Iterable<dynamic> logs, String level) {

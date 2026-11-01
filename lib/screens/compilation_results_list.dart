@@ -8,6 +8,8 @@ import 'package:master_admin/core/table_export.dart';
 import 'package:flutter/services.dart';
 import 'package:master_admin/widgets/app_menus.dart';
 import 'package:master_admin/core/offering_categories.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CompilationResultsList extends StatefulWidget {
   final List<dynamic> logs;
@@ -50,10 +52,41 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   final double dataRowHeight   = 28.0;
   final double rowNumWidth     = 42.0;
 
+  /// Stamps: names of the people who entered / approved (profile_names)
+  final Map<String, String> _names = {};
+
+  Future<void> _loadNames() async {
+    final ids = <String>{
+      for (final l in widget.logs)
+        if (l is Map)
+          for (final k in const ['entered_by', 'leader_id', 'approved_by', 'updated_by'])
+            if ((l[k] ?? '').toString().isNotEmpty) l[k].toString(),
+    }.toList();
+    if (ids.isEmpty) return;
+    try {
+      final r = await Supabase.instance.client.rpc('profile_names', params: {'p_ids': ids.take(2000).toList()});
+      if (!mounted) return;
+      setState(() {
+        for (final x in (r as List)) {
+          final role = (x['role'] ?? '').toString();
+          _names[x['id'].toString()] = "${x['full_name'] ?? ''}${role.isEmpty ? '' : ' ($role)'}";
+        }
+      });
+    } catch (_) {} // before 18_round17.sql
+  }
+
+  String _stamp(dynamic id, dynamic at) {
+    final who = _names[(id ?? '').toString()] ?? '';
+    final t = DateTime.tryParse((at ?? '').toString())?.toLocal();
+    if (who.isEmpty && t == null) return '';
+    return [if (who.isNotEmpty) who, if (t != null) DateFormat('d MMM HH:mm').format(t)].join(' · ');
+  }
+
   @override
   void initState() {
     super.initState();
     _filteredData = widget.logs;
+    _loadNames();
 
     _verticalScrollData.addListener(() {
       if (_verticalScrollRowNumbers.hasClients &&
@@ -117,6 +150,11 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
         return m['english_name'] ?? m['full_name'] ?? m['name'] ?? log['english_name'] ?? "";
       case "duty":
         return m['duty'] ?? log['duty'] ?? "";
+      // who filled in the report and who approved it (for the leader above)
+      case "stamp_entered":
+        return _stamp(log['entered_by'] ?? log['leader_id'], log['created_at']);
+      case "stamp_approved":
+        return log['approved_by'] == null ? (log['verification_status'] ?? '').toString() : _stamp(log['approved_by'], log['approved_at']);
       default:
         return log[key] ?? m[key] ?? "";
     }
@@ -158,7 +196,10 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       "tue_part": "Tue",
       "wed_part": "Wed",
       "thu_part": "Thu",
-      "fri_part": "Fri"
+      "fri_part": "Fri",
+      "place": "Place",
+      "stamp_entered": "Entered by",
+      "stamp_approved": "Approved by",
     };
     return mapping[key] ?? key;
   }
@@ -183,6 +224,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     if (["location", "sub_location", "department", "current_dept"].contains(key)) return 115;
     if (["team", "team_number", "cell_group", "cell_number"].contains(key)) return 95;
     if (key == "duty") return 115;
+    if (key == "place") return 170;
+    if (key.startsWith("stamp_")) return 190;
     return 105;
   }
 
@@ -190,7 +233,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     List<String> base = ["location", "sub_location", "department", "team", "cell_group", "english_name", "duty"];
     String d = widget.selectedDuty;
     if (d == 'Service Attendance Status') {
-      base.addAll(["attendance_pre", "attendance_realtime", "attendance_makeup", "situation_notes", "strategy_notes"]);
+      // Place: where the member offered service (evidence)
+      base.addAll(["attendance_pre", "attendance_realtime", "attendance_makeup", "place", "situation_notes", "strategy_notes"]);
     } else if (d == 'Cell Group Service') {
       base.addAll(["status_detail", "reason_notes", "solution_notes"]);
     } else if (d == 'Offering Status') {
@@ -208,6 +252,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     } else if (d == 'Workers Daily Participation') {
       base.addAll(["mon_part", "tue_part", "wed_part", "thu_part", "fri_part"]);
     }
+    base.addAll(["stamp_entered", "stamp_approved"]);
     return base;
   }
 

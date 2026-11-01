@@ -120,6 +120,12 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   String? _error;
   String _filter = 'all'; // all | unread | dm | group | archived
   String _search = '';
+  // live search (as you type): people across the system and words in messages
+  Timer? _searchDebounce;
+  int _searchSeq = 0;
+  bool _searchBusy = false;
+  List<ChatPerson> _foundPeople = [];
+  List<Map<String, dynamic>> _foundMessages = [];
   String? _openRoomId;
   bool _showInfo = true;
   String _myName = '';
@@ -169,6 +175,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   @override
   void dispose() {
     _refreshDebounce?.cancel();
+    _searchDebounce?.cancel();
     _touchTimer?.cancel();
     ChatService.touch();
     final ch = _listChannel;
@@ -241,6 +248,120 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     _ChatPrefs.apply(p);
     _track();
     if (mounted) setState(() {});
+  }
+
+  void _onSearch(String v) {
+    setState(() => _search = v);
+    _searchDebounce?.cancel();
+    final q = v.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _foundPeople = [];
+        _foundMessages = [];
+        _searchBusy = false;
+      });
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () => _runSearch(q));
+  }
+
+  Future<void> _runSearch(String q) async {
+    final seq = ++_searchSeq;
+    setState(() => _searchBusy = true);
+    List<ChatPerson> people = [];
+    List<Map<String, dynamic>> msgs = [];
+    try {
+      people = await ChatService.contacts(q);
+    } catch (_) {}
+    if (q.length >= 2) {
+      try {
+        final r = await _db.rpc('chat_search_messages', params: {'p_q': q, 'p_limit': 40});
+        msgs = List<Map<String, dynamic>>.from((r as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      } catch (_) {
+        // before 17_round16.sql only chats and people are searched
+      }
+    }
+    if (!mounted || seq != _searchSeq) return; // a newer search is running
+    setState(() {
+      _foundPeople = people;
+      _foundMessages = msgs;
+      _searchBusy = false;
+    });
+  }
+
+  /// Telegram-style results: chats, people (anyone you can message), messages.
+  Widget _searchResults(List<ChatRoom> rooms) {
+    final q = _search.trim();
+    final roomById = {for (final r in _rooms) r.id: r};
+    // people who already have a personal chat are shown under Chats
+    final shownDm = {for (final r in rooms) if (!r.isGroup && r.otherUserId != null) r.otherUserId!};
+    final people = _foundPeople.where((p) => !shownDm.contains(p.id)).toList();
+    Widget head(String t) => Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: Text(t, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w900, color: AppPalette.fg(_kPurple), letterSpacing: 0.8)),
+        );
+    TextSpan hl(String text) {
+      final lower = text.toLowerCase(), ql = q.toLowerCase();
+      final i = ql.isEmpty ? -1 : lower.indexOf(ql);
+      if (i < 0 || i + q.length > text.length) return TextSpan(text: text);
+      final start = math.max(0, i - 30);
+      return TextSpan(children: [
+        TextSpan(text: (start > 0 ? '…' : '') + text.substring(start, i)),
+        TextSpan(text: text.substring(i, i + q.length), style: TextStyle(fontWeight: FontWeight.bold, color: AppPalette.fg(_kBlue))),
+        TextSpan(text: text.substring(i + q.length)),
+      ]);
+    }
+    return ListView(padding: const EdgeInsets.fromLTRB(8, 0, 8, 12), children: [
+      if (_searchBusy) const LinearProgressIndicator(minHeight: 2),
+      if (rooms.isNotEmpty) ...[head("CHATS"), for (final r in rooms) _roomTile(r)],
+      if (people.isNotEmpty) ...[
+        head("PEOPLE"),
+        for (final p in people.take(30))
+          ListTile(
+            dense: true,
+            leading: _Avatar(name: p.name, url: p.avatarUrl, size: 38),
+            title: Text(p.nickname?.isNotEmpty == true ? p.nickname! : p.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13.5)),
+            subtitle: Text(
+              [if ((p.username ?? '').isNotEmpty) '@${p.username}', p.location, p.department].where((x) => (x ?? '').isNotEmpty).join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11.5),
+            ),
+            onTap: () => _startWith(p),
+          ),
+      ],
+      if (_foundMessages.isNotEmpty) ...[
+        head("MESSAGES"),
+        for (final m in _foundMessages)
+          ListTile(
+            dense: true,
+            leading: _Avatar(name: (roomById[m['room_id']]?.name ?? (m['sender_name'] ?? '?')).toString(), url: roomById[m['room_id']]?.avatarUrl, size: 38),
+            title: Row(children: [
+              Expanded(
+                child: Text((roomById[m['room_id']]?.name ?? 'Chat').toString(), maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
+              Text(_chatTime(DateTime.tryParse((m['created_at'] ?? '').toString())?.toLocal()), style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.grey.shade600))),
+            ]),
+            subtitle: Text.rich(
+              TextSpan(children: [
+                TextSpan(text: "${m['sender_id'] == ChatService.myId ? 'You' : (m['sender_name'] ?? '')}: "),
+                hl((m['content'] ?? '').toString()),
+              ]),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade800)),
+            ),
+            onTap: () => _open(m['room_id'].toString()),
+          ),
+      ],
+      if (!_searchBusy && rooms.isEmpty && people.isEmpty && _foundMessages.isEmpty)
+        Padding(
+          padding: const EdgeInsets.all(28),
+          child: Center(child: Text("Nothing found for \"$q\"", style: TextStyle(color: AppPalette.fg(Colors.grey.shade600)))),
+        ),
+    ]);
   }
 
   Future<void> _startWith(ChatPerson p) async {
@@ -614,9 +735,9 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
           child: TextField(
-            onChanged: (v) => setState(() => _search = v),
+            onChanged: _onSearch,
             decoration: InputDecoration(
-              hintText: tr("Search chats"),
+              hintText: tr("Search chats, people and messages"),
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: AppPalette.bg(Colors.white),
@@ -649,6 +770,8 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
                         ]),
                       ),
                     )
+                  : _search.trim().isNotEmpty
+                      ? _searchResults(rooms)
                   : rooms.isEmpty
                       ? Center(
                           child: Padding(

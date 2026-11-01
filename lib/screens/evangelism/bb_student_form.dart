@@ -47,7 +47,7 @@ class _BbStudentFormState extends State<BbStudentForm> {
     final id = _c('${who}_scj_id').text.trim();
     if (id.isEmpty) return;
     try {
-      final m = await _db.from('members').select('english_name, location, sub_location, department, team, cell_group').eq('scj_id', id).limit(1).maybeSingle();
+      final m = await _db.from('members').select('english_name, korean_name, location, sub_location, department, team, cell_group').eq('scj_id', id).limit(1).maybeSingle();
       if (m == null) {
         setState(() => _lookupNote = "No member with SCJ ID $id. Type the details by hand.");
         return;
@@ -55,6 +55,7 @@ class _BbStudentFormState extends State<BbStudentForm> {
       setState(() {
         _lookupNote = null;
         _c('${who}_name').text = (m['english_name'] ?? '').toString();
+        if ((m['korean_name'] ?? '').toString().trim().isNotEmpty) _c('${who}_korean_name').text = m['korean_name'].toString();
         final keys = who == 'guide' ? _guideUnit : _teacherUnit;
         final vals = [m['location'], m['sub_location'], m['department'], m['team'], m['cell_group']];
         for (int i = 0; i < keys.length; i++) {
@@ -159,7 +160,8 @@ class _BbStudentFormState extends State<BbStudentForm> {
             controller: _c('${who}_scj_id'),
             readOnly: widget.readOnly,
             decoration: InputDecoration(
-              labelText: tr("SCJ ID"),
+              labelText: tr("Scj_id"),
+              helperText: tr("The rest is filled from the members list"),
               isDense: true,
               border: const OutlineInputBorder(),
               suffixIcon: widget.readOnly ? null : IconButton(tooltip: tr("Fill from member list"), icon: const Icon(Icons.search_rounded, size: 18), onPressed: () => _lookup(who)),
@@ -167,13 +169,14 @@ class _BbStudentFormState extends State<BbStudentForm> {
             onSubmitted: (_) => _lookup(who),
           ),
         ),
-        _text('${who}_name', "Name"),
-        _text('${who}_korean_name', "Korean name"),
+        // same order as the BB File columns and the members table
         _text('${who}_location', "Location", width: 150),
-        _text('${who}_sub_location', "Sub-location", width: 150),
+        _text('${who}_sub_location', "Sub Location", width: 150),
         _text('${who}_dept', "Department", width: 150),
         _text('${who}_team', "Team", width: 110),
-        _text('${who}_cell', "Cell", width: 110),
+        _text('${who}_cell', "Cell Group", width: 110),
+        _text('${who}_name', "Name"),
+        _text('${who}_korean_name', "Korean name"),
       ];
 
   @override

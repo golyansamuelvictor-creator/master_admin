@@ -7,6 +7,8 @@ import 'package:master_admin/core/i18n.dart';
 import '../widgets/language_screens.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/demo_mode.dart';
+import '../main.dart' show kLiveSupabaseUrl, kLiveSupabaseKey;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -249,6 +251,84 @@ class _AuthScreenState extends State<AuthScreen> {
   // CHECK APPROVAL STATUS IN PROFILES
   // ==========================================
   Future<_Approval>? _verifyInFlight;
+  /// The unfinished-registration question is asked once per sign-in.
+  String? _unfinishedAskedFor;
+
+  /// An account was started but never finished (common with Google sign-in).
+  /// Unfinished accounts are not sent for approval; the person resumes it, or
+  /// deletes it before starting a new one.
+  Future<void> _askAboutUnfinished(User user, {required bool hasRow}) async {
+    if (_unfinishedAskedFor == user.id || !mounted) return;
+    _unfinishedAskedFor = user.id;
+    final choice = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text("Unfinished registration", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(pPurple))),
+        content: Text(
+          "The account for ${user.email ?? user.phone ?? 'this sign-in'} was started but its registration was not completed, "
+          "so it has not been sent for approval.\n\nWould you like to finish it now, delete it, or delete it and create a fresh account?",
+          style: GoogleFonts.merriweather(fontSize: 13, height: 1.5),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, 'delete'), child: Text("Delete it", style: TextStyle(color: AppPalette.fg(Colors.red.shade700)))),
+          OutlinedButton(onPressed: () => Navigator.pop(ctx, 'fresh'), child: const Text("Delete & start fresh")),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, 'resume'), child: const Text("Resume")),
+        ],
+      ),
+    );
+    if (choice == 'delete' || choice == 'fresh') await _discardUnfinished(fresh: choice == 'fresh', confirm: false);
+  }
+
+  Future<void> _discardUnfinished({bool fresh = false, bool confirm = true}) async {
+    if (confirm) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Delete this unfinished account?"),
+          content: const Text("The details you entered so far and this sign-in will be removed. You can register again afterwards."),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Delete"),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      await _supabase.rpc('discard_my_incomplete_registration');
+      // the sign-in no longer exists, so the server may refuse the sign-out
+      try {
+        await _handleSignOut();
+      } catch (e1) {
+        try {
+          await _supabase.auth.signOut(scope: SignOutScope.local);
+        } catch (e2) {
+          debugPrint("sign-out after delete: $e2");
+        }
+        if (mounted) setState(() => _isGooglePendingVerification = false);
+      }
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        if (fresh) _isSignUp = true;
+      });
+      _showMsg(fresh
+          ? "The unfinished account was deleted. You can now create a fresh account."
+          : "The unfinished account was deleted.", isError: false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showMsg("Couldn't delete it. ${e is PostgrestException ? e.message : 'Check your connection and try again.'}", isError: true);
+    }
+  }
 
   Future<_Approval> _verifyUserApproval(User user) {
     return _verifyInFlight ??= _runApprovalCheck(user).whenComplete(() => _verifyInFlight = null);
@@ -271,8 +351,14 @@ class _AuthScreenState extends State<AuthScreen> {
           scjId.toLowerCase() != 'null' &&
           scjId.toLowerCase() != 'none';
 
+      // An SCJ ID but no role: the registration form was never submitted
+      final bool unfinished = res != null &&
+          !(res['is_approved'] == true || res['approval_status'] == 'approved') &&
+          res['approval_status'] != 'rejected' &&
+          (!hasValidScjId || (res['role'] ?? '').toString().trim().isEmpty);
+
       // 1. If SCJ ID is null, empty, or missing -> MUST present the Member Verification Card!
-      if (res == null || !hasValidScjId) {
+      if (res == null || !hasValidScjId || unfinished) {
         if (mounted) {
           setState(() {
             _isLoading = false;
@@ -284,6 +370,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   (user.userMetadata?['full_name'] ?? user.userMetadata?['name'] ?? '').toString();
             }
           });
+          // ask once whether to resume, delete, or start fresh
+          WidgetsBinding.instance.addPostFrameCallback((_) => _askAboutUnfinished(user, hasRow: res != null));
         }
         return _Approval.needsVerification;
       }
@@ -404,9 +492,10 @@ class _AuthScreenState extends State<AuthScreen> {
           .limit(1);
 
       if (existing.isNotEmpty && existing.first['id'] != _googleUser?.id) {
+        _reportDuplicate(scjId, _googleUser?.email);
         if (mounted) {
           setState(() => _isLoading = false);
-          _showMsg("An account with this SCJ ID already exists in the system.", isError: true);
+          _showMsg("An account with this SCJ ID already exists. One person can only have one account; please sign in with it. Your Location Secretary has been informed.", isError: true);
         }
         return;
       }
@@ -556,6 +645,11 @@ class _AuthScreenState extends State<AuthScreen> {
                 (existingProfile['is_approved'] == true ? 'approved' : 'pending'))
             .toString()
             .toLowerCase();
+        // One account per SCJ ID: a second account is refused, whatever the
+        // email or phone (only a rejected account doesn't count)
+        if (status != 'rejected') {
+          _reportDuplicate(scjId, _requestAccessMethod == 'email' ? email : _fullPhone);
+        }
         if (status == 'approved') {
           _showMsg("An account with this SCJ ID or contact already exists. Please sign in.", isError: true);
           if (mounted) {
@@ -594,6 +688,12 @@ class _AuthScreenState extends State<AuthScreen> {
         _showMsg("Verification failed. ${_lookupErrorText(e)}", isError: true);
       }
     }
+  }
+
+  /// Tells the admins and the Location Secretary that someone tried to make a
+  /// second account with an SCJ ID that already has one.
+  void _reportDuplicate(String scjId, String? contact) {
+    _supabase.rpc('report_duplicate_scj', params: {'p_scj': scjId, 'p_contact': contact}).then((_) {}, onError: (_) {});
   }
 
   void _showRejectionDialog([String? detail]) {
@@ -910,12 +1010,50 @@ class _AuthScreenState extends State<AuthScreen> {
                                 _divider(),
                                 const SizedBox(height: 20),
                                 _googleBtn(),
-                              ]
+                              ],
+                              // ICT demo: the same app on the demo project
+                              // (generated data only), when it is set up
+                              if (!_isSignUp) _demoEntry(),
                             ],
                           ),
                         ),
         ),
       ),
+    );
+  }
+
+  Future<(String, String)?>? _demoCfg;
+
+  Widget _demoEntry() {
+    _demoCfg ??= DemoMode.active ? Future.value(null) : DemoMode.liveConfig();
+    return FutureBuilder<(String, String)?>(
+      future: _demoCfg,
+      builder: (context, snap) {
+        final cfg = snap.data;
+        if (cfg == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 14),
+          child: TextButton.icon(
+            icon: const Icon(Icons.science_outlined, size: 18),
+            label: Text("Open the demo system (ICT)", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text("Demo system"),
+                  content: const Text("The demo has only generated people and reports, never the church's records. "
+                      "Sign in there with your demo account. A red band shows you are in the demo; tap Exit demo to come back."),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+                    ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Open demo")),
+                  ],
+                ),
+              );
+              if (ok == true) await DemoMode.enter(cfg.$1, cfg.$2, liveUrl: kLiveSupabaseUrl, liveKey: kLiveSupabaseKey);
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -985,6 +1123,14 @@ class _AuthScreenState extends State<AuthScreen> {
           const SizedBox(height: 20),
           _mainBtn('Verify & Continue', _handleGoogleVerificationSubmit),
           const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => _discardUnfinished(fresh: true),
+            child: Text(
+              "Delete this unfinished account and start again",
+              textAlign: TextAlign.center,
+              style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.red.shade700)),
+            ),
+          ),
           TextButton(
             onPressed: _handleSignOut,
             child: Text(

@@ -6,6 +6,7 @@ import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'place_picker.dart';
 
 class ServiceAttendanceEntry extends StatefulWidget {
   final List<dynamic> members;
@@ -617,8 +618,34 @@ class _ServiceAttendanceEntryState extends State<ServiceAttendanceEntry> {
         child: Text(t, softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: c == 5 ? FontWeight.bold : FontWeight.normal)),
       );
     }
-    // Dropdowns: Pre, Actual, Makeup, Place
-    else if (c >= 7 && c <= 10) {
+    // Place: choose the kind of place, then which one (location, sub-location,
+    // home cell …); saved as text such as "Sub Location: Kyebando"
+    else if (c == 10) {
+      final val = _getCellValue(m, c);
+      content = InkWell(
+        onTap: () async {
+          _selectCell(r, c);
+          final v = await PlacePicker.pick(context, options: widget.optionsPlace, member: m, current: val);
+          if (v == null || !mounted) return;
+          widget.onChanged();
+          setState(() => _setEditableValue(mid, c, v));
+        },
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(children: [
+            Expanded(
+              child: Text(val.isEmpty ? '—' : val,
+                  textAlign: TextAlign.center, softWrap: false, overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(val.isEmpty ? Colors.grey : Colors.black87), fontWeight: FontWeight.w600)),
+            ),
+            Icon(Icons.arrow_drop_down_rounded, size: 16, color: AppPalette.fg(Colors.grey.shade600)),
+          ]),
+        ),
+      );
+    }
+    // Dropdowns: Pre, Actual, Makeup
+    else if (c >= 7 && c <= 9) {
       final List<String> opts = (c == 7)
           ? widget.optionsPre
           : (c == 8)

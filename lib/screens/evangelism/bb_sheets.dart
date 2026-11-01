@@ -116,7 +116,7 @@ List<_Col> _bbFileCols(Map<String, int> attended, BbSettings cfg) => [
       _Col('B', _gStudent, 'Auto', 'Center Place', 'center_place', _Kind.auto),
       _Col('C', _gStudent, 'Auto', 'Month', 'month', _Kind.auto, width: 90),
       _Col('D', _gStudent, 'Auto', 'No.', 'student_no', _Kind.auto, width: 50),
-      _Col('E', _gStudent, '부서', 'Dept', null, _Kind.auto, width: 90, auto: bbDeptGroup),
+      _Col('E', _gStudent, '부서', "Student's Dept", null, _Kind.auto, width: 90, auto: bbDeptGroup),
       _Col('F', _gStudent, '이름(풀네임)', '모국어 English Name', 'student_name', _Kind.text, width: 160),
       _Col('G', _gStudent, '한국어발음', 'Korean', 'korean_name', _Kind.text),
       _Col('H', _gStudent, '신규/리피터', 'New/Repeater', 'repeater', _Kind.pick, options: (c) => c.options['repeater'] ?? const ['New', 'Repeater']),
@@ -137,32 +137,36 @@ List<_Col> _bbFileCols(Map<String, int> attended, BbSettings cfg) => [
         return u.isEmpty ? c : '$c ($u)';
       }),
       _Col('U', _gStudent, '전도사', 'Evangelist', 'evangelist_name', _Kind.text),
-      _Col('V', _gGuide, '지역', 'Jiyeok', 'guide_location', _Kind.text),
-      _Col('W', _gGuide, '팀', 'Team', 'guide_team', _Kind.text, width: 80),
-      _Col('X', _gGuide, '구역', 'Cell', 'guide_cell', _Kind.text, width: 80),
-      _Col('Y', _gGuide, '부서', 'Dept', 'guide_dept', _Kind.text, width: 90),
-      _Col('Z', _gGuide, '이름', 'English Name', 'guide_name', _Kind.auto, width: 140),
-      _Col('AA', _gGuide, '한국어발음', 'Korean Name', 'guide_korean_name', _Kind.text),
-      _Col('AB', _gGuide, '고유번호', 'SCJ ID Number', 'guide_scj_id', _Kind.auto, width: 120),
-      _Col('AC', _gTeacher, '지역', 'Jiyeok', 'teacher_location', _Kind.text),
-      _Col('AD', _gTeacher, '팀', 'Team', 'teacher_team', _Kind.text, width: 80),
-      _Col('AE', _gTeacher, '구역', 'Cell', 'teacher_cell', _Kind.text, width: 80),
-      _Col('AF', _gTeacher, '부서', 'Dept', 'teacher_dept', _Kind.text, width: 90),
-      _Col('AG', _gTeacher, '이름', 'English Name', 'teacher_name', _Kind.auto, width: 140),
-      _Col('AH', _gTeacher, '한국어발음', 'Korean Name', 'teacher_korean_name', _Kind.text),
-      _Col('AI', _gTeacher, '고유번호', 'SCJ ID - Number', 'teacher_scj_id', _Kind.auto, width: 120),
-      _Col('AJ', '', 'Interview Status', 'Interview Status', null, _Kind.auto, width: 90, auto: _interview),
-      _Col('AK', '', 'Level', 'Level', 'student_level', _Kind.text, width: 80),
-      _Col('AL', _gInfo, '국적-Nationality', 'Nationality', 'nationality', _Kind.text),
-      _Col('AM', _gInfo, '언어-Language', '주언어 Main', 'language_main', _Kind.text),
-      _Col('AN', _gInfo, '언어-Language', '가능언어 Secondary', 'language_secondary', _Kind.text),
-      _Col('AO', _gInfo, '언어-Language', '수준 Sec. Level', 'language_level', _Kind.text, width: 90),
-      _Col('AP', _gInfo, '이메일-Email', 'Email', 'email', _Kind.text, width: 160),
-      _Col('AQ', _gInfo, '거주지-Address(Current)', "거주'국가'명 Country", 'country', _Kind.text),
-      _Col('AR', _gInfo, '거주지-Address(Current)', "거주'도시'명 Municipality", 'city', _Kind.text),
-      _Col('AS', _gInfo, '거주지-Address(Current)', '원어/현거주지 Street/Village', 'street', _Kind.text, width: 150),
-      _Col('AT', _gInfo, '원어/모국거주지', 'Homecountry (foreigner)', 'homecountry', _Kind.text),
-      _Col('AU', _gInfo, 'Maritial Status', 'Maritial Status', 'marital_status', _Kind.pick, options: (c) => c.options['marital_status'] ?? const ['Married', 'Single', 'Single Parent']),
+      // Center guide / BB teacher: type the Scj_id; location … cell group,
+      // name and Korean name are fetched from the members table (same names as there)
+      _Col('V', _gGuide, '지역', 'Location', 'guide_location', _Kind.auto),
+      _Col('W', _gGuide, 'Sub Location', 'Sub Location', 'guide_sub_location', _Kind.auto),
+      _Col('X', _gGuide, '부서', 'Department', 'guide_dept', _Kind.auto, width: 100),
+      _Col('Y', _gGuide, '팀', 'Team', 'guide_team', _Kind.auto, width: 80),
+      _Col('Z', _gGuide, '구역', 'Cell Group', 'guide_cell', _Kind.auto, width: 90),
+      _Col('AA', _gGuide, '이름', 'English Name', 'guide_name', _Kind.auto, width: 140),
+      _Col('AB', _gGuide, '한국어발음', 'Korean Name', 'guide_korean_name', _Kind.auto),
+      _Col('AC', _gGuide, '고유번호', 'Scj_id', 'guide_scj_id', _Kind.text, width: 120),
+      _Col('AD', _gTeacher, '지역', 'Location', 'teacher_location', _Kind.auto),
+      _Col('AE', _gTeacher, 'Sub Location', 'Sub Location', 'teacher_sub_location', _Kind.auto),
+      _Col('AF', _gTeacher, '부서', 'Department', 'teacher_dept', _Kind.auto, width: 100),
+      _Col('AG', _gTeacher, '팀', 'Team', 'teacher_team', _Kind.auto, width: 80),
+      _Col('AH', _gTeacher, '구역', 'Cell Group', 'teacher_cell', _Kind.auto, width: 90),
+      _Col('AI', _gTeacher, '이름', 'English Name', 'teacher_name', _Kind.auto, width: 140),
+      _Col('AJ', _gTeacher, '한국어발음', 'Korean Name', 'teacher_korean_name', _Kind.auto),
+      _Col('AK', _gTeacher, '고유번호', 'Scj_id', 'teacher_scj_id', _Kind.text, width: 120),
+      _Col('AL', '', 'Interview Status', 'Interview Status', null, _Kind.auto, width: 90, auto: _interview),
+      _Col('AM', '', 'Level', 'Level', 'student_level', _Kind.text, width: 80),
+      _Col('AN', _gInfo, '국적-Nationality', 'Nationality', 'nationality', _Kind.text),
+      _Col('AO', _gInfo, '언어-Language', '주언어 Main', 'language_main', _Kind.text),
+      _Col('AP', _gInfo, '언어-Language', '가능언어 Secondary', 'language_secondary', _Kind.text),
+      _Col('AQ', _gInfo, '언어-Language', '수준 Sec. Level', 'language_level', _Kind.text, width: 90),
+      _Col('AR', _gInfo, '이메일-Email', 'Email', 'email', _Kind.text, width: 160),
+      _Col('AS', _gInfo, '거주지-Address(Current)', "거주'국가'명 Country", 'country', _Kind.text),
+      _Col('AT', _gInfo, '거주지-Address(Current)', "거주'도시'명 Municipality", 'city', _Kind.text),
+      _Col('AU', _gInfo, '거주지-Address(Current)', '원어/현거주지 Street/Village', 'street', _Kind.text, width: 150),
+      _Col('AV', _gInfo, '원어/모국거주지', 'Homecountry (foreigner)', 'homecountry', _Kind.text),
+      _Col('AW', _gInfo, 'Maritial Status', 'Maritial Status', 'marital_status', _Kind.pick, options: (c) => c.options['marital_status'] ?? const ['Married', 'Single', 'Single Parent']),
     ];
 
 List<_Col> _attendanceCols(Map<String, int> attended) => [
@@ -175,10 +179,10 @@ List<_Col> _attendanceCols(Map<String, int> attended) => [
       _Col('G', 'BY', 'Evangelism Stage', 'Evangelism Stage', 'level_status', _Kind.pick, width: 130, options: (c) => c.stageNames),
       _Col('H', 'BY', 'Status', 'Status', 'bb_status', _Kind.pick, width: 95, options: (c) => c.options['bb_status'] ?? const ['Active', 'Not Active', 'Dropped']),
       _Col('I', 'BY', 'Guide Name', 'Guide Name', 'guide_name', _Kind.text, width: 140),
-      _Col('J', 'BY', 'SCJ ID Number', 'SCJ ID Number', 'guide_scj_id', _Kind.text, width: 120),
+      _Col('J', 'BY', 'Scj_id', 'Scj_id', 'guide_scj_id', _Kind.text, width: 120),
       _Col('K', 'BY', 'Guided by Saint/Student', 'Guided by Saint/Student', 'guided_by_type', _Kind.pick, width: 100, options: (c) => c.options['guided_by_type'] ?? const ['Saint', 'Student']),
       _Col('L', 'BY', 'Teacher Name', 'Teacher Name', 'teacher_name', _Kind.text, width: 140),
-      _Col('M', 'BY', 'SCJ ID Number', 'SCJ ID Number', 'teacher_scj_id', _Kind.text, width: 120),
+      _Col('M', 'BY', 'Scj_id', 'Scj_id', 'teacher_scj_id', _Kind.text, width: 120),
     ];
 
 String _letters(int n) {
@@ -196,7 +200,7 @@ String _letters(int n) {
 // ---------------------------------------------------------------------------
 // The sheet
 
-/// BB File sheet (columns A–AU) or Attendance sheet (A–M + one column per
+/// BB File sheet (columns A–AW) or Attendance sheet (A–M + one column per
 /// study day, Mon … Sun, of the chosen week, marked Present / Absent; each
 /// mark is saved with its study day and date), with the Excel sheet's three
 /// header rows.
@@ -294,11 +298,12 @@ class _BbSheetState extends State<BbSheet> {
     final id = (_dirty[s['id'].toString()]?['${who}_scj_id'] ?? s['${who}_scj_id'] ?? '').toString().trim();
     if (id.isEmpty) return;
     try {
-      final m = await _db.from('members').select('english_name, location, sub_location, department, team, cell_group').eq('scj_id', id).limit(1).maybeSingle();
+      final m = await _db.from('members').select('english_name, korean_name, location, sub_location, department, team, cell_group').eq('scj_id', id).limit(1).maybeSingle();
       if (m == null) return;
       setState(() {
         final d = _dirty.putIfAbsent(s['id'].toString(), () => {});
         d['${who}_name'] = m['english_name'];
+        if ((m['korean_name'] ?? '').toString().trim().isNotEmpty) d['${who}_korean_name'] = m['korean_name'];
         d['${who}_location'] = m['location'];
         d['${who}_sub_location'] = m['sub_location'];
         d['${who}_dept'] = m['department'];

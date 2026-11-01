@@ -10,6 +10,7 @@ import '../widgets/app_menus.dart';
 import '../core/compilation_rules.dart';
 import '../core/group_scope.dart';
 import '../services/evidence_service.dart';
+import 'reports_submitted_view.dart';
 import 'package:master_admin/core/offering_categories.dart';
 
 class ApprovalCockpit extends StatefulWidget {
@@ -56,6 +57,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
   Map<String, String> _unit = {}; // cleaned location / sub_location / department / team
 
   List<Map<String, dynamic>> _pendingBatches = [];
+  final Map<String, String> _stampNames = {};
   List<Map<String, dynamic>> _approvedBatches = [];
 
   // Currently inspected report batch
@@ -510,6 +512,10 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           'correction_note': first['correction_note'],
           'total_members': batchLogs.length,
           'logs': batchLogs,
+          // stamps: who entered and who approved this report
+          'entered_by': first['entered_by'] ?? first['leader_id'],
+          'approved_by': batchLogs.map((x) => x['approved_by']).firstWhere((x) => x != null, orElse: () => null),
+          'approved_stamp_at': DateTime.tryParse((batchLogs.map((x) => x['approved_at']).firstWhere((x) => x != null, orElse: () => null) ?? '').toString()),
         };
 
         if (state == 'awaiting') {
@@ -532,6 +538,22 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         final db = b['approved_at'] as DateTime? ?? DateTime(2020);
         return db.compareTo(da);
       });
+
+      // names for the stamps
+      final ids = {
+        for (final b in [...pending, ...approved])
+          for (final k in const ['entered_by', 'approved_by'])
+            if (b[k] != null) b[k].toString(),
+      };
+      if (ids.isNotEmpty) {
+        try {
+          final r = await _supabase.rpc('profile_names', params: {'p_ids': ids.toList()});
+          for (final x in (r as List)) {
+            final role = (x['role'] ?? '').toString();
+            _stampNames[x['id'].toString()] = "${x['full_name'] ?? ''}${role.isEmpty ? '' : ' ($role)'}";
+          }
+        } catch (_) {} // before 18_round17.sql
+      }
 
       if (mounted) {
         setState(() {
@@ -695,7 +717,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
         }),
       },
       child: Focus(autofocus: true, child: DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: AppPalette.bg(Theme.of(context).scaffoldBackgroundColor),
         appBar: AppBar(
@@ -723,7 +745,20 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                   indicatorColor: _accent,
                   indicatorWeight: 3,
                   labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.center,
                   tabs: [
+                    // who reported and who didn't, unit by unit (new)
+                    const Tab(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.fact_check_rounded, size: 17),
+                          SizedBox(width: 8),
+                          Text("Reports Submitted"),
+                        ],
+                      ),
+                    ),
                     Tab(
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -761,6 +796,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                           Expanded(
                             child: TabBarView(
                               children: [
+                                ReportsSubmittedView(table: _getTableName()),
                                 _buildReportsList(_pendingBatches, isPendingTab: true),
                                 _buildReportsList(_approvedBatches, isPendingTab: false),
                               ],
@@ -928,6 +964,27 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         Flexible(child: Text("Date of Submission: ${_formatDate(b['submitted_at'])}",
                             style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600)))),
                       ],
+                    ),
+                    // stamps: who filled it in, who approved it
+                    if (_stampNames[b['entered_by']?.toString()] != null || _stampNames[b['approved_by']?.toString()] != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(children: [
+                        Icon(Icons.approval_rounded, size: 15, color: AppPalette.fg(Colors.indigo)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            [
+                              if (_stampNames[b['entered_by']?.toString()] != null) "Entered by ${_stampNames[b['entered_by'].toString()]}",
+                              if (_stampNames[b['approved_by']?.toString()] != null)
+                                "Approved by ${_stampNames[b['approved_by'].toString()]}${b['approved_stamp_at'] == null ? '' : ' · ${_formatDate(b['approved_stamp_at'])}'}",
+                            ].join('  ·  '),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppPalette.fg(Colors.indigo.shade700)),
+                          ),
+                        ),
+                      ]),
                     ),
                     if (isFinal || isForwarded) ...[
                       const SizedBox(height: 4),

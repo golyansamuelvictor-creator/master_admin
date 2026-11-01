@@ -1,4 +1,4 @@
-// ignore_for_file: curly_braces_in_flow_control_structures, unused_element
+// ignore_for_file: unused_local_variable, curly_braces_in_flow_control_structures, unused_element
 import 'dart:math' as math;
 import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
@@ -66,6 +66,8 @@ class EvangelismResultsModule extends StatefulWidget {
   /// The compilation period (Results By Units compares it with the goals).
   final DateTime? periodStart;
   final DateTime? periodEnd;
+  /// Results By Units: location, sub-location, department, team being viewed.
+  final List<String>? unitPath;
 
   const EvangelismResultsModule({
     super.key,
@@ -94,7 +96,8 @@ class EvangelismResultsModule extends StatefulWidget {
     this.userLoc = '',
     this.userTeam = '',
     this.periodStart,
-    this.periodEnd, required List<String> unitPath,
+    this.periodEnd,
+    this.unitPath,
   });
 
   @override
@@ -871,7 +874,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
   Widget build(BuildContext context) {
     final filteredData = _getFilteredBbData();
     final List<_EvangelismResultUnitStat> unitStats = _calculateUnitStats(filteredData);
-    _calculateTotalStat(unitStats);
+    final _EvangelismResultUnitStat totalStat = _calculateTotalStat(unitStats);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -896,10 +899,10 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
             to: widget.periodEnd ?? DateTime.now(),
             timePeriod: widget.timePeriod,
             level: widget.level,
-            location: widget.selectedLocation,
-            subLocation: widget.selectedSubLocation,
-            department: widget.selectedDepartment,
-            team: widget.selectedTeam,
+            location: widget.unitPath?[0] ?? widget.selectedLocation,
+            subLocation: widget.unitPath?[1] ?? widget.selectedSubLocation,
+            department: widget.unitPath?[2] ?? widget.selectedDepartment,
+            team: widget.unitPath?[3] ?? widget.selectedTeam,
             section: (title, content, {onExport}) => _section(title, content, context, onPdf: onExport),
           ),
         ],
