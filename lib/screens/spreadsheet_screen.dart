@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:csv/csv.dart';
 import 'package:excel/excel.dart' as xl;
+import '../core/xlsx_safe.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart' hide Text;
@@ -895,7 +896,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
         final raw = [for (final row in rows) [for (final v in row) v.toString()]];
         return [_Sheet.filled(f.name.replaceAll(RegExp(r'\.csv$', caseSensitive: false), ''), raw)];
       }
-      final book = xl.Excel.decodeBytes(f.bytes!);
+      final book = decodeExcelSafe(f.bytes!);
       final out = <_Sheet>[];
       for (final name in book.tables.keys) {
         final t = book.tables[name]!;

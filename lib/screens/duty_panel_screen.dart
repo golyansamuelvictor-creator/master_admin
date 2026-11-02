@@ -74,7 +74,7 @@ class _DutyPanelScreenState extends State<DutyPanelScreen> {
       // cascade: Evangelism Department → locations → … → cell groups); the
       // one-by-one goals list stays for the other duties
       ("Goals", Icons.flag_rounded,
-          _isEvangelism
+          _isEvangelism || _duty.startsWith('Service Attendance')
               ? TargetSetterScreen(initialDuty: _duty, embedded: true, userLoc: '', userSub: '', userDept: '')
               : GoalsView(duty: _duty, canManage: widget.canManage)),
       if (_isEvangelism && widget.canManage) ...[
@@ -272,55 +272,144 @@ class _PoliciesViewState extends State<PoliciesView> {
     for (final p in rows) {
       groups.putIfAbsent("${kPolicyLevels[p['level']] ?? p['level']} · ${p['category']}", () => []).add(p);
     }
+    final shown = _rows.where((p) => p['is_active'] != false).length;
+    final cats = _rows.map((p) => p['category']).toSet().length;
     return ListView(padding: AppSizes.page, children: [
+      // header: what this page holds, at a glance
+      Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [AppPalette.solid(_kPurple), AppPalette.solid(const Color(0xFF7B4FC0))], begin: Alignment.topLeft, end: Alignment.bottomRight),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: _kPurple.withValues(alpha: 0.22), blurRadius: 12, offset: const Offset(0, 5))],
+        ),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.gavel_rounded, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text("${widget.duty} policies & standards", maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14.5, color: Colors.white)),
+              const SizedBox(height: 3),
+              Text("$shown in force · $cats categor${cats == 1 ? 'y' : 'ies'}", style: const TextStyle(fontSize: 11.5, color: Colors.white70)),
+            ]),
+          ),
+          if (widget.canManage)
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: _kPurple, visualDensity: VisualDensity.compact),
+              onPressed: () => _edit(),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text("Add policy"),
+            ),
+        ]),
+      ),
+      const SizedBox(height: 12),
       Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 10, runSpacing: 8, children: [
         SizedBox(
-          width: 260,
+          width: 280,
           child: TextField(
-            decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search policies"), isDense: true, border: const OutlineInputBorder()),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search, size: 18),
+              hintText: tr("Search policies"),
+              isDense: true,
+              filled: true,
+              fillColor: AppPalette.bg(Colors.white),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: AppPalette.line(Colors.black12))),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: AppPalette.line(Colors.black12))),
+            ),
             onChanged: (v) => setState(() => _search = v),
           ),
         ),
-        DropdownButton<String>(
-          value: _level,
-          items: [
-            const DropdownMenuItem(value: 'any', child: Text("All levels")),
-            for (final e in kPolicyLevels.entries.where((e) => e.key != 'all')) DropdownMenuItem(value: e.key, child: Text(e.value)),
-          ],
-          onChanged: (v) => setState(() => _level = v ?? 'any'),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(24), border: Border.all(color: AppPalette.line(Colors.black12))),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _level,
+              borderRadius: BorderRadius.circular(12),
+              icon: const Icon(Icons.filter_list_rounded, size: 18),
+              items: [
+                const DropdownMenuItem(value: 'any', child: Text("All levels")),
+                for (final e in kPolicyLevels.entries.where((e) => e.key != 'all')) DropdownMenuItem(value: e.key, child: Text(e.value)),
+              ],
+              onChanged: (v) => setState(() => _level = v ?? 'any'),
+            ),
+          ),
         ),
-        if (widget.canManage) ElevatedButton.icon(onPressed: () => _edit(), icon: const Icon(Icons.add_rounded), label: const Text("Add policy")),
       ]),
       const SizedBox(height: 12),
       if (rows.isEmpty)
         Padding(
           padding: const EdgeInsets.all(30),
-          child: Text(widget.canManage ? "No policies yet. Add the first one." : "No policies or standards have been published for this duty yet.",
-              textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey.shade600))),
+          child: Column(children: [
+            Icon(Icons.menu_book_outlined, size: 40, color: AppPalette.fg(Colors.grey.shade400)),
+            const SizedBox(height: 8),
+            Text(widget.canManage ? "No policies yet. Add the first one." : "No policies or standards have been published for this duty yet.",
+                textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey.shade600))),
+          ]),
         ),
       for (final g in groups.entries) ...[
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
-          child: Text(g.key, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(_kPurple))),
+          padding: const EdgeInsets.fromLTRB(2, 12, 2, 6),
+          child: Row(children: [
+            Container(width: 4, height: 18, decoration: BoxDecoration(color: AppPalette.solid(_kPurple), borderRadius: BorderRadius.circular(2))),
+            const SizedBox(width: 8),
+            Expanded(child: Text(g.key, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(_kPurple)))),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFEDE3F8)), borderRadius: BorderRadius.circular(10)),
+              child: Text("${g.value.length}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_kPurple))),
+            ),
+          ]),
         ),
         for (final p in g.value)
-          Card(
-            elevation: 0.5,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: ExpansionTile(
-              shape: const Border(),
-              leading: Icon(p['is_active'] == false ? Icons.visibility_off_outlined : Icons.rule_rounded, color: AppPalette.fg(_kPurple), size: 20),
-              title: Text((p['title'] ?? '').toString(), style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
-              subtitle: p['effective_from'] == null ? null : Text("In force from ${p['effective_from']}", style: const TextStyle(fontSize: 11)),
-              trailing: widget.canManage
-                  ? PopupMenuButton<String>(
-                      onSelected: (v) => v == 'edit' ? _edit(p) : _delete(p),
-                      itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text("Edit")), PopupMenuItem(value: 'delete', child: Text("Remove"))],
-                    )
-                  : null,
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              expandedCrossAxisAlignment: CrossAxisAlignment.start,
-              children: [SelectableText((p['body'] ?? '').toString(), style: GoogleFonts.merriweather(fontSize: 12.5, height: 1.35))],
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: AppPalette.bg(Colors.white),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppPalette.line(const Color(0xFFE4DAF2))),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 3))],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                shape: const Border(),
+                collapsedShape: const Border(),
+                leading: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: AppPalette.bg(p['is_active'] == false ? Colors.grey.shade100 : const Color(0xFFF1E9FB)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(p['is_active'] == false ? Icons.visibility_off_outlined : Icons.rule_rounded, color: AppPalette.fg(p['is_active'] == false ? Colors.grey : _kPurple), size: 18),
+                ),
+                title: Text((p['title'] ?? '').toString(), style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: p['effective_from'] == null
+                    ? null
+                    : Text("In force from ${p['effective_from']}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
+                trailing: widget.canManage
+                    ? PopupMenuButton<String>(
+                        onSelected: (v) => v == 'edit' ? _edit(p) : _delete(p),
+                        itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text("Edit")), PopupMenuItem(value: 'delete', child: Text("Remove"))],
+                      )
+                    : null,
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFFAF7FE)), borderRadius: BorderRadius.circular(10)),
+                    child: SelectableText((p['body'] ?? '').toString(), style: GoogleFonts.merriweather(fontSize: 12.5, height: 1.4)),
+                  ),
+                ],
+              ),
             ),
           ),
       ],
@@ -941,47 +1030,66 @@ class _StagesViewState extends State<_StagesView> {
   @override
   Widget build(BuildContext context) {
     return ListView(padding: AppSizes.page, children: [
-      Text("Overall = the stages ticked \"Overall\". Students = the stages ticked \"Students\". The order here is the order of the columns.",
+      Text("Overall = the stages ticked \"Overall\". Students = the stages ticked \"Students\". Read from the bottom (first stage) to the top (last stage); this is also the order of the columns.",
           textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
       const SizedBox(height: 8),
-      // The stages as cards stacked in the centre, narrowing like a funnel /
-      // pyramid from the first stage to the last; each card has its colour.
+      // The stages as a pyramid: the first stage (Chakki) at the bottom and
+      // widest, the last (Passed Interview) at the top. Every card has the
+      // same height, the three switches always on one line.
       LayoutBuilder(builder: (context, box) {
         final maxW = box.maxWidth.clamp(0.0, 720.0);
         final n = _rows.length;
         return Column(children: [
-          for (int i = 0; i < n; i++)
+          for (int i = n - 1; i >= 0; i--)
             () {
               final s = _rows[i];
               final c = Color(0xFF000000 | (int.tryParse(s['color_hex'].toString().replaceAll('#', ''), radix: 16) ?? 0x4A148C));
               final width = n <= 1 ? maxW : maxW * (1.0 - 0.38 * i / (n - 1));
               final off = s['is_active'] == false;
+              Widget chip(String label, bool on, String col) => FilterChip(
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    label: Text(label, style: const TextStyle(fontSize: 11)),
+                    selected: on,
+                    onSelected: (v) => _set(s, col, v),
+                  );
               return Container(
                 width: width < 300 ? (maxW < 300 ? maxW : 300) : width,
+                height: 76,
                 margin: const EdgeInsets.only(bottom: 5),
                 decoration: BoxDecoration(
-                  color: AppPalette.bg(off ? Colors.grey.shade100 : c.withValues(alpha: 0.10)),
+                  gradient: off
+                      ? null
+                      : LinearGradient(colors: [AppPalette.solid(c.withValues(alpha: 0.16)), AppPalette.solid(c.withValues(alpha: 0.06))], begin: Alignment.centerLeft, end: Alignment.centerRight),
+                  color: off ? AppPalette.bg(Colors.grey.shade100) : null,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: AppPalette.line(c.withValues(alpha: off ? 0.2 : 0.55)), width: 1.2),
                   boxShadow: [BoxShadow(color: c.withValues(alpha: 0.18), blurRadius: 6, offset: const Offset(0, 3))],
                 ),
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
-                child: Column(children: [
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     CircleAvatar(radius: 11, backgroundColor: c, child: Text("${i + 1}", style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(s['stage'].toString(),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13.5, color: AppPalette.fg(off ? Colors.grey : Colors.black87))),
                     ),
                   ]),
                   const SizedBox(height: 4),
-                  Wrap(alignment: WrapAlignment.center, spacing: 4, runSpacing: 4, children: [
-                    FilterChip(visualDensity: VisualDensity.compact, label: const Text("Overall", style: TextStyle(fontSize: 11)), selected: s['in_overall'] == true, onSelected: (v) => _set(s, 'in_overall', v)),
-                    FilterChip(visualDensity: VisualDensity.compact, label: const Text("Students", style: TextStyle(fontSize: 11)), selected: s['in_students'] == true, onSelected: (v) => _set(s, 'in_students', v)),
-                    FilterChip(visualDensity: VisualDensity.compact, label: const Text("Shown", style: TextStyle(fontSize: 11)), selected: s['is_active'] != false, onSelected: (v) => _set(s, 'is_active', v)),
-                  ]),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      chip("Overall", s['in_overall'] == true, 'in_overall'),
+                      const SizedBox(width: 4),
+                      chip("Students", s['in_students'] == true, 'in_students'),
+                      const SizedBox(width: 4),
+                      chip("Shown", s['is_active'] != false, 'is_active'),
+                    ]),
+                  ),
                 ]),
               );
             }(),

@@ -6,7 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
-import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/app_palette.dart';
+import '../widgets/h_scroll.dart';
 
 class VisitationsModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -247,12 +248,12 @@ class _VisitationsModuleState extends State<VisitationsModule> {
     ]);
   }
 
-  Widget _buildToolbar() => Row(
+  Widget _buildToolbar() => HScroll(child: Row(
     mainAxisAlignment: MainAxisAlignment.start,
     children: [
       TableExport.buttons(context, _exportTable),
     ],
-  );
+  ));
 
   Widget _buildCategoryPillBar() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

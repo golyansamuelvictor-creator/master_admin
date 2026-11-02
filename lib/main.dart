@@ -17,6 +17,7 @@ import 'services/profile_refresh.dart';
 import 'services/device_accounts.dart';
 import 'services/device_sessions.dart';
 import 'services/call_service.dart';
+import 'screens/forms_studio.dart' show FormLink;
 import 'services/media_playback.dart';
 import 'services/demo_mode.dart';
 import 'widgets/media_mini_player.dart';
@@ -63,12 +64,15 @@ void main() async {
   await I18n.init();
   // My Home: an invite link opened (?join=CODE) waits until signed in
   unawaited(CallService.rememberInviteFromUrl());
+  // Surveys: a form's share link (?form=ID) opens it after signing in
+  unawaited(FormLink.rememberFromUrl());
   Supabase.instance.client.auth.onAuthStateChange.listen((st) {
     if (st.event == AuthChangeEvent.signedIn || st.event == AuthChangeEvent.initialSession) {
       if (st.session != null) {
         unawaited(I18n.syncFromAccount());
         // incoming voice / video calls ring on every screen
         CallService.start();
+        unawaited(FormLink.checkPending());
       }
     }
     if (st.event == AuthChangeEvent.signedOut) CallService.stop();

@@ -938,7 +938,11 @@ class _BbFileEntryState extends State<BbFileEntry> {
       content = Container(
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Autocomplete<String>(
+        child: !isAnc
+            ? Text(val.isEmpty ? tr("Location...") : val,
+                textAlign: TextAlign.center, softWrap: false, overflow: TextOverflow.ellipsis,
+                style: val.isEmpty ? TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey.shade400)) : GoogleFonts.merriweather(fontSize: 10.5))
+            : Autocomplete<String>(
           initialValue: TextEditingValue(text: val),
           optionsBuilder: (textEditingValue) {
             if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
@@ -953,6 +957,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
             return TextFormField(
               controller: controller,
               focusNode: focus,
+              autofocus: true,
               textAlign: TextAlign.center,
               style: GoogleFonts.merriweather(fontSize: 10.5),
               decoration: InputDecoration(hintText: tr("Location..."), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
@@ -971,8 +976,13 @@ class _BbFileEntryState extends State<BbFileEntry> {
       content = Container(
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: TextFormField(
+        // plain text until the cell is chosen (fields in every cell caught
+        // the sideways drag, so the sheet stuck when scrolling on phones)
+        child: !isAnc
+            ? Text(val, textAlign: TextAlign.center, softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 10.5))
+            : TextFormField(
           key: ValueKey("${id}_$key"),
+          autofocus: true,
           initialValue: val,
           textAlign: TextAlign.center,
           style: GoogleFonts.merriweather(fontSize: 10.5),

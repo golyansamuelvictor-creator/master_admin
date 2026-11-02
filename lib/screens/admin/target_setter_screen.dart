@@ -517,7 +517,7 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
 
     // one table cell; numbers are right-aligned like a spreadsheet
     Widget cell(Widget child, {Alignment align = Alignment.center}) =>
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1), child: SizedBox(height: 26, child: Align(alignment: align, child: child)));
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1), child: SizedBox(height: 29, child: Align(alignment: align, child: child)));
     Widget h(String t, {Alignment align = Alignment.center}) => cell(
         Text(t, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: GoogleFonts.merriweather(fontWeight: FontWeight.w800, fontSize: 11.5, color: Colors.white, letterSpacing: .2)),
@@ -531,26 +531,31 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
         align: Alignment.centerRight);
 
     // the summary tiles above the table
+    // all the same height: 75% of the "Not set" tile; the small line goes
+    // beside the label (and in the tooltip) so nothing is cut off
     Widget tile(IconData icon, String label, String value, Color c, {String? sub}) => Expanded(
-          child: Container(
+          child: Tooltip(
+            message: sub == null ? label : "$label · $sub",
+            child: Container(
+            height: 40,
             margin: const EdgeInsets.symmetric(horizontal: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
             decoration: BoxDecoration(
               color: AppPalette.bg(c.withValues(alpha: 0.07)),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppPalette.line(c.withValues(alpha: 0.25))),
             ),
             child: Row(children: [
-              Icon(icon, size: 20, color: AppPalette.fg(c)),
+              Icon(icon, size: 18, color: AppPalette.fg(c)),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 15, fontWeight: FontWeight.w900, color: AppPalette.fg(c))),
-                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: AppPalette.fg(Colors.blueGrey.shade700))),
-                  if (sub != null) Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 9.5, color: AppPalette.fg(Colors.grey.shade600))),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 13.5, height: 1.15, fontWeight: FontWeight.w900, color: AppPalette.fg(c))),
+                  Text(sub == null ? label : "$label · $sub", maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10, height: 1.15, fontWeight: FontWeight.w600, color: AppPalette.fg(Colors.blueGrey.shade700))),
                 ]),
               ),
             ]),
+          ),
           ),
         );
     final shared = parentMonth == null || parentMonth == 0 || _isRate ? null : (sumMonth / parentMonth).clamp(0.0, 1.5);
@@ -649,7 +654,7 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
                               ? Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   child: SizedBox(
-                                    height: 26,
+                                    height: 28,
                                     child: TextField(
                                       controller: _ctrl[_rowKey(r)],
                                       textAlign: TextAlign.right,

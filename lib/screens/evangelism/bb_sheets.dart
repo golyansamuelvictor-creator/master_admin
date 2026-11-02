@@ -224,6 +224,7 @@ class _BbSheetState extends State<BbSheet> {
   final Map<String, Map<String, (String, String?)>> _marks = {}; // student → date → (status, note)
   final Map<String, Map<String, (String, String?)>> _markDirty = {};
   final _h = ScrollController();
+  String? _editing; // the one cell being typed in ("id|column")
   String _q = '';
   String? _center, _month;
   bool _saving = false;
@@ -443,12 +444,23 @@ class _BbSheetState extends State<BbSheet> {
       );
     }
     final changed = _dirty[id]?.containsKey(c.key) == true;
+    // Plain text until tapped: a text field in every cell caught the finger's
+    // sideways drag, so the sheet stuck and scrolled slowly on phones.
+    final editKey = '$id|${c.key}';
+    if (_editing != editKey) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _editing = editKey),
+        child: _box(val, c.width, _rowH, bg: changed ? const Color(0xFFFFF8E1) : bg, bold: c.key == 'student_name'),
+      );
+    }
     return Container(
       width: c.width,
       height: _rowH,
       decoration: BoxDecoration(color: AppPalette.bg(changed ? const Color(0xFFFFF8E1) : bg), border: Border.all(color: AppPalette.line(Colors.black26), width: 0.5)),
       child: TextFormField(
         key: ValueKey('$id-${c.key}'),
+        autofocus: true,
         initialValue: val,
         textAlign: TextAlign.center,
         style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: c.key == 'student_name' ? FontWeight.bold : FontWeight.normal),

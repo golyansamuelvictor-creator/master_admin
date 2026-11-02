@@ -8,7 +8,8 @@ import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:intl/intl.dart';
-import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/app_palette.dart';
+import '../widgets/h_scroll.dart';
 
 class MorningLightModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -251,12 +252,12 @@ class _MorningLightModuleState extends State<MorningLightModule> {
     ]);
   }
 
-  Widget _buildToolbar() => Row(
+  Widget _buildToolbar() => HScroll(child: Row(
     mainAxisAlignment: MainAxisAlignment.start,
     children: [
       TableExport.buttons(context, _exportTable),
     ],
-  );
+  ));
 
   Widget _buildExcelGrid(Map<String, dynamic> tot) {
     return LayoutBuilder(

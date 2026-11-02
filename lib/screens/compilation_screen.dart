@@ -842,6 +842,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
         final int days = curEnd.difference(curStart).inDays + 1;
         prevEnd = curStart.subtract(const Duration(days: 1));
         prevStart = prevEnd.subtract(Duration(days: days - 1));
+        // one day: compare with the same day last week (last Sunday's service)
+        if (days == 1) {
+          prevStart = curStart.subtract(const Duration(days: 7));
+          prevEnd = prevStart;
+        }
       } else {
         // Weekly = Week 1..Week 5 (calendar weeks, this one included),
         // Monthly = the last 4 calendar months, Current = latest session in the
@@ -1221,7 +1226,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
         elevation: 0, 
         iconTheme: IconThemeData(color: AppPalette.fg(pPurple)),
         title: Text(
-          widget.selectedDuty, 
+          // the Evangelism Results side bar opens this screen as "Results by Units"
+          widget.selectedDuty == 'Evangelism Results' ? 'Results by Units' : widget.selectedDuty,
           style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple), fontSize: 17.5, letterSpacing: 0.4),
         ),
         bottom: PreferredSize(preferredSize: const Size.fromHeight(1.0), child: Container(color: AppPalette.bg(Colors.black), height: 1.0)),
@@ -2165,7 +2171,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return ServiceAttendanceModule(
         logs: _logs, 
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod, 
+        timePeriod: _modulePeriod, 
         level: _moduleLevel, 
         analyticsMode: _analyticsMode, 
         groupBy: _groupBy, 
@@ -2192,7 +2198,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return CellServiceModule(
         logs: _logs, 
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod, 
+        timePeriod: _modulePeriod, 
         level: _moduleLevel, 
         analyticsMode: _analyticsMode, 
         groupBy: _groupBy, 
@@ -2219,7 +2225,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return AllSaintsEducationModule(
         logs: _logs, 
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod, 
+        timePeriod: _modulePeriod, 
         level: _moduleLevel, 
         analyticsMode: _analyticsMode, 
         groupBy: _groupBy, 
@@ -2246,7 +2252,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return OfferingModule(
         logs: _logs,
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod,
+        timePeriod: _modulePeriod,
         level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
@@ -2273,7 +2279,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return EvangelismModule(
         logs: _logs,
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod,
+        timePeriod: _modulePeriod,
         level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
@@ -2300,7 +2306,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return MorningLightModule(
         logs: _logs,
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod,
+        timePeriod: _modulePeriod,
         level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
@@ -2327,7 +2333,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return WorkersEducationModule(
         logs: _logs,
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod,
+        timePeriod: _modulePeriod,
         level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
@@ -2354,7 +2360,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return DailyParticipationModule(
         logs: _logs,
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod,
+        timePeriod: _modulePeriod,
         level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
@@ -2381,7 +2387,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       return VisitationsModule(
         logs: _logs,
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod,
+        timePeriod: _modulePeriod,
         level: _moduleLevel,
         category: _visitationCategories.isNotEmpty ? _visitationCategories.first : 'All',
         analyticsMode: _analyticsMode,
@@ -2413,7 +2419,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         bbData: _logs,
         logs: _logs,
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod,
+        timePeriod: _modulePeriod,
         level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
@@ -2441,7 +2447,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         category: d,
         logs: _logs,
         masterMembers: _masterMembers,
-        timePeriod: _timePeriod,
+        timePeriod: _modulePeriod,
         level: _moduleLevel,
         analyticsMode: _analyticsMode,
         groupBy: _groupBy,
@@ -2874,8 +2880,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
                 const SizedBox(height: 10),
               ],
 
-              _bentoNavCard("Data category", _timeOptions, _timePeriod, (v) async {
-                if (v == 'Custom period') {
+              _bentoNavCard("Data category", _timeOptionsShown, _isOneDay ? 'One day' : _timePeriod, (v) async {
+                if (v == 'One day') {
+                  final d = await _pickOneDay();
+                  if (d != null) { setState(() { _customRange = DateTimeRange(start: d, end: d); _timePeriod = 'Custom period'; }); _fetchData(); }
+                } else if (v == 'Custom period') {
                   final p = await _pickCustomRange();
                   if (p != null) { setState(() { _customRange = p; _timePeriod = v; }); _fetchData(); }
                 } else { setState(() => _timePeriod = v); _fetchData(); }
@@ -3097,14 +3106,18 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   /// "Custom period" shows the chosen dates once a range is picked.
   String _navLabel(String item) {
-    if (item == 'Custom period' && _customRange != null) {
+    if (item == 'One day' && _isOneDay) {
+      return "One day: ${DateFormat('EEE d MMM yyyy').format(_customRange!.start)}";
+    }
+    if (item == 'Custom period' && _customRange != null && !_isOneDay) {
       return "Custom: ${DateFormat('d MMM').format(_customRange!.start)} – ${DateFormat('d MMM yyyy').format(_customRange!.end)}";
     }
     return item;
   }
 
   /// Date range picker in the app's style: a centred card on wide screens
-  /// (instead of a full-screen page), purple header and selection.
+  /// (instead of a full-screen page), purple header and selection; follows
+  /// the light / dark theme.
   Future<DateTimeRange?> _pickCustomRange() {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -3119,56 +3132,110 @@ class _CompilationEngineState extends State<CompilationEngine> {
       cancelText: 'Cancel',
       fieldStartLabelText: 'From',
       fieldEndLabelText: 'To',
-      builder: (ctx, child) {
-        final base = Theme.of(ctx);
-        return Theme(
-          data: base.copyWith(
-            colorScheme: base.colorScheme.copyWith(
-              primary: pPurple,
-              onPrimary: Colors.white,
-              secondary: pPurple,
-              surface: Colors.white,
-              onSurface: Colors.black87,
-            ),
-            datePickerTheme: DatePickerThemeData(
-              backgroundColor: Colors.white,
-              surfaceTintColor: Colors.transparent,
-              headerBackgroundColor: pPurple,
-              headerForegroundColor: Colors.white,
-              rangePickerBackgroundColor: Colors.white,
-              rangePickerSurfaceTintColor: Colors.transparent,
-              rangePickerHeaderBackgroundColor: pPurple,
-              rangePickerHeaderForegroundColor: Colors.white,
-              rangeSelectionBackgroundColor: pPurple.withValues(alpha: 0.12),
-              todayBorder: BorderSide(color: AppPalette.line(pPurple), width: 1.2),
-              dayShape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              rangePickerShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            ),
-            textTheme: GoogleFonts.merriweatherTextTheme(base.textTheme),
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                foregroundColor: AppPalette.fg(pPurple),
-                textStyle: GoogleFonts.merriweather(fontWeight: FontWeight.bold),
-              ),
+      builder: _pickerFrame,
+    );
+  }
+
+  /// One day (e.g. yesterday's service): a single date, kept as a one-day range.
+  Future<DateTime?> _pickOneDay() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final init = _customRange != null && _isOneDay ? _customRange!.start : today.subtract(const Duration(days: 1));
+    return showDatePicker(
+      context: context,
+      firstDate: DateTime(2023),
+      lastDate: today,
+      initialDate: init.isAfter(today) ? today : init,
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      helpText: 'Select one day',
+      confirmText: 'Apply',
+      cancelText: 'Cancel',
+      builder: _pickerFrame,
+    );
+  }
+
+  /// One day is a single session: the modules show it like "Current status"
+  /// (column charts, no week-by-week trend). The data is that day's only.
+  String get _modulePeriod => _isOneDay ? 'Current status' : _timePeriod;
+
+  bool get _isOneDay =>
+      _timePeriod == 'Custom period' && _customRange != null && !_customRange!.end.isAfter(_customRange!.start);
+
+  /// Data category list with "One day" next to "Custom period".
+  List<String> get _timeOptionsShown {
+    final l = List<String>.from(_timeOptions);
+    if (!l.contains('One day')) {
+      final i = l.indexOf('Custom period');
+      l.insert(i < 0 ? l.length : i, 'One day');
+    }
+    return l;
+  }
+
+  Widget _pickerFrame(BuildContext ctx, Widget? child) {
+    final base = Theme.of(ctx);
+    final dark = AppPalette.isDark || base.brightness == Brightness.dark;
+    final surface = dark ? const Color(0xFF1F1B29) : Colors.white;
+    final onSurface = dark ? Colors.white.withValues(alpha: 0.92) : Colors.black87;
+    final accent = dark ? const Color(0xFFB79CF0) : pPurple;
+    return Theme(
+      data: base.copyWith(
+        brightness: dark ? Brightness.dark : Brightness.light,
+        colorScheme: base.colorScheme.copyWith(
+          brightness: dark ? Brightness.dark : Brightness.light,
+          primary: dark ? accent : pPurple,
+          onPrimary: dark ? Colors.black : Colors.white,
+          secondary: accent,
+          surface: surface,
+          onSurface: onSurface,
+          onSurfaceVariant: dark ? Colors.white70 : Colors.black54,
+          outline: dark ? Colors.white24 : Colors.black26,
+        ),
+        dialogTheme: DialogThemeData(backgroundColor: surface),
+        datePickerTheme: DatePickerThemeData(
+          backgroundColor: surface,
+          surfaceTintColor: Colors.transparent,
+          headerBackgroundColor: pPurple,
+          headerForegroundColor: Colors.white,
+          rangePickerBackgroundColor: surface,
+          rangePickerSurfaceTintColor: Colors.transparent,
+          rangePickerHeaderBackgroundColor: pPurple,
+          rangePickerHeaderForegroundColor: Colors.white,
+          rangeSelectionBackgroundColor: accent.withValues(alpha: dark ? 0.28 : 0.12),
+          dividerColor: dark ? Colors.white12 : Colors.black12,
+          weekdayStyle: TextStyle(color: dark ? Colors.white70 : Colors.black54),
+          todayBorder: BorderSide(color: accent, width: 1.2),
+          todayForegroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? (dark ? Colors.black : Colors.white) : accent),
+          dayForegroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.disabled)
+              ? (dark ? Colors.white24 : Colors.black26)
+              : s.contains(WidgetState.selected) ? (dark ? Colors.black : Colors.white) : onSurface),
+          yearForegroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? (dark ? Colors.black : Colors.white) : onSurface),
+          dayShape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          rangePickerShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        ),
+        textTheme: GoogleFonts.merriweatherTextTheme(dark ? ThemeData.dark().textTheme : base.textTheme),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: accent,
+            textStyle: GoogleFonts.merriweather(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420, maxHeight: 620),
+            child: Material(
+              color: surface,
+              elevation: 12,
+              borderRadius: BorderRadius.circular(18),
+              clipBehavior: Clip.antiAlias,
+              child: child!,
             ),
           ),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420, maxHeight: 620),
-                child: Material(
-                  elevation: 12,
-                  borderRadius: BorderRadius.circular(18),
-                  clipBehavior: Clip.antiAlias,
-                  child: child!,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+        ),
+      ),
     );
   }
 

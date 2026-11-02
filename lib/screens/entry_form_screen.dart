@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:master_admin/entry_modules/evidence_gallery_dialog.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async';
 import 'dart:convert';
 
 // --- ALL MODULES IMPORTED ---
@@ -59,6 +60,8 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
   // --- DAY SELECTOR STATE ---
   String _selectedDay = 'Wednesday';
+  bool _visitNeedsOnly = true; // Visitations: only those who need a visit
+  bool _visitNeedsOk = true;
 
   // --- EXCEL PRO STATE ---
   String _saveStatus = "Save";
@@ -221,11 +224,25 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     return (label: "Pending pre-attendance", count: prePending, detail: detail);
   }
 
-  void _recordHistory() {
-    _undoStack.add(jsonEncode(reportData));
-    if (_undoStack.length > 40) _undoStack.removeAt(0);
-    _redoStack.clear();
-    setState(() {});
+  // Typing used to copy the whole sheet (jsonEncode) and rebuild the whole
+  // screen on every key press, which made typing and scrolling sluggish on
+  // phones. Now one undo step is kept per burst of typing, and the screen's
+  // counters refresh shortly after the typing pauses.
+  DateTime _lastHistory = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _refreshTimer;
+  void _recordHistory({bool force = false}) {
+    final now = DateTime.now();
+    final burst = !force && now.difference(_lastHistory) < const Duration(milliseconds: 900);
+    _lastHistory = now;
+    if (!burst) {
+      _undoStack.add(jsonEncode(reportData));
+      if (_undoStack.length > 40) _undoStack.removeAt(0);
+      _redoStack.clear();
+    }
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) setState(() {});
+    });
   }
 
   void _undo() {
@@ -245,7 +262,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   }
 
   void _clearGrid() {
-    _recordHistory();
+    _recordHistory(force: true);
     setState(() {
       reportData = {for (var m in members) m['id'].toString(): {}};
     });
@@ -501,6 +518,28 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         logs = await logsQuery;
       }
 
+      // Visitation & Counselling: only "those who need Counseling and
+      // Visitations" (Universal Intervention, visitation_needs) of the last
+      // 30 days, in this unit; members already reported on this date stay too
+      List<Map<String, dynamic>> shown = List<Map<String, dynamic>>.from(res);
+      if (widget.sheetName == 'Visitations and Counselling' && _visitNeedsOnly) {
+        try {
+          final f = DateFormat('yyyy-MM-dd');
+          final need = await supabase.rpc('visitation_needs', params: {
+            'p_from': f.format(selectedDate.subtract(const Duration(days: 30))),
+            'p_to': f.format(selectedDate),
+            // only this form's members are worked out (faster)
+            'p_members': memberIds,
+          });
+          final ids = {for (final r in (need as List)) r['member_id'].toString()};
+          final logged = {for (final l in logs) l['member_id'].toString()};
+          shown = shown.where((m) => ids.contains(m['id'].toString()) || logged.contains(m['id'].toString())).toList();
+          _visitNeedsOk = true;
+        } catch (_) {
+          _visitNeedsOk = false; // before 20_round19.sql: everyone, as before
+        }
+      }
+
       String dbLookupName = widget.sheetName.trim() == "Evangelism Part" ? "Evangelism" : widget.sheetName.trim();
       final optionsRes = await supabase
           .from('entry_field_options')
@@ -515,7 +554,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
       if (mounted) {
         setState(() {
-          members = res;
+          members = shown;
           dynamicOptions = tempOpts;
           reportData = {for (var m in members) m['id'].toString(): {}};
           for (var log in logs) {
@@ -1300,6 +1339,26 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                     ),
 
                   const SizedBox(height: 8),
+
+                  if (widget.sheetName == 'Visitations and Counselling')
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(sideMargin, 0, sideMargin, 6),
+                      child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, children: [
+                        FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          avatar: const Icon(Icons.volunteer_activism_outlined, size: 16),
+                          label: Text(_visitNeedsOnly ? "Those who need visitation (${members.length})" : "All members (${members.length})"),
+                          selected: _visitNeedsOnly,
+                          onSelected: (v) {
+                            setState(() => _visitNeedsOnly = v);
+                            _loadInitialData();
+                          },
+                        ),
+                        if (!_visitNeedsOk)
+                          Text("The list of those who need visitation isn't available yet (run 20_round19.sql).",
+                              style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.orange.shade800))),
+                      ]),
+                    ),
 
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: sideMargin),

@@ -263,12 +263,12 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
 
     // 5 Category Cards
     List<Widget> cards = [
-      // softer colours (were the deepest shades)
-      _buildIntentCard("Headquarters", Icons.account_balance_rounded, Colors.orange[700]!, _hqPoints),
-      _buildIntentCard("Tribe", Icons.hub_rounded, Colors.blue[600]!, _tribePoints),
-      _buildIntentCard("Church", Icons.church_rounded, Colors.green[600]!, _churchPoints),
-      _buildIntentCard("Location", Icons.map_rounded, Colors.teal[500]!, _regionPoints),
-      _buildIntentCard("Department", Icons.business_center_rounded, Colors.deepPurple[400]!, _deptPoints),
+      // two light tones only (the five deep colours were too many)
+      _buildIntentCard("Headquarters", Icons.account_balance_rounded, const Color(0xFF7E57C2), _hqPoints),
+      _buildIntentCard("Tribe", Icons.hub_rounded, const Color(0xFF5C8DB8), _tribePoints),
+      _buildIntentCard("Church", Icons.church_rounded, const Color(0xFF7E57C2), _churchPoints),
+      _buildIntentCard("Location", Icons.map_rounded, const Color(0xFF5C8DB8), _regionPoints),
+      _buildIntentCard("Department", Icons.business_center_rounded, const Color(0xFF7E57C2), _deptPoints),
     ];
 
     Widget bodyContent = SizedBox.expand(
@@ -286,7 +286,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
               children: [
                 // 1. REFINED EXECUTIVE HEADER CARD
                 _buildHeaderCard(isDesktop, totalDirectives),
-                const SizedBox(height: 24),
+                const SizedBox(height: 14),
 
                 // 2. CARDS GRID / MULTI-COLUMN LAYOUT
                 if (_isLoading)
@@ -409,115 +409,43 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
   // 1. REFINED HEADER CARD (NO HARSH OUTLINES)
   // ==========================================
   Widget _buildHeaderCard(bool isDesktop, int totalDirectives) {
+    // a slim title bar (half the old height, no line under the title)
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.symmetric(
-        horizontal: isDesktop ? 26 : 18,
-        vertical: 18,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: isDesktop ? 20 : 12, vertical: 5),
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppPalette.line(pPurple.withValues(alpha: 0.08)),
-          width: 1.2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-          BoxShadow(
-            color: pPurple.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.08)), width: 1.2),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 3))],
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          Icon(Icons.track_changes_rounded, color: AppPalette.fg(pPurple), size: 18),
+          const SizedBox(width: 10),
           Expanded(
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppPalette.bg(pPurple.withValues(alpha: 0.08)),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(Icons.track_changes_rounded, color: AppPalette.fg(pPurple), size: 26),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Strategic Intentions & Directives",
-                        style: GoogleFonts.merriweather(
-                          fontSize: isDesktop ? 20 : 16,
-                          color: AppPalette.fg(pPurple),
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.3,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        "Executive Alignment • Headquarters • Tribes • Churches",
-                        style: GoogleFonts.merriweather(
-                          fontSize: isDesktop ? 12 : 10,
-                          color: AppPalette.fg(Colors.blueGrey[600]),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            child: Text(
+              "Strategic Intentions & Directives",
+              style: GoogleFonts.merriweather(fontSize: isDesktop ? 16 : 13.5, color: AppPalette.fg(pPurple), fontWeight: FontWeight.w900, letterSpacing: 0.2),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           if (_perm.canAddIntentions) ...[
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppPalette.bg(pPurple),
                 foregroundColor: AppPalette.fg(Colors.white),
-                padding: EdgeInsets.symmetric(horizontal: isDesktop ? 14 : 10, vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.symmetric(horizontal: isDesktop ? 12 : 8, vertical: 4),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
               onPressed: () => _openIntentionForm(),
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: Text(isDesktop ? "Add intention" : "Add", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12)),
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: Text(isDesktop ? "Add intention" : "Add", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 11.5)),
             ),
-            const SizedBox(width: 8),
           ],
-          // Total Directives Badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppPalette.bg(pPurple.withValues(alpha: 0.08)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.checklist_rounded, size: 15, color: AppPalette.fg(pPurple)),
-                const SizedBox(width: 6),
-                Flexible(child: Text(
-                  "$totalDirectives Active",
-                  style: GoogleFonts.merriweather(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: AppPalette.fg(pPurple),
-                  ),
-                )),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -532,66 +460,30 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
     Color accentColor,
     List<dynamic> points,
   ) {
-    // a lighter second tone for the gradients (was 25% darker)
-    final dark = Color.lerp(accentColor, Colors.white, 0.22)!;
     return _HoverLift(
       shadow: accentColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // GRADIENT HEADER
+          // LIGHT HEADER: the title only
           Container(
-            padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+            padding: const EdgeInsets.fromLTRB(14, 9, 12, 9),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [dark, accentColor], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              color: AppPalette.bg(Color.lerp(accentColor, Colors.white, 0.86)!),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              border: Border(bottom: BorderSide(color: AppPalette.line(accentColor.withValues(alpha: 0.25)))),
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.45), width: 1.4),
-                  ),
-                  child: Icon(icon, color: Colors.white, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white, letterSpacing: 0.2),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        points.isEmpty ? "Nothing yet" : "${points.length} intention${points.length == 1 ? '' : 's'}",
-                        style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.85)),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-                  child: Text(
-                    "${points.length}",
-                    style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: accentColor),
-                  ),
-                ),
-              ],
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15.5, color: AppPalette.fg(Color.lerp(accentColor, Colors.black, 0.35)), letterSpacing: 0.2),
             ),
           ),
 
           // CARD BODY
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+            padding: const EdgeInsets.fromLTRB(10, 4, 8, 6),
             child: points.isEmpty
                 ? Padding(
                     padding: const EdgeInsets.symmetric(vertical: 22),
@@ -611,38 +503,36 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                       final subject = (p['subject'] ?? '').toString().trim();
                       final deadline = DateTime.tryParse((p['deadline'] ?? '').toString());
                       return Container(
-                        margin: const EdgeInsets.only(bottom: 6),
                         decoration: BoxDecoration(
-                          color: AppPalette.bg(Color.lerp(accentColor, Colors.white, 0.95)!),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border(left: BorderSide(color: AppPalette.line(accentColor), width: 4)),
-                          boxShadow: [BoxShadow(color: accentColor.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 3))],
+                          border: idx == points.length ? null : Border(bottom: BorderSide(color: AppPalette.line(Colors.black.withValues(alpha: 0.07)))),
                         ),
-                        padding: const EdgeInsets.fromLTRB(10, 7, 2, 7),
+                        padding: const EdgeInsets.fromLTRB(4, 5, 0, 5),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // NUMBER BADGE
+                            // NUMBER
                             Container(
-                              width: 24,
-                              height: 24,
+                              width: 20,
+                              height: 20,
+                              margin: const EdgeInsets.only(top: 1),
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(colors: [accentColor, dark]),
+                                color: AppPalette.bg(Color.lerp(accentColor, Colors.white, 0.82)!),
                                 shape: BoxShape.circle,
-                                boxShadow: [BoxShadow(color: accentColor.withValues(alpha: 0.35), blurRadius: 6, offset: const Offset(0, 2))],
                               ),
-                              child: Text("$idx", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
+                              child: Text("$idx", style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.w900, color: AppPalette.fg(Color.lerp(accentColor, Colors.black, 0.3)))),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 9),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  // wraps onto more lines when long; never overlaps
                                   Text(
                                     p['point_text'] ?? "",
+                                    softWrap: true,
                                     style: GoogleFonts.merriweather(
-                                      fontSize: 13.5,
+                                      fontSize: 12.5,
                                       color: AppPalette.fg(const Color(0xFF1F1B2E)),
                                       fontWeight: FontWeight.w600,
                                       height: 1.25,
@@ -650,26 +540,31 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                                   ),
                                   if (subject.isNotEmpty || deadline != null)
                                     Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Wrap(spacing: 6, runSpacing: 4, children: [
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Wrap(spacing: 6, runSpacing: 3, children: [
                                         if (subject.isNotEmpty) _intentChip(Icons.label_outline_rounded, subject, accentColor),
                                         if (deadline != null)
                                           _intentChip(Icons.event_outlined, "By ${DateFormat('d MMM yyyy').format(deadline)}",
-                                              deadline.isBefore(DateTime.now()) ? Colors.red.shade700 : accentColor),
+                                              deadline.isBefore(DateTime.now()) ? Colors.red.shade400 : accentColor),
                                       ]),
                                     ),
                                 ],
                               ),
                             ),
                             if (_canManage(p))
-                              PopupMenuButton<String>(
-                                tooltip: tr("Edit or remove"),
-                                icon: Icon(Icons.more_vert_rounded, size: 18, color: AppPalette.fg(Colors.blueGrey[400])),
-                                onSelected: (v) => v == 'edit' ? _openIntentionForm(existing: p) : _deleteIntention(p),
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(value: 'edit', child: Text("Edit")),
-                                  PopupMenuItem(value: 'delete', child: Text("Remove")),
-                                ],
+                              SizedBox(
+                                width: 30,
+                                height: 22,
+                                child: PopupMenuButton<String>(
+                                  padding: EdgeInsets.zero,
+                                  tooltip: tr("Edit or remove"),
+                                  icon: Icon(Icons.more_vert_rounded, size: 17, color: AppPalette.fg(Colors.blueGrey[300])),
+                                  onSelected: (v) => v == 'edit' ? _openIntentionForm(existing: p) : _deleteIntention(p),
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(value: 'edit', child: Text("Edit")),
+                                    PopupMenuItem(value: 'delete', child: Text("Remove")),
+                                  ],
+                                ),
                               ),
                           ],
                         ),
@@ -719,9 +614,9 @@ class _HoverLiftState extends State<_HoverLift> {
         transform: Matrix4.translationValues(0, _hover ? -4 : 0, 0),
         decoration: BoxDecoration(
           color: AppPalette.bg(Colors.white),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
-            BoxShadow(color: widget.shadow.withValues(alpha: _hover ? 0.28 : 0.16), blurRadius: _hover ? 28 : 18, offset: Offset(0, _hover ? 14 : 8)),
+            BoxShadow(color: widget.shadow.withValues(alpha: _hover ? 0.18 : 0.08), blurRadius: _hover ? 20 : 12, offset: Offset(0, _hover ? 10 : 5)),
             BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1)),
           ],
         ),

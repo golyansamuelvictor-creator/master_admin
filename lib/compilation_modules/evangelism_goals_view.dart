@@ -98,6 +98,8 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   /// server still keeps everyone inside their own units).
   List<String?> get _fixed {
     if (_drill.isNotEmpty) return [..._drill, for (int i = _drill.length; i < 5; i++) null];
+    // Group status: the chosen location (if any), grouped by the guide's department
+    if (_isGroup) return [_base[0], null, null, null, null];
     final b = _base, keep = _levelDepth - 1;
     return [for (int i = 0; i < 5; i++) i < keep ? b[i] : null];
   }
@@ -116,6 +118,12 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   }
 
   int get _baseDepth => _deepest(_root);
+
+  /// Group status: the students grouped by their guide's department (the
+  /// members' Department column), not by Book of Life.
+  bool get _isGroup => CompLevel.of(widget.level) == CompLevel.group && _drill.isEmpty;
+  String get _pGroup => _isGroup ? 'group' : _groups[_depth];
+  String get _unitName => _isGroup ? 'Group' : _groupNames[_depth];
 
   /// The level the rows are grouped by (1 location … 5 cell).
   int get _depth => _drill.isNotEmpty ? math.min(5, _deepest(_fixed) + 1) : _levelDepth;
@@ -175,7 +183,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   /// while the compilation screen reloads and rebuilds this view.
   static final Map<String, (Map<String, dynamic>, List<Map<String, dynamic>>)> _cache = {};
 
-  String get _cacheKey => [..._params.values, _groups[_depth], _bucket].join('|');
+  String get _cacheKey => [..._params.values, _pGroup, _bucket].join('|');
 
   Future<void> _load() async {
     final cached = _cache[_cacheKey];
@@ -192,7 +200,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
     try {
       final b = _bucket;
       final r = await Future.wait<dynamic>([
-        db.rpc('evangelism_results', params: {..._params, 'p_group': _groups[_depth]}),
+        db.rpc('evangelism_results', params: {..._params, 'p_group': _pGroup}),
         if (b != null) db.rpc('evangelism_results_series', params: {..._params, 'p_bucket': b}),
       ]);
       final data = Map<String, dynamic>.from(r[0] as Map);
@@ -216,7 +224,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   }
 
   void _open(Map<String, dynamic> row) {
-    if (_depth >= 5) return;
+    if (_depth >= 5 || _isGroup) return;
     final keys = List<String>.from((row['keys'] as List? ?? const []).map((e) => (e ?? '').toString()));
     if (keys.length <= _deepest(_fixed) || keys.any((k) => k.isEmpty)) return;
     setState(() {
@@ -233,7 +241,11 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   List<Map<String, dynamic>> get _rows {
     final rows = List<Map<String, dynamic>>.from(((_data?['rows'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
     String name(Map r) => (r['unit'] ?? '').toString();
-    final order = CompLevel.orderNames(rows.map(name), const ['Church', 'Location', 'Sub-location', 'Dept', 'Team', 'Cell'][_depth]);
+    // Group status: 장년회, 부녀회, 청년회, 신학부, 새신자, Mou
+    const groupOrder = ['장년회', '부녀회', '청년회', '신학부', '새신자', 'Mou'];
+    final order = _isGroup
+        ? [...groupOrder, ...rows.map(name).where((n) => !groupOrder.contains(n))]
+        : CompLevel.orderNames(rows.map(name), const ['Church', 'Location', 'Sub-location', 'Dept', 'Team', 'Cell'][_depth]);
     rows.sort((a, b) => order.indexOf(name(a)).compareTo(order.indexOf(name(b))));
     return rows;
   }
@@ -305,7 +317,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   Widget _summaryTable() {
     final stages = _stages;
     final head1 = <Widget>[
-      _cell(_groupNames[_depth], _unitW, h: _headH * 2, bg: CompStyle.headerBg, fg: CompStyle.headerFg, bold: true, lines: 2),
+      _cell(_unitName, _unitW, h: _headH * 2, bg: CompStyle.headerBg, fg: CompStyle.headerFg, bold: true, lines: 2),
     ];
     final head2 = <Widget>[];
     for (final s in stages) {
@@ -324,7 +336,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
       ]);
     }
     final rows = _rows;
-    final canOpen = _depth < 5;
+    final canOpen = _depth < 5 && !_isGroup;
     return LayoutBuilder(
       builder: (context, box) => SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -349,11 +361,15 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
                   InkWell(
                     onTap: canOpen ? () => _open(rows[i]) : null,
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      _cell(rows[i]['unit'].toString(), _unitW,
+                      // "Not set": BB students whose guide has no location in
+                      // the members list (or no Scj_id was entered for the guide)
+                      _cell(rows[i]['unit'] == 'Not set' ? "Guide's unit not set" : rows[i]['unit'].toString(), _unitW,
                           bg: i.isEven ? Colors.white : const Color(0xFFF8FAFC),
                           bold: true,
-                          fg: canOpen ? _purple : null,
-                          tip: canOpen ? "Open ${rows[i]['unit']} (${_groupNames[_depth + 1].toLowerCase()} level)" : null),
+                          fg: rows[i]['unit'] == 'Not set' ? Colors.red.shade700 : (canOpen ? _purple : null),
+                          tip: rows[i]['unit'] == 'Not set'
+                              ? "Students in the BB File whose guide's location is empty: fill in the guide's Scj_id (or the member's location)"
+                              : canOpen ? "Open ${rows[i]['unit']} (${_groupNames[_depth + 1].toLowerCase()} level)" : null),
                       ..._rowCells(rows[i], bg: i.isEven ? Colors.white : const Color(0xFFF8FAFC)),
                     ]),
                   ),
@@ -378,7 +394,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
       title: "Evangelism results by units – goals vs current",
       subtitle: "${_path()} · ${DateFormat('d MMM').format(widget.from)} – ${DateFormat('d MMM yyyy').format(widget.to)}",
       headers: [
-        _groupNames[_depth],
+        _unitName,
         for (final s in stages) ...["$s Goal", "$s Achieved", "$s Total"],
         "Offline Goal",
         "Offline Total prospects",
@@ -423,7 +439,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
       child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 4, runSpacing: 4, children: [
         ...chips,
-        Text("  ·  ${_groupNames[_depth]} level${_depth < 5 ? ' · tap a unit to open it' : ''}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
+        Text("  ·  $_unitName level${_depth < 5 && !_isGroup ? ' · tap a unit to open it' : ''}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
       ]),
     );
   }
@@ -472,8 +488,8 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
         _legend("Goal", Colors.blueGrey.shade300),
         _legend("Current (total)", _purple),
       ]),
-      SizedBox(
-        height: 260,
+      _wide(groups.length * 66.0, SizedBox(
+        height: 270,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 16, 16, 8),
           child: BarChart(
@@ -497,13 +513,18 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 34,
+                    reservedSize: 40,
                     getTitlesWidget: (v, _) {
                       final i = v.toInt();
                       if (i < 0 || i >= groups.length) return const SizedBox.shrink();
                       return Padding(
                         padding: const EdgeInsets.only(top: 6),
-                        child: Text(groups[i].$1, style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                        child: SizedBox(
+                          width: 60,
+                          child: Text(groups[i].$1,
+                              maxLines: 2, overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.merriweather(fontSize: 9, height: 1.15, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                        ),
                       );
                     },
                   ),
@@ -519,9 +540,17 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
             ),
           ),
         ),
-      ),
+      )),
     ]);
   }
+
+  /// A chart that needs [minW] to keep its labels apart: on a narrow phone
+  /// it scrolls sideways instead of squeezing the words on top of each other.
+  Widget _wide(double minW, Widget chart) => LayoutBuilder(
+        builder: (context, box) => box.maxWidth >= minW
+            ? chart
+            : SingleChildScrollView(scrollDirection: Axis.horizontal, child: SizedBox(width: minW, child: chart)),
+      );
 
   Widget _legend(String t, Color c) => Row(mainAxisSize: MainAxisSize.min, children: [
         Container(width: 12, height: 12, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(3))),
@@ -576,8 +605,8 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
         padding: const EdgeInsets.only(top: 6),
         child: Wrap(alignment: WrapAlignment.center, spacing: 12, runSpacing: 4, children: [for (final s in stages) _legend(s['stage'].toString(), _hex(s['color']))]),
       ),
-      SizedBox(
-        height: 260,
+      _wide(_series.length * 52.0 + 60, SizedBox(
+        height: 270,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 16, 20, 8),
           child: LineChart(
@@ -608,7 +637,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
             ),
           ),
         ),
-      ),
+      )),
     ]);
   }
 
@@ -625,15 +654,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
           _breadcrumb(),
           if (_loading) const LinearProgressIndicator(minHeight: 2),
           _summaryTable(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: Text(
-              "Achieved = reached the stage in the period · Total = previous total + new results − those who moved on · Total prospects = ${(_data?['prospects'] as List? ?? const []).join(', ')} · "
-              "goals are set by the Evangelism Department (a unit without its own goal shows the sum of its units' goals) · each student counts in the unit of their guide",
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.grey.shade700)),
-            ),
-          ),
+          const SizedBox(height: 8),
         ]),
         onExport: () => TableExport.showMenu(context, _export),
       ),

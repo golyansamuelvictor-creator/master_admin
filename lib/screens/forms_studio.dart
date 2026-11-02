@@ -14,6 +14,9 @@ import '../core/table_export.dart';
 import '../widgets/app_menus.dart';
 import '../widgets/office_shell.dart' show OfficeTemplate, OfficeTemplateGrid;
 import '../services/notice_permissions.dart';
+import '../services/media_playback.dart' show appNavigatorKey;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Surveys & forms (Tally / Google Forms style): build a form with many
 /// question types, sections and "show only if" logic, publish it to the
@@ -116,6 +119,104 @@ String formAudienceText(Map f) {
   final where = f['audience_level'] == 'location' ? (f['audience_location'] ?? 'Location').toString() : 'Whole church';
   final who = switch (f['audience_type']) { 'workers' => 'Workers', 'saints' => 'Members', _ => 'Everyone' };
   return "$where · $who";
+}
+
+/// Share link of a form: `https://<site>/?form=<id>`. Opening it (signed in
+/// or after signing in) opens the form to answer; who can answer stays as
+/// the form's audience allows.
+class FormLink {
+  FormLink._();
+  static String of(String id) => '${Uri.base.origin}/?form=$id';
+
+  /// main(): the app was opened from a form link, keep it until signed in
+  static Future<void> rememberFromUrl() async {
+    final id = Uri.base.queryParameters['form'];
+    if (id == null || id.isEmpty) return;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString('pending_form', id);
+    } catch (_) {}
+  }
+
+  /// After signing in: open the form that was waiting.
+  static Future<void> checkPending() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final id = p.getString('pending_form');
+      if (id == null) return;
+      await p.remove('pending_form');
+      await Future.delayed(const Duration(seconds: 2));
+      final ctx = appNavigatorKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        Navigator.of(ctx).push(MaterialPageRoute(builder: (_) => FormFillScreen(formId: id)));
+      }
+    } catch (_) {}
+  }
+
+  /// The share sheet: the link, Copy, WhatsApp, Email.
+  static Future<void> share(BuildContext context, Map<String, dynamic> form) async {
+    final id = form['id'].toString();
+    final link = of(id);
+    final title = (form['title'] ?? 'Survey').toString();
+    final msg = 'Please fill in "$title":\n$link';
+    if (form['is_published'] != true) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text("Publish first?"),
+          content: const Text("People can only answer a published form. Publish it now and share the link?"),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("Cancel")),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text("Publish")),
+          ],
+        ),
+      );
+      if (go != true) return;
+      await FormsService.saveForm(id, {'is_published': true});
+      form['is_published'] = true;
+    }
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Row(children: [const Icon(Icons.link_rounded), const SizedBox(width: 8), Expanded(child: Text("Share \"$title\"", maxLines: 2, overflow: TextOverflow.ellipsis))]),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text("Anyone with this link opens the form to fill it in (they sign in first; the form's audience still applies).", style: TextStyle(fontSize: 12.5)),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: AppPalette.bg(Colors.grey.shade100), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppPalette.line(Colors.grey.shade300))),
+            child: SelectableText(link, style: const TextStyle(fontSize: 12.5)),
+          ),
+        ]),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text("Copy link"),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: link));
+              if (c.mounted) {
+                Navigator.pop(c);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Link copied"), behavior: SnackBarBehavior.floating));
+              }
+            },
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.chat_rounded, size: 18),
+            label: const Text("WhatsApp"),
+            onPressed: () => launchUrl(Uri.parse('https://wa.me/?text=${Uri.encodeComponent(msg)}'), mode: LaunchMode.externalApplication),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.mail_outline_rounded, size: 18),
+            label: const Text("Email"),
+            onPressed: () => launchUrl(Uri.parse('mailto:?subject=${Uri.encodeComponent(title)}&body=${Uri.encodeComponent(msg)}')),
+          ),
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text("Close")),
+        ],
+      ),
+    );
+  }
 }
 
 class FormsService {
@@ -492,6 +593,10 @@ class _FormsHubState extends State<FormsHub> {
             await FormsService.saveForm(f['id'].toString(), {'is_published': f['is_published'] != true});
             _load();
           }),
+          OfficeMenuItem("Share link", icon: Icons.link_rounded, onTap: () async {
+            await FormLink.share(context, f);
+            _load();
+          }),
           OfficeMenuItem("Make a copy", icon: Icons.copy_rounded, onTap: () => _duplicate(f)),
           const OfficeMenuItem.divider(),
           OfficeMenuItem("Delete", icon: Icons.delete_outline, color: Colors.red.shade700, onTap: () => _delete(f)),
@@ -845,6 +950,16 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
           title: Text(_title.text.isEmpty ? 'Untitled form' : _title.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16)),
           actions: [
             Tooltip(message: status.$1, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: Icon(status.$2, color: AppPalette.fg(status.$3), size: 20))),
+            IconButton(
+              tooltip: tr("Share link"),
+              icon: const Icon(Icons.link_rounded),
+              onPressed: () async {
+                await _flush();
+                if (!context.mounted) return;
+                await FormLink.share(context, _form..putIfAbsent('id', () => widget.formId));
+                if (mounted) setState(() {});
+              },
+            ),
             IconButton(
               tooltip: tr("Preview"),
               icon: const Icon(Icons.visibility_outlined),

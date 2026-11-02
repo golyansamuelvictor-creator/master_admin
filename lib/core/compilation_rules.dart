@@ -201,8 +201,18 @@ class CompLevel {
     if (lv == church || lv == location) preferred = orderedLocations;
     if (lv == group) preferred = orderedBOLGroups;
     if (lv == dept) preferred = orderedDepartments;
-    final first = preferred.where(keys.contains).toList();
-    final rest = keys.where((k) => !preferred.contains(k) && k != 'Other').toList();
+    // names from the server may differ in case or spacing ("WAKISO",
+    // "New location") and the church's departments may come as Church / 교회:
+    // match them to the Compilation screen's order all the same
+    String norm(String s) {
+      final n = s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9가-힣]'), '');
+      return const {'church': '24dept', '교회': '24dept', '24부서': '24dept', 'churchdepartments': '24dept'}[n] ?? n;
+    }
+    final pref = [for (final p in preferred) norm(p)];
+    // each name's place worked out once (not again on every comparison)
+    final rankOf = {for (final k in keys) k: pref.indexOf(norm(k))};
+    final first = keys.where((k) => rankOf[k]! >= 0).toList()..sort((a, b) => rankOf[a]!.compareTo(rankOf[b]!));
+    final rest = keys.where((k) => rankOf[k]! < 0 && k != 'Other').toList();
     return [...first, ...naturalSort(rest), if (keys.contains('Other')) 'Other'];
   }
 

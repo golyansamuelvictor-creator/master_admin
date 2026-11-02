@@ -1124,7 +1124,10 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
                   ]),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: labels.isEmpty || (a.every((x) => x == null) && b.every((x) => x == null))
+                    child: LayoutBuilder(builder: (ctx, box) {
+                      // phones: show every n-th date so the labels never run into each other
+                      final step = labels.isEmpty ? 1 : ((labels.length * 46) / (box.maxWidth - 40).clamp(80.0, 4000.0)).ceil().clamp(1, 1000);
+                      return labels.isEmpty || (a.every((x) => x == null) && b.every((x) => x == null))
                         ? Center(child: Text("No reports in this period.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
                         : LineChart(LineChartData(
                             minY: 0,
@@ -1144,11 +1147,17 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
                                 sideTitles: SideTitles(
                                   showTitles: true,
                                   interval: 1,
-                                  reservedSize: 30,
+                                  reservedSize: 34,
                                   getTitlesWidget: (v, m) {
                                     final i = v.toInt();
                                     if (i < 0 || i >= labels.length || v != i.toDouble()) return const SizedBox();
-                                    return Padding(padding: const EdgeInsets.only(top: 6), child: Text(labels[i], style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)));
+                                    if (i % step != 0) return const SizedBox();
+                                    return SideTitleWidget(
+                                      meta: m,
+                                      space: 6,
+                                      fitInside: SideTitleFitInsideData.fromTitleMeta(m),
+                                      child: Text(labels[i], style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                                    );
                                   },
                                 ),
                               ),
@@ -1156,7 +1165,8 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
                               rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                             ),
                             lineBarsData: [line(b, Colors.grey, dashed: true), line(a, d.color)],
-                          )),
+                          ));
+                    }),
                   ),
                 ]),
               );
@@ -1389,6 +1399,8 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
               child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: c.maxWidth),
                 child: DataTable(
+                  // lines between every column and row
+                  border: TableBorder.all(color: AppPalette.line(Colors.grey.shade300), width: 0.8, borderRadius: BorderRadius.circular(6)),
                   headingRowHeight: 38,
                   dataRowMinHeight: 34,
                   dataRowMaxHeight: 40,

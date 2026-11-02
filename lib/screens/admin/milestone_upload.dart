@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' hide Border, BorderStyle;
+import '../../core/xlsx_safe.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 class MilestoneUploadScreen extends StatefulWidget {
@@ -72,7 +73,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
 
     try {
       final bytes = result.files.first.bytes!;
-      final excel = Excel.decodeBytes(bytes);
+      final excel = decodeExcelSafe(bytes);
       final sheetName = excel.tables.keys.first;
       final table = excel.tables[sheetName];
 

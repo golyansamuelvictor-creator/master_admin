@@ -9,6 +9,7 @@ import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../widgets/h_scroll.dart';
 
 class ServiceAttendanceModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -350,10 +351,9 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     ]);
   }
 
-  Widget _buildToolbar() => Wrap(
-    alignment: WrapAlignment.spaceBetween,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    runSpacing: 4,
+  Widget _buildToolbar() => HScroll(child: Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    crossAxisAlignment: CrossAxisAlignment.center,
     children: [
       Row(mainAxisSize: MainAxisSize.min, children: [
         TableExport.buttons(context, _exportTable),
@@ -400,7 +400,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         )
       ),
     ],
-  );
+  ));
 
   Widget _sourceTab(bool pre, String label) {
     final isSel = _pre == pre;

@@ -401,6 +401,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
         child: _card(
           padding: 5, 
           child: RepaintBoundary(child: TableCalendar(
+            // only sideways swipes: the calendar's up/down swipe caught the
+            // finger, so the page stuck when scrolling over it on phones
+            availableGestures: AvailableGestures.horizontalSwipe,
             firstDay: DateTime.utc(2020), lastDay: DateTime.utc(2030),
             focusedDay: _focusedDay, calendarFormat: CalendarFormat.month,
             headerVisible: false, 
@@ -588,6 +591,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               const SizedBox(height: 8),
               RepaintBoundary(child: TableCalendar(
+            // only sideways swipes: the calendar's up/down swipe caught the
+            // finger, so the page stuck when scrolling over it on phones
+            availableGestures: AvailableGestures.horizontalSwipe,
                 firstDay: DateTime.utc(2020), lastDay: DateTime.utc(2030),
                 focusedDay: monthDate,
                 rowHeight: 48, 

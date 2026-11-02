@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' hide Border;
+import '../core/xlsx_safe.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 class MemberSyncTool extends StatefulWidget {
@@ -36,6 +37,21 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
     return val.isEmpty ? null : val;
   }
 
+  /// Same value in the file and in the database? (dates compared by day,
+  /// numbers and lists as text, extra spaces ignored)
+  static bool _same(dynamic stored, dynamic fromFile) {
+    String norm(dynamic v) {
+      if (v == null) return '';
+      if (v is List) return v.map((e) => e.toString().trim()).join(',');
+      var s = v.toString().trim();
+      final d = RegExp(r'^(\d{4}-\d{2}-\d{2})([T ].*)?$').firstMatch(s);
+      if (d != null) s = d.group(1)!;
+      if (RegExp(r'^-?\d+\.0+$').hasMatch(s)) s = s.substring(0, s.indexOf('.'));
+      return s.replaceAll(RegExp(r'\s+'), ' ');
+    }
+    return norm(stored) == norm(fromFile);
+  }
+
   /// Full synchronization logic matching SQL member table order
   Future<void> _startFullSync() async {
     final result = await FilePicker.platform.pickFiles(
@@ -56,7 +72,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
 
     try {
       final bytes = result.files.first.bytes!;
-      final excel = Excel.decodeBytes(bytes);
+      final excel = decodeExcelSafe(bytes);
       final sheetName = excel.tables.keys.first;
       final table = excel.tables[sheetName];
 
@@ -85,7 +101,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       while (true) {
         final page = await _supabase
             .from('members')
-            .select('scj_id, english_name, sub_location, dob, location, reg_status')
+            .select()
             .order('id')
             .range(offset, offset + 999);
         for (final r in page) {
@@ -100,6 +116,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       final List<String> scjIdsInFile = [];
       final Set<String> locationsInFile = {};
       final List<String> skipped = [];
+      int unchanged = 0, changedCount = 0, newCount = 0;
 
       setState(() => _log = "Step 3: Parsing member records...");
 
@@ -187,10 +204,32 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
         final loc = (memberMap['location'] ?? existing?['location'])?.toString();
         if (loc != null && loc.isNotEmpty) locationsInFile.add(loc);
 
-        upsertData.add(memberMap);
+        // Only what changed: an existing member whose details in the file are
+        // the same as in the database is left alone; for one that changed,
+        // only the changed columns are written (plus the required ones).
+        if (existing != null) {
+          final diff = <String, dynamic>{};
+          memberMap.forEach((k, v) {
+            if (k == 'scj_id') return;
+            if (!_same(existing[k], v)) diff[k] = v;
+          });
+          if (diff.isEmpty) {
+            unchanged++;
+            continue;
+          }
+          changedCount++;
+          upsertData.add({
+            'scj_id': scjId,
+            for (final req in const ['english_name', 'sub_location', 'dob']) req: memberMap[req],
+            ...diff,
+          });
+        } else {
+          newCount++;
+          upsertData.add(memberMap);
+        }
       }
 
-      if (upsertData.isEmpty) {
+      if (upsertData.isEmpty && unchanged == 0) {
         throw Exception("No valid rows with an SCJ ID, name, sub-location and date of birth were found in the file.");
       }
 
@@ -247,9 +286,10 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
         _totalInFile = scjIdsInFile.length;
         _totalUpserted = upsertData.length;
         _totalDropped = droppedCount;
+        final summary = "$changedCount updated, $newCount new, $unchanged already up to date.";
         _log = skipped.isEmpty
-            ? "Full sync completed successfully."
-            : "Sync completed. ${skipped.length} row(s) skipped because name, sub-location or date of birth is missing: ${skipped.take(20).join(', ')}${skipped.length > 20 ? ' ...' : ''}";
+            ? "Full sync completed successfully: $summary"
+            : "Sync completed: $summary ${skipped.length} row(s) skipped because name, sub-location or date of birth is missing: ${skipped.take(20).join(', ')}${skipped.length > 20 ? ' ...' : ''}";
       });
     } catch (e) {
       setState(() => _log = "Error: $e");

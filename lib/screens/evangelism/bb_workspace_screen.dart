@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/app_palette.dart';
 import '../../core/app_sizes.dart';
+import '../../core/compilation_rules.dart';
 import '../../core/i18n.dart';
 import '../../core/table_export.dart';
 import 'bb_sheets.dart';
@@ -284,6 +285,7 @@ class BbSummaryView extends StatefulWidget {
 
 class _SummaryTabState extends State<BbSummaryView> {
   Map<String, dynamic>? _d;
+  Map<String, dynamic>? _ev; // Goals this month by unit (evangelism_results)
   String? _month;
   String? _error;
 
@@ -311,7 +313,53 @@ class _SummaryTabState extends State<BbSummaryView> {
     } catch (e) {
       if (mounted) setState(() => _error = "Couldn't compile: ${e is PostgrestException ? e.message : e}");
     }
+    _loadGoals();
   }
+
+  /// Goals this month as a table: each unit's goal and what is achieved,
+  /// in total and split offline / online (evangelism_results, 14_round13.sql).
+  Future<void> _loadGoals() async {
+    if (!widget.sections.contains('goals')) return;
+    final now = DateTime.now();
+    String f(DateTime d) => "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+    try {
+      final r = await Supabase.instance.client.rpc('evangelism_results', params: {
+        'p_from': f(DateTime(now.year, now.month, 1)),
+        'p_to': f(DateTime(now.year, now.month, now.day)),
+        'p_group': (widget.location ?? '').isEmpty ? 'location' : 'sub_location',
+        'p_location': widget.location,
+        'p_sub': widget.subLocation,
+      });
+      if (mounted) setState(() => _ev = Map<String, dynamic>.from(r as Map));
+    } catch (_) {
+      // the goal cards below stay as before
+    }
+  }
+
+  List<List<String>> _goalRows() {
+    final ev = _ev!;
+    double? g(Map? m) => (m?['goal'] as num?)?.toDouble();
+    int t(Map? m) => (m?['total'] as num?)?.toInt() ?? 0;
+    String num0(double? v) => v == null ? '–' : (v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1));
+    String pct(int a, double? goal) => goal == null || goal == 0 ? '–' : '${(a * 100 / goal).round()}%';
+    List<String> row(String label, Map r) {
+      final off = r['offline'] as Map?, on = r['online'] as Map?;
+      final go = g(off), gn = g(on);
+      final tot = go == null && gn == null ? null : (go ?? 0) + (gn ?? 0);
+      final a = t(off) + t(on);
+      return [label, num0(tot), '$a', pct(a, tot), num0(go), '${t(off)}', pct(t(off), go), num0(gn), '${t(on)}', pct(t(on), gn)];
+    }
+    final rows = List<Map<String, dynamic>>.from((ev['rows'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
+    final level = (widget.location ?? '').isEmpty ? 'location' : 'Sub-location';
+    final order = CompLevel.orderNames(rows.map((r) => r['unit'].toString()), level);
+    rows.sort((x, y) => order.indexOf(x['unit'].toString()).compareTo(order.indexOf(y['unit'].toString())));
+    return [
+      if (ev['total'] is Map) row("General total", ev['total'] as Map),
+      for (final r in rows) row(r['unit'].toString(), r),
+    ];
+  }
+
+  static const _goalHeaders = ["Units", "Total Goal", "Achieved", "%", "Offline", "Achieved", "%", "Online", "Achieved", "%"];
 
   int _n(dynamic v) => (v as num?)?.toInt() ?? 0;
 
@@ -384,7 +432,18 @@ class _SummaryTabState extends State<BbSummaryView> {
     final sec = widget.sections;
 
     return ListView(padding: AppSizes.page, children: [
-      if (sec.contains('goals') && goals.isNotEmpty)
+      if (sec.contains('goals') && _ev != null)
+        _section(
+          context,
+          "Goals this month",
+          _grid(_goalHeaders, _goalRows(), boldRows: {0}, col: 70, headerColors: const [
+            null, Color(0xFF4A148C), Color(0xFF4A148C), Color(0xFF4A148C),
+            Color(0xFF00695C), Color(0xFF00695C), Color(0xFF00695C),
+            Color(0xFF1565C0), Color(0xFF1565C0), Color(0xFF1565C0),
+          ]),
+          export: () => ExportTable(title: "Goals this month", subtitle: "Evangelism results", headers: _goalHeaders, rows: _goalRows()),
+        )
+      else if (sec.contains('goals') && goals.isNotEmpty)
         _section(
           context,
           "Goals this month",

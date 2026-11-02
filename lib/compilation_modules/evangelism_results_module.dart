@@ -1,4 +1,4 @@
-// ignore_for_file: unused_local_variable, curly_braces_in_flow_control_structures, unused_element
+// ignore_for_file: curly_braces_in_flow_control_structures, unused_element
 import 'dart:math' as math;
 import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
@@ -249,37 +249,6 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
     }
 
     return stats;
-  }
-
-  _EvangelismResultUnitStat _calculateTotalStat(List<_EvangelismResultUnitStat> stats) {
-    int chakki = 0;
-    int possible = 0;
-    int newBb = 0;
-    int proceeding = 0;
-    int confirmed = 0;
-    int offline = 0;
-    int online = 0;
-
-    for (var s in stats) {
-      chakki += s.chakki;
-      possible += s.possible;
-      newBb += s.newBb;
-      proceeding += s.proceeding;
-      confirmed += s.confirmed;
-      offline += s.offline;
-      online += s.online;
-    }
-
-    return _EvangelismResultUnitStat(
-      unitName: 'General total',
-      chakki: chakki,
-      possible: possible,
-      newBb: newBb,
-      proceeding: proceeding,
-      confirmed: confirmed,
-      offline: offline,
-      online: online,
-    );
   }
 
   // --- UI: STATUS CARDS ---
@@ -874,7 +843,6 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
   Widget build(BuildContext context) {
     final filteredData = _getFilteredBbData();
     final List<_EvangelismResultUnitStat> unitStats = _calculateUnitStats(filteredData);
-    final _EvangelismResultUnitStat totalStat = _calculateTotalStat(unitStats);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

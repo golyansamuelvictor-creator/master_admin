@@ -590,6 +590,19 @@ class _CellServiceEntryState extends State<CellServiceEntry> {
     );
   }
 
+  /// A text cell that isn't being edited is plain text: a field in every
+  /// cell caught the finger's sideways drag (the grid stuck when scrolling
+  /// on phones) and made typing slow. Tap the cell to type in it.
+  Widget _readOnlyCell(String val, String? hint) => Text(
+        val.isEmpty ? (hint ?? '') : val,
+        textAlign: TextAlign.center,
+        softWrap: false,
+        overflow: TextOverflow.ellipsis,
+        style: val.isEmpty
+            ? TextStyle(fontSize: 10, color: AppPalette.fg(Colors.grey.shade400))
+            : GoogleFonts.merriweather(fontSize: 10.5),
+      );
+
   Widget _buildCell(dynamic m, int r, int c, double width, bool isEven) {
     final isSel = _isCellSelected(r, c);
     final isAnc = _isAnchor(r, c);
@@ -633,9 +646,11 @@ class _CellServiceEntryState extends State<CellServiceEntry> {
       content = Container(
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: TextFormField(
+        child: _isAnchor(r, c)
+            ? TextFormField(
           key: ValueKey("${mid}_$c"),
           initialValue: val,
+          autofocus: true,
           textAlign: TextAlign.center,
           style: GoogleFonts.merriweather(fontSize: 10.5),
           decoration: InputDecoration(
@@ -650,7 +665,8 @@ class _CellServiceEntryState extends State<CellServiceEntry> {
             widget.onChanged();
             _setEditableValue(mid, c, v);
           },
-        ),
+        )
+            : _readOnlyCell(val, hint),
       );
     }
 
