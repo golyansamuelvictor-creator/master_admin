@@ -13,6 +13,7 @@ import '../../core/table_export.dart';
 import '../../core/app_sizes.dart';
 import '../../core/compilation_rules.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'tribe_monthly_report.dart';
 
 /// One duty in the report: this period against the period before.
 class DutyStat {
@@ -161,7 +162,16 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
     super.initState();
     _calculatePeriods();
     _identifyAndLoad();
+    // Tribe monthly report (예배 출결 현황): Internal Affairs Department Secretary
+    final role = (widget.userRole ?? '').trim();
+    if (role.isEmpty || role == 'internal_affairs_dept_sec' || role == 'admin') {
+      TribeMonthlyReport.allowed().then((ok) {
+        if (mounted && ok) setState(() => _tribeReport = true);
+      });
+    }
   }
+
+  bool _tribeReport = false;
 
   void _calculatePeriods() {
     final now = DateTime.now();
@@ -865,6 +875,13 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           period,
           pending,
           exports,
+          if (_tribeReport)
+            FilledButton.tonalIcon(
+              style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TribeMonthlyReport())),
+              icon: const Icon(Icons.assignment_turned_in_rounded, size: 18),
+              label: const Text("Tribe monthly report"),
+            ),
         ],
       ),
     );

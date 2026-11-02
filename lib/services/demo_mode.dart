@@ -1,5 +1,3 @@
-// ignore_for_file: deprecated_member_use
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
@@ -72,7 +70,7 @@ class DemoMode {
     try {
       await Supabase.instance.dispose();
     } catch (_) {}
-    await Supabase.initialize(url: url, anonKey: key);
+    await Supabase.initialize(url: url, publishableKey: key);
     active = (await savedBackend()) != null;
     restart.value++;
   }
