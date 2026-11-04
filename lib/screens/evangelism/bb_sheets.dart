@@ -7,7 +7,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_palette.dart';
 import '../../core/i18n.dart';
 import '../../core/table_export.dart';
+import '../../widgets/h_scroll.dart';
 import 'bb_workspace_screen.dart' show BbSettings;
+import 'package:shared_preferences/shared_preferences.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -144,7 +146,8 @@ List<_Col> _bbFileCols(Map<String, int> attended, BbSettings cfg) => [
       _Col('X', _gGuide, '부서', 'Department', 'guide_dept', _Kind.auto, width: 100),
       _Col('Y', _gGuide, '팀', 'Team', 'guide_team', _Kind.auto, width: 80),
       _Col('Z', _gGuide, '구역', 'Cell Group', 'guide_cell', _Kind.auto, width: 90),
-      _Col('AA', _gGuide, '이름', 'English Name', 'guide_name', _Kind.auto, width: 140),
+      // typed for a guide who is a center student (Saints: filled from the Scj_id)
+      _Col('AA', _gGuide, '이름', 'English Name', 'guide_name', _Kind.text, width: 140),
       _Col('AB', _gGuide, '한국어발음', 'Korean Name', 'guide_korean_name', _Kind.auto),
       _Col('AC', _gGuide, '고유번호', 'Scj_id', 'guide_scj_id', _Kind.text, width: 120),
       _Col('AD', _gTeacher, '지역', 'Location', 'teacher_location', _Kind.auto),
@@ -225,6 +228,10 @@ class _BbSheetState extends State<BbSheet> {
   final Map<String, Map<String, (String, String?)>> _markDirty = {};
   final _h = ScrollController();
   String? _editing; // the one cell being typed in ("id|column")
+  final _vLeft = ScrollController(); // the fixed row numbers
+  final _vRight = ScrollController(); // the rest of the sheet
+  final Set<String> _hiddenLetters = {}; // hidden columns (remembered on this device)
+  String get _hideKey => 'bb_hidden_cols_${widget.attendance ? 'att' : 'file'}';
   String _q = '';
   String? _center, _month;
   bool _saving = false;
@@ -243,12 +250,64 @@ class _BbSheetState extends State<BbSheet> {
   void initState() {
     super.initState();
     if (widget.attendance) _loadMarks();
+    _vRight.addListener(() {
+      if (_vLeft.hasClients && _vLeft.offset != _vRight.offset) _vLeft.jumpTo(_vRight.offset);
+    });
+    _vLeft.addListener(() {
+      if (_vRight.hasClients && _vRight.offset != _vLeft.offset) _vRight.jumpTo(_vLeft.offset);
+    });
+    SharedPreferences.getInstance().then((p) {
+      final h = p.getStringList(_hideKey) ?? const [];
+      if (mounted) setState(() => _hiddenLetters.addAll(h));
+    }).catchError((_) {});
   }
 
   @override
   void dispose() {
     _h.dispose();
+    _vLeft.dispose();
+    _vRight.dispose();
     super.dispose();
+  }
+
+  void _chooseColumns(List<_Col> all) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text("Show / hide columns"),
+          content: SizedBox(
+            width: 340,
+            child: ListView(shrinkWrap: true, children: [
+              Text("The first column shown stays fixed on the left.", style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade700))),
+              for (final c in all)
+                CheckboxListTile(
+                  dense: true,
+                  value: !_hiddenLetters.contains(c.letter),
+                  title: Text("${c.letter} · ${c.en}"),
+                  onChanged: (v) {
+                    if (v == false && all.length - _hiddenLetters.length <= 1) return;
+                    set(() => v == true ? _hiddenLetters.remove(c.letter) : _hiddenLetters.add(c.letter));
+                    setState(() {});
+                    SharedPreferences.getInstance().then((p) => p.setStringList(_hideKey, _hiddenLetters.toList())).catchError((_) => false);
+                  },
+                ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                set(_hiddenLetters.clear);
+                setState(() {});
+                SharedPreferences.getInstance().then((p) => p.setStringList(_hideKey, const [])).catchError((_) => false);
+              },
+              child: const Text("Show all"),
+            ),
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text("Done")),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadMarks() async {
@@ -528,7 +587,10 @@ class _BbSheetState extends State<BbSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cols = widget.attendance ? _attendanceCols(widget.attended) : _bbFileCols(widget.attended, widget.cfg);
+    final allCols = widget.attendance ? _attendanceCols(widget.attended) : _bbFileCols(widget.attended, widget.cfg);
+    // hidden columns left out; only the row numbers (and the header rows) stay fixed
+    final rest = allCols.where((c) => !_hiddenLetters.contains(c.letter)).toList();
+    const numW = 38.0;
     final q = _q.toLowerCase();
     final list = widget.students.map(_merged).where((s) {
       if (_center != null && _v(s, 'center_place') != _center) return false;
@@ -536,18 +598,18 @@ class _BbSheetState extends State<BbSheet> {
       return q.isEmpty || '${s['student_name']} ${s['guide_name']} ${s['teacher_name']} ${s['contact']}'.toLowerCase().contains(q);
     }).toList();
     final dates = widget.attendance ? _dates : const <DateTime>[];
-    final width = cols.fold<double>(0, (a, c) => a + c.width) + dates.length * 64 + (widget.attendance ? 80 : 0);
+    final width = rest.fold<double>(0, (a, c) => a + c.width) + dates.length * 64 + (widget.attendance ? 80 : 0);
 
     // header row 1: groups (merged)
     final groupCells = <Widget>[];
-    for (int i = 0; i < cols.length;) {
+    for (int i = 0; i < rest.length;) {
       int j = i;
       double w = 0;
-      while (j < cols.length && cols[j].group == cols[i].group) {
-        w += cols[j].width;
+      while (j < rest.length && rest[j].group == rest[i].group) {
+        w += rest[j].width;
         j++;
       }
-      groupCells.add(_box(cols[i].group, w, 26, bg: const Color(0xFF1E293B), fg: Colors.white, bold: true));
+      groupCells.add(_box(rest[i].group, w, 26, bg: const Color(0xFF1E293B), fg: Colors.white, bold: true));
       i = j;
     }
     if (widget.attendance) {
@@ -556,7 +618,7 @@ class _BbSheetState extends State<BbSheet> {
     }
 
     final row2 = [
-      for (final c in cols) Tooltip(message: "Column ${c.letter}", child: _box(c.ko, c.width, 30, bg: c.kind == _Kind.auto ? const Color(0xFFC62828) : const Color(0xFF334155), fg: Colors.white, lines: 2, size: 9.5)),
+      for (final c in rest) Tooltip(message: "Column ${c.letter}", child: _box(c.ko, c.width, 30, bg: c.kind == _Kind.auto ? const Color(0xFFC62828) : const Color(0xFF334155), fg: Colors.white, lines: 2, size: 9.5)),
       if (widget.attendance) ...[
         for (int i = 0; i < dates.length; i++)
           Tooltip(message: "Column ${_letters(13 + i)}", child: _box(_studyDay(dates[i]), 64, 30, bg: const Color(0xFF334155), fg: Colors.white, bold: true, size: 10.5)),
@@ -564,7 +626,7 @@ class _BbSheetState extends State<BbSheet> {
       ],
     ];
     final row3 = [
-      for (final c in cols) _box(c.en, c.width, 34, bg: const Color(0xFF475569), fg: Colors.white, bold: true, lines: 2, size: 9.5),
+      for (final c in rest) _box(c.en, c.width, 34, bg: const Color(0xFF475569), fg: Colors.white, bold: true, lines: 2, size: 9.5),
       if (widget.attendance) ...[
         for (final d in dates) _box(DateFormat('d MMM\nyyyy').format(d), 64, 34, bg: const Color(0xFF475569), fg: Colors.white, bold: true, lines: 2, size: 9),
         _box("Number of times", 80, 34, bg: const Color(0xFF475569), fg: Colors.white, bold: true, lines: 2, size: 9),
@@ -572,22 +634,37 @@ class _BbSheetState extends State<BbSheet> {
     ];
 
     return Column(children: [
+      // one compact line of tools so the rows get the screen
       Padding(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-        child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 6, children: [
+        padding: const EdgeInsets.fromLTRB(6, 4, 6, 2),
+        child: HScroll(child: Row(mainAxisAlignment: MainAxisAlignment.center, spacing: 4, children: [
           SizedBox(
-            width: 240,
-            child: TextField(decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search name, guide, teacher"), isDense: true, border: const OutlineInputBorder()), onChanged: (v) => setState(() => _q = v)),
+            width: 200,
+            height: 34,
+            child: TextField(decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search name, guide, teacher"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder()), onChanged: (v) => setState(() => _q = v)),
+          ),
+          const SizedBox(width: 6),
+          Text("${list.length}", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: AppPalette.fg(_kPurple))),
+          Tooltip(
+            message: "${list.length} rows${widget.attendance ? ' · tap a study day to mark Present / Absent (saved with the day and date)' : ''} · red columns are filled in automatically",
+            child: Icon(Icons.info_outline_rounded, size: 16, color: AppPalette.fg(Colors.grey.shade600)),
+          ),
+          const SizedBox(width: 4),
+          ActionChip(
+            visualDensity: VisualDensity.compact,
+            avatar: const Icon(Icons.view_week_rounded, size: 16),
+            label: Text("Columns${_hiddenLetters.isEmpty ? '' : ' (${_hiddenLetters.length} hidden)'}"),
+            onPressed: () => _chooseColumns(allCols),
           ),
           PopupMenuButton<String>(
             onSelected: (v) => setState(() => _center = v == '\u0000' ? null : v),
             itemBuilder: (_) => [const PopupMenuItem(value: '\u0000', child: Text("All centers")), for (final c in widget.cfg.centers) PopupMenuItem(value: c, child: Text(c))],
-            child: Chip(avatar: const Icon(Icons.location_city_rounded, size: 16), label: Text(_center ?? "All centers")),
+            child: Chip(visualDensity: VisualDensity.compact, avatar: const Icon(Icons.location_city_rounded, size: 16), label: Text(_center ?? "All centers")),
           ),
           PopupMenuButton<String>(
             onSelected: (v) => setState(() => _month = v == '\u0000' ? null : v),
             itemBuilder: (_) => [const PopupMenuItem(value: '\u0000', child: Text("All months")), for (final m in widget.cfg.months) PopupMenuItem(value: m, child: Text(m))],
-            child: Chip(avatar: const Icon(Icons.calendar_month_rounded, size: 16), label: Text(_month ?? "All months")),
+            child: Chip(visualDensity: VisualDensity.compact, avatar: const Icon(Icons.calendar_month_rounded, size: 16), label: Text(_month ?? "All months")),
           ),
           if (widget.attendance) ...[
             IconButton(
@@ -617,7 +694,7 @@ class _BbSheetState extends State<BbSheet> {
               },
             ),
           ],
-          IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)), onPressed: () => TableExport.showMenu(context, () => _export(cols, list))),
+          IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)), onPressed: () => TableExport.showMenu(context, () => _export(rest, list))),
           if (!widget.fullScreen)
             IconButton(
               tooltip: tr('Fullscreen View'),
@@ -636,46 +713,67 @@ class _BbSheetState extends State<BbSheet> {
               label: Text(_changes == 0 ? "Saved" : "Save ($_changes)"),
             ),
           ],
-        ]),
+        ])),
       ),
-      Text("${list.length} rows${widget.attendance ? ' · tap a study day to mark Present / Absent (saved with the day and date)' : ''} · red columns are filled in automatically",
-          style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
-      const SizedBox(height: 4),
       Expanded(
-        child: Scrollbar(
-          controller: _h,
-          thumbVisibility: true,
-          child: SingleChildScrollView(
-            controller: _h,
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: width,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: groupCells),
-                Row(children: row2),
-                Row(children: row3),
-                Expanded(
-                  child: list.isEmpty
-                      ? Center(child: Text(widget.canEdit ? "No rows yet. Tap \"Add row\"." : "No students in your unit yet.", style: TextStyle(color: AppPalette.fg(Colors.grey))))
-                      : ListView.builder(
-                          itemCount: list.length,
-                          itemExtent: _rowH,
-                          itemBuilder: (_, r) {
-                            final s = list[r];
-                            return Row(children: [
-                              for (final c in cols) _cell(s, c, r),
-                              if (widget.attendance) ...[
-                                for (final d in dates) _markCell(s, d, r),
-                                _box('${widget.attended[s['id'].toString()] ?? 0}', 80, _rowH, bold: true, bg: const Color(0xFFE8F5E9)),
-                              ],
-                            ]);
-                          },
-                        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 1. the row numbers, fixed on the left
+          Container(
+            width: numW,
+            decoration: BoxDecoration(boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(2, 0))]),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _box("#", numW, 90, bg: const Color(0xFF1E293B), fg: Colors.white, bold: true),
+              Expanded(
+                child: list.isEmpty
+                    ? const SizedBox.shrink()
+                    : ListView.builder(
+                        controller: _vLeft,
+                        itemCount: list.length,
+                        itemExtent: _rowH,
+                        itemBuilder: (_, r) => _box("${r + 1}", numW, _rowH, bg: const Color(0xFFF1F5F9), fg: Colors.grey.shade700, bold: true),
+                      ),
+              ),
+            ]),
+          ),
+          // 2. the rest: the header rows stay on top, scrolls both ways
+          Expanded(
+            child: Scrollbar(
+              controller: _h,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _h,
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: width,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: groupCells),
+                    Row(children: row2),
+                    Row(children: row3),
+                    Expanded(
+                      child: list.isEmpty
+                          ? Center(child: Text(widget.canEdit ? "No rows yet. Tap \"Add row\"." : "No students in your unit yet.", style: TextStyle(color: AppPalette.fg(Colors.grey))))
+                          : ListView.builder(
+                              controller: _vRight,
+                              itemCount: list.length,
+                              itemExtent: _rowH,
+                              itemBuilder: (_, r) {
+                                final s = list[r];
+                                return Row(children: [
+                                  for (final c in rest) _cell(s, c, r),
+                                  if (widget.attendance) ...[
+                                    for (final d in dates) _markCell(s, d, r),
+                                    _box('${widget.attended[s['id'].toString()] ?? 0}', 80, _rowH, bold: true, bg: const Color(0xFFE8F5E9)),
+                                  ],
+                                ]);
+                              },
+                            ),
+                    ),
+                  ]),
                 ),
-              ]),
+              ),
             ),
           ),
-        ),
+        ]),
       ),
     ]);
   }

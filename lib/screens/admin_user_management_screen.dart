@@ -291,7 +291,10 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           return true;
         }).toList()
           ..sort((a, b) => name(a).compareTo(name(b)));
-        final seconds = _appRoles.where((r) => r['role_key'] != null && (!onlyLocation || !_isChurchRole(r))).toList()
+        // the secondary role follows the same kind (Location / Church) as the
+        // main list; it may sit at another level (e.g. a Theology worker who
+        // is also a cell leader)
+        final seconds = _appRoles.where((r) => r['role_key'] != null && r['role_key'] != roleKey && (!onlyLocation || !_isChurchRole(r)) && (inKind(r) || r['role_key'] == secondKey)).toList()
           ..sort((a, b) => name(a).compareTo(name(b)));
         final current = _appRoles.firstWhere((r) => r['role_key'] == roleKey, orElse: () => <String, dynamic>{});
         Widget label(String t) => Padding(padding: const EdgeInsets.only(top: 10, bottom: 4), child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)));

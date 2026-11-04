@@ -313,8 +313,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
     return _grouping.startsWith('24-Dept') || _scope == 'church_department';
   }
 
+  /// Location roles of one department / team (Location New Saints Dept
+  /// Secretary / Team Leader, Location Mou Team Leader: 22_round21.sql)
+  bool get _isLocationDeptScope => _scope == 'location_department' || _scope == 'location_team';
+
   bool get _isLocationLeader {
-    if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker) return false;
+    if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker || _isLocationDeptScope) return false;
     return _scope == 'location' || _grouping.startsWith('Location') || (widget.role.contains('loc_') && !widget.role.contains('sub_loc'));
   }
 
@@ -325,12 +329,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   bool get _isDeptLeader {
     if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker || _isLocationLeader || _isSubLocationLeader) return false;
-    return _scope == 'department' || _grouping.startsWith('Dept ') || widget.role.contains('dept_');
+    return _scope == 'department' || _scope == 'location_department' || _grouping.startsWith('Dept ') || (widget.role.contains('dept_') && _scope != 'location_team');
   }
 
   bool get _isTeamLeader {
     if (_isChurchWideCompiler || _isGroupLeader || _is24DeptWorker || _isLocationLeader || _isSubLocationLeader || _isDeptLeader) return false;
-    return _scope == 'team' || _grouping.startsWith('Team') || _grouping == 'Location Team' || widget.role.contains('team_');
+    return _scope == 'team' || _scope == 'location_team' || _grouping.startsWith('Team') || _grouping == 'Location Team' || widget.role.contains('team_');
   }
 
   bool get _isCellLeader {

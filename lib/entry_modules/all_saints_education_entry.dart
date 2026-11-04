@@ -6,6 +6,7 @@ import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AllSaintsEducationEntry extends StatefulWidget {
   final List<dynamic> members;
@@ -61,6 +62,7 @@ class _AllSaintsEducationEntryState extends State<AllSaintsEducationEntry> {
   @override
   void initState() {
     super.initState();
+    _loadHiddenCols();
     BrowserContextMenu.disableContextMenu();
 
     _rowNumScrollController = ScrollController();
@@ -377,6 +379,70 @@ class _AllSaintsEducationEntryState extends State<AllSaintsEducationEntry> {
     );
   }
 
+  // ---- show / hide columns (remembered on this device)
+  final Set<int> _hiddenCols = {};
+  String get _hideKey => 'entry_hidden_cols_${widget.runtimeType}';
+
+  Future<void> _loadHiddenCols() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final saved = p.getStringList(_hideKey) ?? const [];
+      if (!mounted) return;
+      setState(() {
+        _hiddenCols
+          ..clear()
+          ..addAll(saved.map(int.tryParse).whereType<int>().where((c) => c >= 0 && c < _colTitles.length));
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveHiddenCols() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setStringList(_hideKey, [for (final c in _hiddenCols) '$c']);
+    } catch (_) {}
+  }
+
+  void _chooseColumns(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text("Show / hide columns"),
+          content: SizedBox(
+            width: 320,
+            child: ListView(shrinkWrap: true, children: [
+              Text("The first column shown stays fixed on the left.", style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade700))),
+              for (int c = 0; c < _colTitles.length; c++)
+                CheckboxListTile(
+                  dense: true,
+                  value: !_hiddenCols.contains(c),
+                  title: Text("${_colLetters[c]} · ${_colTitles[c]}"),
+                  onChanged: (v) {
+                    if (v == false && _colTitles.length - _hiddenCols.length <= 1) return;
+                    set(() => v == true ? _hiddenCols.remove(c) : _hiddenCols.add(c));
+                    setState(() {});
+                    _saveHiddenCols();
+                  },
+                ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                set(_hiddenCols.clear);
+                setState(() {});
+                _saveHiddenCols();
+              },
+              child: const Text("Show all"),
+            ),
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text("Done")),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ScrollConfiguration(
@@ -402,12 +468,91 @@ class _AllSaintsEducationEntryState extends State<AllSaintsEducationEntry> {
         },
         child: LayoutBuilder(
           builder: (context, constraints) {
+            // Hidden columns are left out; the first column shown stays fixed
+            // on the left (with the row numbers) and the header rows stay on
+            // top while the rest scrolls both ways.
+            final vis = [for (int c = 0; c < _colTitles.length; c++) if (!_hiddenCols.contains(c)) c];
             final availWidth = constraints.maxWidth - _rowNumColWidth;
-            final baseSum = _baseWidths.fold<double>(0, (s, w) => s + w);
-            final scale = (availWidth > baseSum) ? (availWidth / baseSum) : 1.0;
+            final baseSum = vis.fold<double>(0, (s, c) => s + _baseWidths[c]);
+            final scale = (baseSum > 0 && availWidth > baseSum) ? (availWidth / baseSum) : 1.0;
             final widths = _baseWidths.map((w) => w * scale).toList();
-            final totalTableWidth = widths.fold<double>(0, (s, w) => s + w);
+            final rest = vis; // only the row numbers (and the header rows) stay fixed
+            final totalTableWidth = rest.fold<double>(0, (s, c) => s + widths[c]);
             final filtered = _filteredMembers;
+
+            Widget letter(int i) {
+              final isColSel = _selStartCol != null &&
+                  i >= math.min(_selStartCol!, _selEndCol!) &&
+                  i <= math.max(_selStartCol!, _selEndCol!) &&
+                  _selStartRow == 0 &&
+                  _selEndRow == filtered.length - 1;
+              return GestureDetector(
+                onTap: () => _selectColumn(i),
+                child: Container(
+                  width: widths[i],
+                  height: _alphaHeaderHeight,
+                  color: AppPalette.bg(isColSel ? widget.pPurple.withValues(alpha: 0.25) : const Color(0xFFF1F5F9)),
+                  alignment: Alignment.center,
+                  child: Text(_colLetters[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(isColSel ? widget.pPurple : Colors.grey[700]))),
+                ),
+              );
+            }
+
+            Widget title(int i) {
+              final isFiltered = _activeFilters.containsKey(i);
+              return Container(
+                width: widths[i],
+                height: _titleHeaderHeight,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                decoration: BoxDecoration(
+                  color: AppPalette.bg(const Color(0xFF1E293B)),
+                  border: Border(right: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.3)), width: 0.8)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _selectColumn(i),
+                        child: Text(_colTitles[i], softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 11.5, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => _openFilterDialog(i),
+                      child: Icon(isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: AppPalette.fg(isFiltered ? const Color(0xFFF59E0B) : Colors.white70)),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget rowNumber(int idx) {
+              final isRowSel = _selStartRow != null &&
+                  idx >= math.min(_selStartRow!, _selEndRow!) &&
+                  idx <= math.max(_selStartRow!, _selEndRow!) &&
+                  _selStartCol == 0 &&
+                  _selEndCol == _colTitles.length - 1;
+              return GestureDetector(
+                onTap: () => _selectRow(idx),
+                onSecondaryTapDown: (d) => _showContextMenu(d.globalPosition, idx, 0),
+                child: Container(
+                  height: _rowHeight,
+                  width: _rowNumColWidth,
+                  decoration: BoxDecoration(
+                    color: AppPalette.bg(isRowSel ? widget.pPurple.withValues(alpha: 0.15) : const Color(0xFFF1F5F9)),
+                    border: Border(
+                      bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.3)), width: 0.8),
+                      right: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.4)), width: 1.2),
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      "${idx + 1}",
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(isRowSel ? widget.pPurple : Colors.grey[700])),
+                    ),
+                  ),
+                ),
+              );
+            }
 
             return Container(
               width: double.infinity,
@@ -416,73 +561,52 @@ class _AllSaintsEducationEntryState extends State<AllSaintsEducationEntry> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. FROZEN LEFT PANE: Corner + Virtualized Row Numbers
-                  SizedBox(
+                  // 1. FROZEN LEFT PANE: corner + row numbers + the first column shown
+                  Container(
                     width: _rowNumColWidth,
+                    decoration: BoxDecoration(
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(2, 0))],
+                    ),
                     child: Column(
                       children: [
-                        GestureDetector(
-                          onTap: _selectAll,
-                          child: Container(
+                        Row(children: [
+                          Container(
                             height: _totalHeaderHeight,
                             width: _rowNumColWidth,
                             color: AppPalette.bg(const Color(0xFFE2E8F0)),
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.select_all, size: 14, color: AppPalette.fg(Colors.black54)),
-                                Text("#", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                // show / hide columns (small screens)
+                                InkWell(
+                                  onTap: () => _chooseColumns(context),
+                                  child: Tooltip(message: 'Show / hide columns', child: Icon(Icons.view_week_rounded, size: 15, color: AppPalette.fg(widget.pPurple))),
+                                ),
+                                const SizedBox(height: 4),
+                                InkWell(
+                                  onTap: _selectAll,
+                                  child: Tooltip(message: 'Select all', child: Text("#", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                                ),
                               ],
                             ),
                           ),
-                        ),
-                        // Virtualized ListView for fast vertical scrolling
+                        ]),
                         Expanded(
                           child: ListView.builder(
                             controller: _rowNumScrollController,
                             physics: const ClampingScrollPhysics(),
                             itemCount: filtered.length,
                             itemExtent: _rowHeight,
-                            itemBuilder: (ctx, idx) {
-                              final isRowSel = _selStartRow != null &&
-                                  idx >= math.min(_selStartRow!, _selEndRow!) &&
-                                  idx <= math.max(_selStartRow!, _selEndRow!) &&
-                                  _selStartCol == 0 &&
-                                  _selEndCol == _colTitles.length - 1;
-
-                              return GestureDetector(
-                                onTap: () => _selectRow(idx),
-                                onSecondaryTapDown: (d) => _showContextMenu(d.globalPosition, idx, 0),
-                                child: Container(
-                                  height: _rowHeight,
-                                  width: _rowNumColWidth,
-                                  decoration: BoxDecoration(
-                                    color: AppPalette.bg(isRowSel ? widget.pPurple.withValues(alpha: 0.15) : const Color(0xFFF1F5F9)),
-                                    border: Border(
-                                      bottom: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.3)), width: 0.8),
-                                      right: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.4)), width: 1.2),
-                                    ),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      "${idx + 1}",
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppPalette.fg(isRowSel ? widget.pPurple : Colors.grey[700]),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
+                            itemBuilder: (ctx, idx) => Row(children: [
+                              rowNumber(idx),
+                            ]),
                           ),
                         ),
                       ],
                     ),
                   ),
 
-                  // 2. SCROLLABLE DATA PANE (Sticky Header, Virtualized Rows)
+                  // 2. SCROLLABLE DATA PANE (header fixed on top, rows virtualized)
                   Expanded(
                     child: SingleChildScrollView(
                       controller: _horizScrollController,
@@ -492,68 +616,8 @@ class _AllSaintsEducationEntryState extends State<AllSaintsEducationEntry> {
                         width: totalTableWidth,
                         child: Column(
                           children: [
-                            // FROZEN TOP HEADER ROW
-                            Container(
-                              height: _totalHeaderHeight,
-                              color: AppPalette.bg(const Color(0xFF1E293B)),
-                              child: Column(
-                                children: [
-                                  // Excel Letters A..J
-                                  SizedBox(
-                                    height: _alphaHeaderHeight,
-                                    child: Row(
-                                      children: List.generate(_colLetters.length, (i) {
-                                        final isColSel = _selStartCol != null &&
-                                            i >= math.min(_selStartCol!, _selEndCol!) &&
-                                            i <= math.max(_selStartCol!, _selEndCol!) &&
-                                            _selStartRow == 0 &&
-                                            _selEndRow == filtered.length - 1;
-
-                                        return GestureDetector(
-                                          onTap: () => _selectColumn(i),
-                                          child: Container(
-                                            width: widths[i],
-                                            color: AppPalette.bg(isColSel ? widget.pPurple.withValues(alpha: 0.25) : const Color(0xFFF1F5F9)),
-                                            alignment: Alignment.center,
-                                            child: Text(_colLetters[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(isColSel ? widget.pPurple : Colors.grey[700]))),
-                                          ),
-                                        );
-                                      }),
-                                    ),
-                                  ),
-                                  // Column Names with Filters
-                                  SizedBox(
-                                    height: _titleHeaderHeight,
-                                    child: Row(
-                                      children: List.generate(_colTitles.length, (i) {
-                                        final isFiltered = _activeFilters.containsKey(i);
-                                        return Container(
-                                          width: widths[i],
-                                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                                          decoration: BoxDecoration(border: Border(right: BorderSide(color: AppPalette.line(Colors.grey.withValues(alpha: 0.3)), width: 0.8))),
-                                          child: Row(
-                                            children: [
-                                              Expanded(
-                                                child: GestureDetector(
-                                                  onTap: () => _selectColumn(i),
-                                                  child: Text(_colTitles[i], softWrap: false, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white), fontSize: 11.5, fontWeight: FontWeight.bold)),
-                                                ),
-                                              ),
-                                              InkWell(
-                                                onTap: () => _openFilterDialog(i),
-                                                child: Icon(isFiltered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: AppPalette.fg(isFiltered ? const Color(0xFFF59E0B) : Colors.white70)),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // VIRTUALIZED MAIN DATA ROWS (Smooth 60/120fps)
+                            SizedBox(height: _alphaHeaderHeight, child: Row(children: [for (final i in rest) letter(i)])),
+                            SizedBox(height: _titleHeaderHeight, child: Row(children: [for (final i in rest) title(i)])),
                             Expanded(
                               child: ListView.builder(
                                 controller: _contentVertScrollController,
@@ -565,11 +629,7 @@ class _AllSaintsEducationEntryState extends State<AllSaintsEducationEntry> {
                                   final isEven = r.isEven;
                                   return SizedBox(
                                     height: _rowHeight,
-                                    child: Row(
-                                      children: List.generate(_colTitles.length, (c) {
-                                        return _buildCell(m, r, c, widths[c], isEven);
-                                      }),
-                                    ),
+                                    child: Row(children: [for (final c in rest) _buildCell(m, r, c, widths[c], isEven)]),
                                   );
                                 },
                               ),

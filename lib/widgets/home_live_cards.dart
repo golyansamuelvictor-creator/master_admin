@@ -9,6 +9,7 @@ import '../core/app_palette.dart';
 import '../core/i18n.dart';
 import '../screens/admin/monthly_executive_report.dart';
 import '../screens/communication_screen.dart';
+import '../screens/education/education_contents.dart';
 import '../screens/notification_center_screen.dart';
 import '../services/chat_service.dart';
 
@@ -382,15 +383,25 @@ class _HomeNotificationsCardState extends State<HomeNotificationsCard> {
     if (uid == null) return;
     final items = <Map<String, dynamic>>[];
     try {
-      final n = await _db.from('app_notifications').select('id, kind, title, body, created_at, read_at').eq('user_id', uid).order('created_at', ascending: false).limit(15);
+      // only the ones not read yet: once opened they leave the card
+      final n = await _db
+          .from('app_notifications')
+          .select('id, kind, title, body, created_at, read_at, link_type, link_id')
+          .eq('user_id', uid)
+          .isFilter('read_at', null)
+          .order('created_at', ascending: false)
+          .limit(15);
       for (final r in n) {
         items.add({
           'type': 'notice',
+          'id': r['id'],
           'kind': r['kind'],
           'title': r['title'],
           'flash': (r['body'] ?? '').toString(),
           'at': DateTime.tryParse((r['created_at'] ?? '').toString())?.toLocal(),
           'unread': r['read_at'] == null,
+          'link_type': r['link_type'],
+          'link_id': r['link_id'],
         });
       }
     } catch (_) {}
@@ -417,7 +428,22 @@ class _HomeNotificationsCardState extends State<HomeNotificationsCard> {
     }
   }
 
-  void _open(Map<String, dynamic> it) {
+  Future<void> _open(Map<String, dynamic> it) async {
+    // opened = read: it leaves the card at once, making room for new ones
+    if (it['type'] == 'notice' && it['id'] != null) {
+      setState(() => _items.remove(it));
+      try {
+        await _db.from('app_notifications').update({'read_at': DateTime.now().toUtc().toIso8601String()}).eq('id', it['id']);
+      } catch (_) {}
+      NotificationCount.refresh();
+    }
+    if (!mounted) return;
+    // a new education content: open it
+    if (it['link_type'] == 'edu_contents' && it['link_id'] != null) {
+      await EducationContentDetail.openById(context, it['link_id'].toString());
+      _load();
+      return;
+    }
     final Widget page = it['type'] == 'chat'
         ? CommunicationScreen(userEmail: widget.userEmail, userRole: widget.userRole, openRoomId: it['room']?.toString())
         : NotificationCenterScreen(userRole: widget.userRole);
@@ -433,6 +459,9 @@ class _HomeNotificationsCardState extends State<HomeNotificationsCard> {
       'report' => (Icons.assignment_turned_in_rounded, const Color(0xFF2E7D32)),
       'transfer' => (Icons.swap_horiz_rounded, const Color(0xFFEF6C00)),
       'account' => (Icons.verified_user_rounded, const Color(0xFF4A148C)),
+      'education' => (Icons.local_library_rounded, const Color(0xFF1565C0)),
+      'asmis' => (Icons.groups_3_rounded, const Color(0xFF4A148C)),
+      'evangelism' => (Icons.campaign_rounded, const Color(0xFF00695C)),
       _ => (Icons.notifications_rounded, const Color(0xFF1565C0)),
     };
   }

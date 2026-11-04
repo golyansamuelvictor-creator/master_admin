@@ -296,6 +296,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final out = <(DateTime, dynamic)>[];
     for (var d = start; !d.isAfter(end); d = d.add(const Duration(days: 1))) {
       for (final e in _getEventsForDay(d)) {
+        // today's timed events leave 2 hours after they start
+        if (d == start) {
+          final t = (e['event_time'] ?? '').toString().split(':');
+          if (t.length >= 2) {
+            final at = DateTime(d.year, d.month, d.day, int.tryParse(t[0]) ?? 0, int.tryParse(t[1]) ?? 0);
+            if (now.isAfter(at.add(const Duration(hours: 2)))) continue;
+          }
+        }
         out.add((d, e));
       }
     }

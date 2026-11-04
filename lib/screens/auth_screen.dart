@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/profile_refresh.dart';
 import 'add_account_screen.dart';
+import 'terms_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 /// Result of checking a signed-in user's profile.
@@ -503,6 +504,8 @@ class _AuthScreenState extends State<AuthScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
 
+      // The Terms and Conditions (Data Policy) are read and accepted first
+      if (!await Terms.ensureAccepted(context) || !mounted) return;
       // Successfully verified with church records -> Proceed to AddAccountScreen with prefilled data
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -668,6 +671,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
       if (!mounted) return;
       setState(() => _isLoading = false);
+      // The Terms and Conditions (Data Policy) are read and accepted first
+      if (!await Terms.ensureAccepted(context) || !mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (ctx) => AddAccountScreen(
@@ -1204,6 +1209,12 @@ class _AuthScreenState extends State<AuthScreen> {
         ],
       );
 
+  /// Creating an account starts with the Terms and Conditions (Data Policy):
+  /// Agree continues to the sign-up form, Decline stays here.
+  Future<void> _startSignUp() async {
+    if (await Terms.ensureAccepted(context) && mounted) setState(() => _isSignUp = true);
+  }
+
   // ==========================================
   // EMAIL SIGN IN UI
   // ==========================================
@@ -1216,7 +1227,7 @@ class _AuthScreenState extends State<AuthScreen> {
           _mainBtn('Sign In', _handleEmailSignIn),
           const SizedBox(height: 6),
           TextButton(
-            onPressed: () => setState(() => _isSignUp = true),
+            onPressed: _startSignUp,
             child: Text(
               _signupPrompt,
               style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),
@@ -1237,7 +1248,7 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
           const SizedBox(height: 6),
           TextButton(
-            onPressed: () => setState(() => _isSignUp = true),
+            onPressed: _startSignUp,
             child: Text(
               _signupPrompt,
               style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple)),

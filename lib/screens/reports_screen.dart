@@ -27,6 +27,7 @@ import 'member_change_approvals_screen.dart';
 import 'duty_panel_screen.dart';
 import 'evangelism/bb_workspace_screen.dart';
 import 'evangelism/evangelism_results_screen.dart';
+import 'theology/student_duties.dart';
 import '../core/app_sizes.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -79,6 +80,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   /// Sets goals for the units below (goal_setters, 17_round16.sql)
   bool _isGoalSetter = false;
   Future<void> _checkGoalSetter() async {
+    if (mounted && _isGoalSetter) setState(() => _isGoalSetter = false);
     try {
       for (final d in const ['Service Attendance Status', 'Evangelism']) {
         final r = await _supabase.rpc('goal_my_levels', params: {'p_duty': d});
@@ -90,7 +92,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } catch (_) {}
   }
 
+  /// "View as": the database follows the role chosen in the switcher too
+  /// (set_acting_role, 21_round20.sql), so the data, entry and goal rights
+  /// are exactly that role's. Cleared when the screen opens.
+  Future<void> _actAs(String? role) async {
+    try {
+      await _supabase.rpc('set_acting_role', params: {'p_role': role});
+    } catch (_) {
+      // before 21_round20.sql: the app-side view only
+    }
+  }
+
   Future<void> _identifyUser() async {
+    await _actAs(null);
     try {
       final data = await _supabase.from('profiles').select().eq('email', widget.userEmail).maybeSingle();
       if (data != null && mounted) {
@@ -173,6 +187,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       _secondaryRole = mode == 'both' ? _ownSecondary : null;
       _isLoading = true;
     });
+    await _actAs(mode == 'both' ? null : _simulatedRole);
+    _checkGoalSetter();
     await _fetchRolePermissions(_simulatedRole!);
     await _fetchDutyConfig();
     if (mounted) setState(() => _isLoading = false);
@@ -320,6 +336,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _roleApprovalScope = scope;
         });
       }
+      // Theology students' duties: Theology workers, and the secretaries and
+      // cell leaders who see their units' students (22_round21.sql)
+      final views = await StudentDuties.viewsStudents([_simulatedRole, _secondaryRole]);
+      if (mounted && views != _viewsStudents) setState(() => _viewsStudents = views);
     } catch (e) { debugPrint("Permission Error: $e"); }
   }
 
@@ -330,6 +350,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (res.isNotEmpty && mounted) setState(() { _flaggedCount = res.length; _latestCorrectionNote = res[0]['correction_note'] ?? "Check your reports."; });
     } catch (e) { debugPrint("Flag Check Error: $e"); }
   }
+
+  bool _viewsStudents = false;
+
+  void _openStudentDuty(String duty) =>
+      Navigator.push(context, MaterialPageRoute(builder: (c) => StudentDutyScreen(duty: duty)));
 
   // --- DUAL-MODE & BOUNDARY PERMISSION MATRIX ---
   bool _canUserEnterData(String duty) {
@@ -373,6 +398,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
       'Workers Education',
       'Workers Daily Participation',
     ];
+
+    // 3b. Location New Saints / Mou workers enter the church reports of the
+    //     unit they are registered to (22_round21.sql)
+    if (r.startsWith('loc_new_saints') || r.startsWith('loc_mou')) {
+      return churchLocationReports.contains(duty) && !(r.endsWith('_mgr'));
+    }
 
     // 4. Leaders, Overseers, and General Secretaries cannot enter data
     if (r.startsWith('sub_loc_') || 
@@ -447,6 +478,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     // Strategic Analysis for everyone: Accountability tasks and the Performance
     // Report (and Set unit targets for goal setters) are only in there, not
     // repeated on this grid. Track growth stays for the roles that had it.
+    // the students' Center Attendance for the secretaries and cell leaders too
+    if (_viewsStudents && !buttons.contains(StudentDuties.attendance)) buttons.add(StudentDuties.attendance);
     buttons.add("Strategic Analysis");
     // Everyone who saves reports can follow their status (Pending / Approved / Rejected)
     if (_dynamicAdminActions.contains('Notification Center') || _dynamicDuties.isNotEmpty || _dynamicAdminActions.contains('Request Member Transfer')) {
@@ -538,6 +571,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           // The transfer approvals inbox stays with the roles that had it
           canReviewTransfers: _dynamicAdminActions.contains('Notification Center'),
         )));
+    else if (StudentDuties.all.contains(title)) _openStudentDuty(title);
     else if (title == "Evangelism") _showEvangelismSubMenu();
     // BB File opens the BB File / Attendance sheets directly (no dashboard or policies there)
     else if (title == "BB File") _openBbFile();
@@ -777,6 +811,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
             _compactActionBtn(Icons.person_search_rounded, interventionLabel, Colors.blue[800]!, () { 
               _openAbsentees(duty, interventionLabel, _roleForDuty(duty));
             }),
+            // the Theology students' version of this duty
+            if (_viewsStudents && (duty == 'Offering Status' || duty == 'Offering'))
+              _compactActionBtn(StudentDuties.icon(StudentDuties.offering), "Students offering", Colors.brown, () => _openStudentDuty(StudentDuties.offering)),
+            if (_viewsStudents && duty == 'Visitations and Counselling')
+              _compactActionBtn(StudentDuties.icon(StudentDuties.visitations), "Students visitations", Colors.brown, () => _openStudentDuty(StudentDuties.visitations)),
             if (!_roleForDuty(duty).contains('cell')) 
               _compactActionBtn(Icons.verified_user_rounded, "Approval cockpit", Colors.green[800]!, () async { 
                 final dual = await _dualFor(duty, _roleForDuty(duty));
@@ -1071,6 +1110,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     _simulatedRole = v;
                     _isLoading = true;
                   });
+                  _actAs(v).then((_) {
+                    _checkGoalSetter();
+                  });
                   _fetchRolePermissions(v);
                   setState(() => _isLoading = false);
                 },
@@ -1264,6 +1306,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
             DutyPanelScreen.open(context, "Evangelism", role: selectedRole == 'admin' ? _simulatedRole : null);
           }),
           _compactActionBtn(Icons.analytics_outlined, "Evangelism results", Colors.purple, _openEvangelismResults),
+          if (_viewsStudents)
+            _compactActionBtn(StudentDuties.icon(StudentDuties.evangelism), "Students evangelism", Colors.brown, () => _openStudentDuty(StudentDuties.evangelism)),
         ]))
       );
     });

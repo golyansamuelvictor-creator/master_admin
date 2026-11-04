@@ -287,15 +287,25 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
                   backgroundColor: AppPalette.bg(widget.pPurple.withValues(alpha: 0.1)),
                   child: Icon(Icons.photo_library_rounded, color: AppPalette.fg(widget.pPurple)),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
+                // two clean lines: the title never breaks into letters (it
+                // shrinks on small phones), the date line ends with "…"
                 Expanded(child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Evidence Album", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: AppPalette.fg(widget.pPurple))),
-                    Text("$dateDisplay  •  ${widget.unitName}", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text("Evidence Album", maxLines: 1, softWrap: false,
+                          style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.w900, color: AppPalette.fg(widget.pPurple))),
+                    ),
+                    const SizedBox(height: 2),
+                    Text("$dateDisplay  •  ${widget.unitName}", maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey))),
                   ],
                 )),
-                const Spacer(),
+                const SizedBox(width: 6),
                 if (_isEditable)
                   ElevatedButton.icon(
                     icon: _isUploading

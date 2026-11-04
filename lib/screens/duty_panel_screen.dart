@@ -8,6 +8,7 @@ import '../core/app_palette.dart';
 import '../core/app_sizes.dart';
 import '../core/i18n.dart';
 import 'admin/target_setter_screen.dart';
+import 'asmis_screens.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -77,6 +78,9 @@ class _DutyPanelScreenState extends State<DutyPanelScreen> {
           _isEvangelism || _duty.startsWith('Service Attendance')
               ? TargetSetterScreen(initialDuty: _duty, embedded: true, userLoc: '', userSub: '', userDept: '')
               : GoalsView(duty: _duty, canManage: widget.canManage)),
+      // Service Attendance: the All Saints Mobilised In-Person Service schedule
+      if (_duty.startsWith('Service Attendance'))
+        ("All Saints Mobilised (ASMIS)", Icons.groups_3_rounded, const AsmisScheduleView()),
       if (_isEvangelism && widget.canManage) ...[
         ("Opening months", Icons.calendar_month_rounded, const _OpeningMonthsView()),
         ("Centers", Icons.location_city_rounded, const _CentersView()),
@@ -89,12 +93,13 @@ class _DutyPanelScreenState extends State<DutyPanelScreen> {
         backgroundColor: AppPalette.bg(const Color(0xFFF6F4FA)),
         appBar: AppBar(
           centerTitle: true,
+          toolbarHeight: 46,
           title: Text(widget.canManage ? "$_duty · management" : "$_duty · policies & goals",
               style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(_kPurple))),
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.center,
-            tabs: [for (final t in tabs) Tab(icon: Icon(t.$2, size: 18), text: tr(t.$1))],
+            tabs: [for (final t in tabs) Tab(height: 38, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(t.$2, size: 16), const SizedBox(width: 6), Text(t.$1)]))],
           ),
         ),
         body: Column(children: [
@@ -102,13 +107,15 @@ class _DutyPanelScreenState extends State<DutyPanelScreen> {
             Container(
               width: double.infinity,
               color: AppPalette.bg(const Color(0xFFEDE3F8)),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
               child: Text(
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 _isEvangelism
                     ? "View only · the Evangelism Department (church level) sets the policies, goals, opening months, centers and stages."
                     : "View only · set by the department that manages this duty.",
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11.5, color: AppPalette.fg(_kPurple)),
+                style: TextStyle(fontSize: 10.5, color: AppPalette.fg(_kPurple)),
               ),
             ),
           Expanded(child: TabBarView(children: [for (final t in tabs) t.$3])),
@@ -274,74 +281,60 @@ class _PoliciesViewState extends State<PoliciesView> {
     }
     final shown = _rows.where((p) => p['is_active'] != false).length;
     final cats = _rows.map((p) => p['category']).toSet().length;
-    return ListView(padding: AppSizes.page, children: [
-      // header: what this page holds, at a glance
+    // one compact bar (search, level, counts, add) so the policies get the screen
+    return Column(children: [
       Container(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(colors: [AppPalette.solid(_kPurple), AppPalette.solid(const Color(0xFF7B4FC0))], begin: Alignment.topLeft, end: Alignment.bottomRight),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: _kPurple.withValues(alpha: 0.22), blurRadius: 12, offset: const Offset(0, 5))],
-        ),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+        decoration: BoxDecoration(color: AppPalette.bg(Colors.white), border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black12)))),
         child: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(12)),
-            child: const Icon(Icons.gavel_rounded, color: Colors.white, size: 22),
-          ),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text("${widget.duty} policies & standards", maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14.5, color: Colors.white)),
-              const SizedBox(height: 3),
-              Text("$shown in force · $cats categor${cats == 1 ? 'y' : 'ies'}", style: const TextStyle(fontSize: 11.5, color: Colors.white70)),
-            ]),
+            child: SizedBox(
+              height: 36,
+              child: TextField(
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  hintText: tr("Search policies"),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: AppPalette.line(Colors.black12))),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: AppPalette.line(Colors.black12))),
+                ),
+                onChanged: (v) => setState(() => _search = v),
+              ),
+            ),
           ),
-          if (widget.canManage)
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: _kPurple, visualDensity: VisualDensity.compact),
+          const SizedBox(width: 6),
+          PopupMenuButton<String>(
+            tooltip: tr("Level"),
+            onSelected: (v) => setState(() => _level = v),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'any', child: Text("All levels")),
+              for (final e in kPolicyLevels.entries.where((e) => e.key != 'all')) PopupMenuItem(value: e.key, child: Text(e.value)),
+            ],
+            child: Chip(
+              visualDensity: VisualDensity.compact,
+              avatar: const Icon(Icons.filter_list_rounded, size: 16),
+              label: Text(_level == 'any' ? "All levels" : (kPolicyLevels[_level] ?? _level), style: const TextStyle(fontSize: 11.5)),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: "$shown in force · $cats categor${cats == 1 ? 'y' : 'ies'}",
+            child: Text("$shown", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(_kPurple))),
+          ),
+          if (widget.canManage) ...[
+            const SizedBox(width: 4),
+            IconButton.filled(
+              tooltip: tr("Add policy"),
+              visualDensity: VisualDensity.compact,
+              style: IconButton.styleFrom(backgroundColor: AppPalette.solid(_kPurple), foregroundColor: Colors.white),
               onPressed: () => _edit(),
               icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text("Add policy"),
             ),
+          ],
         ]),
       ),
-      const SizedBox(height: 12),
-      Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 10, runSpacing: 8, children: [
-        SizedBox(
-          width: 280,
-          child: TextField(
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.search, size: 18),
-              hintText: tr("Search policies"),
-              isDense: true,
-              filled: true,
-              fillColor: AppPalette.bg(Colors.white),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: AppPalette.line(Colors.black12))),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: AppPalette.line(Colors.black12))),
-            ),
-            onChanged: (v) => setState(() => _search = v),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(24), border: Border.all(color: AppPalette.line(Colors.black12))),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _level,
-              borderRadius: BorderRadius.circular(12),
-              icon: const Icon(Icons.filter_list_rounded, size: 18),
-              items: [
-                const DropdownMenuItem(value: 'any', child: Text("All levels")),
-                for (final e in kPolicyLevels.entries.where((e) => e.key != 'all')) DropdownMenuItem(value: e.key, child: Text(e.value)),
-              ],
-              onChanged: (v) => setState(() => _level = v ?? 'any'),
-            ),
-          ),
-        ),
-      ]),
-      const SizedBox(height: 12),
+      Expanded(child: ListView(padding: AppSizes.page, children: [
       if (rows.isEmpty)
         Padding(
           padding: const EdgeInsets.all(30),
@@ -413,6 +406,7 @@ class _PoliciesViewState extends State<PoliciesView> {
             ),
           ),
       ],
+      ])),
     ]);
   }
 }

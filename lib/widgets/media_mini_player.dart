@@ -4,7 +4,8 @@ import 'package:video_player/video_player.dart';
 
 import '../screens/media_full_player.dart';
 import '../services/media_playback.dart';
-import '../services/media_service.dart';
+import '../services/media_service.dart';
+import '../services/media_session.dart';
 
 /// Shown above every screen while something plays and the full player is
 /// closed: a slim bar for audio, or a small draggable pop-up window for video.
@@ -18,6 +19,47 @@ class MediaMiniPlayer extends StatefulWidget {
 class _MediaMiniPlayerState extends State<MediaMiniPlayer> {
   final pb = MediaPlayback.instance;
   Offset? _popupPos; // top-left of the floating video window
+  bool _hidden = false; // bar hidden, the music keeps playing
+  String? _lastTitle;
+
+  @override
+  void initState() {
+    super.initState();
+    pb.addListener(_syncPhoneControls);
+  }
+
+  @override
+  void dispose() {
+    pb.removeListener(_syncPhoneControls);
+    super.dispose();
+  }
+
+  /// The phone's own media controls (notification bar, lock screen)
+  void _syncPhoneControls() {
+    final item = pb.current;
+    if (item == null || !pb.hasMedia) {
+      clearMediaSession();
+      _lastTitle = null;
+      return;
+    }
+    // a new song shows the bar again
+    if (_lastTitle != item.title && _hidden && mounted) setState(() => _hidden = false);
+    _lastTitle = item.title;
+    updateMediaSession(
+      title: item.title,
+      artist: item.artist,
+      artwork: MediaService.cachedLink(item.thumbnailPath) ?? item.legacyThumbUrl,
+      playing: pb.isPlaying,
+      onPlay: () {
+        if (!pb.isPlaying) pb.toggle();
+      },
+      onPause: () {
+        if (pb.isPlaying) pb.toggle();
+      },
+      onNext: pb.next,
+      onPrevious: pb.previous,
+    );
+  }
 
   void _openFull() {
     appNavigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => const MediaFullPlayer()));
@@ -36,11 +78,32 @@ class _MediaMiniPlayerState extends State<MediaMiniPlayer> {
           final videoPopup = item.isVideo && pb.popupVideo && c != null && c.value.isInitialized;
           if (videoPopup) return Stack(children: [_popup(box, pad, c)]);
           final wide = box.maxWidth >= 700;
+          // above the screens' bottom navigation buttons (phones)
+          final lift = wide ? 10.0 : 10.0 + kBottomNavigationBarHeight + 8;
+          if (_hidden) {
+            // hidden: a small music button brings the bar back
+            return Stack(children: [
+              Positioned(
+                right: 12,
+                bottom: lift + pad.bottom,
+                child: Material(
+                  color: const Color(0xFF1E1530),
+                  shape: const CircleBorder(),
+                  elevation: 8,
+                  child: IconButton(
+                    tooltip: tr('Show the player'),
+                    icon: Icon(pb.isPlaying ? Icons.graphic_eq_rounded : Icons.music_note_rounded, color: Colors.white),
+                    onPressed: () => setState(() => _hidden = false),
+                  ),
+                ),
+              ),
+            ]);
+          }
           return Stack(children: [
             Positioned(
               left: wide ? null : 10,
               right: wide ? 16 : 10,
-              bottom: 10 + pad.bottom,
+              bottom: lift + pad.bottom,
               width: wide ? 420 : null,
               child: _bar(item, c),
             ),
@@ -107,7 +170,14 @@ class _MediaMiniPlayerState extends State<MediaMiniPlayer> {
                 icon: Icon(pb.isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: Colors.white, size: 34),
               ),
               IconButton(onPressed: pb.next, icon: const Icon(Icons.skip_next_rounded, color: Colors.white)),
-              IconButton(onPressed: pb.stop, icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20)),
+              // hide the bar; the music keeps playing (controls stay in the phone's notification bar)
+              IconButton(
+                tooltip: tr('Hide (keeps playing)'),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setState(() => _hidden = true),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 22),
+              ),
+              IconButton(tooltip: tr('Stop'), visualDensity: VisualDensity.compact, onPressed: pb.stop, icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20)),
             ]),
           ),
         ]),

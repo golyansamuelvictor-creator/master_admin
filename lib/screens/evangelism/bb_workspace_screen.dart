@@ -146,13 +146,14 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
         backgroundColor: AppPalette.bg(const Color(0xFFF6F4FA)),
         appBar: AppBar(
           centerTitle: true,
+          toolbarHeight: 46,
           title: Text(widget.canEdit ? "BB File" : "BB File · compiled for your unit",
               style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: AppPalette.fg(_kPurple))),
           actions: [IconButton(tooltip: tr("Refresh"), icon: const Icon(Icons.refresh_rounded), onPressed: _load)],
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.center,
-            tabs: [for (final t in tabs) Tab(icon: Icon(t.$2, size: 18), text: tr(t.$1))],
+            tabs: [for (final t in tabs) Tab(height: 38, child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(t.$2, size: 16), const SizedBox(width: 6), Text(t.$1)]))],
           ),
         ),
         body: _loading
@@ -174,7 +175,7 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
 // ---------------------------------------------------------------------------
 // Shared table helpers
 
-Widget _section(BuildContext context, String title, Widget child, {ExportTable Function()? export, String? subtitle}) {
+Widget _section(BuildContext context, String title, Widget child, {ExportTable Function()? export, String? subtitle, Widget? trailing}) {
   return Container(
     margin: const EdgeInsets.only(bottom: 14),
     decoration: BoxDecoration(
@@ -192,6 +193,7 @@ Widget _section(BuildContext context, String title, Widget child, {ExportTable F
               if (subtitle != null) Text(subtitle, style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
             ]),
           ),
+          if (trailing != null) trailing,
           if (export != null)
             IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple), size: 20), onPressed: () => TableExport.showMenu(context, export)),
           IconButton(
@@ -286,6 +288,16 @@ class BbSummaryView extends StatefulWidget {
 class _SummaryTabState extends State<BbSummaryView> {
   Map<String, dynamic>? _d;
   Map<String, dynamic>? _ev; // Goals this month by unit (evangelism_results)
+  bool _evFailed = false;
+  // Goals this month: the level shown and the units picked above it
+  // (Location → Sub-location → Department → Team), like the Compilation sidebar
+  static const _gLevels = ['location', 'sub_location', 'department', 'team', 'cell'];
+  static const _gNames = ['Location goals', 'Sub-location goals', 'Department goals', 'Team goals', 'Cell group goals'];
+  static const _gPickNames = ['Location', 'Sub-location', 'Department', 'Team'];
+  int _gLevel = -1; // -1 = not chosen yet (follows the side bar)
+  int _gMin = 0; // the viewer's own level: a team leader sees team goals and below
+  final List<String?> _gPick = [null, null, null, null];
+  final Map<String, List<String>> _gOpts = {}; // "level|parents" → units
   String? _month;
   String? _error;
 
@@ -293,6 +305,8 @@ class _SummaryTabState extends State<BbSummaryView> {
   void initState() {
     super.initState();
     _month = widget.month;
+    // the goals table and the summary load side by side
+    _loadGoals();
     _load();
   }
 
@@ -313,28 +327,175 @@ class _SummaryTabState extends State<BbSummaryView> {
     } catch (e) {
       if (mounted) setState(() => _error = "Couldn't compile: ${e is PostgrestException ? e.message : e}");
     }
-    _loadGoals();
   }
 
   /// Goals this month as a table: each unit's goal and what is achieved,
   /// in total and split offline / online (evangelism_results, 14_round13.sql).
-  Future<void> _loadGoals() async {
-    if (!widget.sections.contains('goals')) return;
+  Future<Map<String, dynamic>> _evQuery(int level, List<String?> picks) {
     final now = DateTime.now();
     String f(DateTime d) => "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+    String? at(int i) => i < level ? picks[i] : null;
+    return Supabase.instance.client.rpc('evangelism_results', params: {
+      'p_from': f(DateTime(now.year, now.month, 1)),
+      'p_to': f(DateTime(now.year, now.month, now.day)),
+      'p_group': _gLevels[level],
+      'p_location': at(0),
+      'p_sub': at(1),
+      'p_dept': at(2),
+      'p_team': at(3),
+    }).then((r) => Map<String, dynamic>.from(r as Map));
+  }
+
+  /// The viewer's own level and units (my_report_filters): the goals start
+  /// there and can go down, never up or sideways.
+  Future<void> _myLevel() async {
     try {
-      final r = await Supabase.instance.client.rpc('evangelism_results', params: {
-        'p_from': f(DateTime(now.year, now.month, 1)),
-        'p_to': f(DateTime(now.year, now.month, now.day)),
-        'p_group': (widget.location ?? '').isEmpty ? 'location' : 'sub_location',
-        'p_location': widget.location,
-        'p_sub': widget.subLocation,
-      });
-      if (mounted) setState(() => _ev = Map<String, dynamic>.from(r as Map));
+      final r = await Supabase.instance.client.rpc('my_report_filters');
+      const cols = ['location', 'sub_location', 'department', 'team', 'cell_group'];
+      final vals = <String, String>{
+        for (final x in (r as List? ?? const []))
+          if ((x as Map)['op'] == 'eq' && cols.contains(x['col'])) x['col'].toString(): (x['val'] ?? '').toString(),
+      };
+      int depth = 0;
+      while (depth < cols.length && (vals[cols[depth]] ?? '').isNotEmpty) {
+        depth++;
+      }
+      if (depth > 0) {
+        _gMin = depth - 1;
+        for (int i = 0; i < _gMin && i < 4; i++) {
+          _gPick[i] = vals[cols[i]];
+        }
+        _gLevel = _gMin;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadGoals() async {
+    if (!widget.sections.contains('goals')) return;
+    if (_gLevel < 0) await _myLevel();
+    if (_gLevel < 0) {
+      // start at the side bar's choice: the guide's location → its sub-locations
+      if ((widget.location ?? '').isNotEmpty) {
+        _gPick[0] = widget.location;
+        _gPick[1] = widget.subLocation;
+        _gLevel = (widget.subLocation ?? '').isNotEmpty ? 2 : 1;
+      } else {
+        _gLevel = 0;
+      }
+    }
+    setState(() {
+      _ev = null;
+      _evFailed = false;
+    });
+    try {
+      final r = await _evQuery(_gLevel, _gPick);
+      if (mounted) setState(() => _ev = r);
     } catch (_) {
-      // the goal cards below stay as before
+      if (mounted) setState(() => _evFailed = true); // the goal cards as before
     }
   }
+
+  /// The units a picker offers (the level's units under the picks above)
+  final Set<String> _gLoading = {};
+  Future<void> _loadOptions(int k) async {
+    final key = "$k|${_gPick.take(k).join('|')}";
+    if (_gOpts.containsKey(key) || !_gLoading.add(key)) return;
+    try {
+      // quick list of the units (22_round21.sql)
+      String? at(int i) => i < k ? _gPick[i] : null;
+      final names = List<String>.from(await Supabase.instance.client.rpc('ev_unit_options', params: {
+        'p_level': _gLevels[k],
+        'p_location': at(0),
+        'p_sub': at(1),
+        'p_dept': at(2),
+        'p_team': at(3),
+      }) as List);
+      final order = CompLevel.orderNames(names, const ['Location', 'Sub-location', 'Dept', 'Team', 'Cell'][k]);
+      if (mounted) setState(() => _gOpts[key] = order);
+      return;
+    } catch (_) {}
+    try {
+      final r = await _evQuery(k, _gPick);
+      final names = [for (final x in (r['rows'] as List? ?? const [])) (x as Map)['unit'].toString()].where((n) => n != 'Not set').toList();
+      final order = CompLevel.orderNames(names, const ['Location', 'Sub-location', 'Dept', 'Team', 'Cell'][k]);
+      if (mounted) setState(() => _gOpts[key] = order);
+    } catch (_) {
+      _gOpts[key] = const [];
+    }
+  }
+
+  List<String> _optsFor(int k) => _gOpts["$k|${_gPick.take(k).join('|')}"] ?? const [];
+
+  Widget _goalPickers() {
+    Widget drop<T>(String hint, T? value, List<DropdownMenuItem<T>> items, ValueChanged<T?> onChanged) => Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppPalette.line(Colors.black26))),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<T>(
+              value: value,
+              hint: Text(hint, style: const TextStyle(fontSize: 11.5)),
+              isDense: true,
+              style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(_kPurple)),
+              items: items,
+              onChanged: onChanged,
+            ),
+          ),
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+      child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 6, runSpacing: 6, children: [
+        // the cascade: each picker lists the units under the one before it
+        for (int k = _gMin; k < _gLevel && k < 4; k++)
+          () {
+            final opts = _optsFor(k);
+            if (opts.isEmpty) _loadOptions(k);
+            final v = opts.contains(_gPick[k]) ? _gPick[k] : null;
+            return drop<String>(
+              "All ${_gPickNames[k].toLowerCase()}s",
+              v,
+              [
+                DropdownMenuItem<String>(value: null, child: Text("All ${_gPickNames[k].toLowerCase()}s")),
+                for (final o in opts) DropdownMenuItem<String>(value: o, child: Text(o, overflow: TextOverflow.ellipsis)),
+              ],
+              (x) {
+                setState(() {
+                  _gPick[k] = x;
+                  for (int j = k + 1; j < 4; j++) {
+                    _gPick[j] = null;
+                  }
+                });
+                _loadGoals();
+              },
+            );
+          }(),
+      ]),
+    );
+  }
+
+  Widget _goalLevelDrop() => Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF3E5F5)), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppPalette.line(Colors.purple.shade200))),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            value: _gLevel < _gMin ? _gMin : _gLevel,
+            isDense: true,
+            style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(_kPurple)),
+            items: [for (int i = _gMin; i < _gNames.length; i++) DropdownMenuItem(value: i, child: Text(_gNames[i]))],
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() {
+                _gLevel = v;
+                for (int j = v; j < 4; j++) {
+                  _gPick[j] = null;
+                }
+              });
+              _loadGoals();
+            },
+          ),
+        ),
+      );
 
   List<List<String>> _goalRows() {
     final ev = _ev!;
@@ -350,7 +511,7 @@ class _SummaryTabState extends State<BbSummaryView> {
       return [label, num0(tot), '$a', pct(a, tot), num0(go), '${t(off)}', pct(t(off), go), num0(gn), '${t(on)}', pct(t(on), gn)];
     }
     final rows = List<Map<String, dynamic>>.from((ev['rows'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
-    final level = (widget.location ?? '').isEmpty ? 'location' : 'Sub-location';
+    final level = const ['Location', 'Sub-location', 'Dept', 'Team', 'Cell'][_gLevel < 0 ? 0 : _gLevel];
     final order = CompLevel.orderNames(rows.map((r) => r['unit'].toString()), level);
     rows.sort((x, y) => order.indexOf(x['unit'].toString()).compareTo(order.indexOf(y['unit'].toString())));
     return [
@@ -390,10 +551,19 @@ class _SummaryTabState extends State<BbSummaryView> {
       return [total, ...rows];
     }
 
+    // Worthy Prospect + Spirit Creation: Dropped is a column (the drops of
+    // each opening month); before 22_round21.sql it stays a row
     final byMonthRaw = List<Map<String, dynamic>>.from(d['by_month'] ?? const []);
-    final monthRows = [for (final r in byMonthRaw.where((r) => r['row'] != 'Dropped')) countRow(r['row'].toString(), r['counts'] as Map)];
-    final droppedRow = [for (final r in byMonthRaw.where((r) => r['row'] == 'Dropped')) countRow('Dropped', r['counts'] as Map)];
-    final byMonth = [...withTotal("Opening months", monthRows), ...droppedRow];
+    final monthsRaw = byMonthRaw.where((r) => r['row'] != 'Dropped').toList();
+    final dropCol = monthsRaw.isNotEmpty && monthsRaw.every((r) => r.containsKey('dropped'));
+    final monthHeaders = dropCol ? [...headers, "Dropped"] : headers;
+    final monthColors = dropCol ? [...colors, const Color(0xFFC62828)] : colors;
+    final monthRows = [
+      for (final r in monthsRaw) [...countRow(r['row'].toString(), r['counts'] as Map), if (dropCol) '${_n(r['dropped'])}'],
+    ];
+    final droppedRow = dropCol ? const <List<String>>[] : [for (final r in byMonthRaw.where((r) => r['row'] == 'Dropped')) countRow('Dropped', r['counts'] as Map)];
+    final monthTotal = <String>["Opening months", for (int i = 1; i < monthHeaders.length; i++) '${monthRows.fold<int>(0, (a, r) => a + (int.tryParse(r[i]) ?? 0))}'];
+    final byMonth = [monthTotal, ...monthRows, ...droppedRow];
 
     final byCenter = withTotal("Opening centers", [for (final r in List<Map<String, dynamic>>.from(d['by_center'] ?? const [])) countRow(r['row'].toString(), r['counts'] as Map)]);
 
@@ -432,16 +602,22 @@ class _SummaryTabState extends State<BbSummaryView> {
     final sec = widget.sections;
 
     return ListView(padding: AppSizes.page, children: [
-      if (sec.contains('goals') && _ev != null)
+      if (sec.contains('goals') && !_evFailed)
         _section(
           context,
           "Goals this month",
-          _grid(_goalHeaders, _goalRows(), boldRows: {0}, col: 70, headerColors: const [
-            null, Color(0xFF4A148C), Color(0xFF4A148C), Color(0xFF4A148C),
-            Color(0xFF00695C), Color(0xFF00695C), Color(0xFF00695C),
-            Color(0xFF1565C0), Color(0xFF1565C0), Color(0xFF1565C0),
+          trailing: _goalLevelDrop(),
+          Column(children: [
+            if (_gLevel > _gMin) _goalPickers(),
+            _ev == null
+                ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+                : _grid(_goalHeaders, _goalRows(), boldRows: {0}, col: 70, headerColors: const [
+                    null, Color(0xFF4A148C), Color(0xFF4A148C), Color(0xFF4A148C),
+                    Color(0xFF00695C), Color(0xFF00695C), Color(0xFF00695C),
+                    Color(0xFF1565C0), Color(0xFF1565C0), Color(0xFF1565C0),
+                  ]),
           ]),
-          export: () => ExportTable(title: "Goals this month", subtitle: "Evangelism results", headers: _goalHeaders, rows: _goalRows()),
+          export: () => ExportTable(title: "Goals this month", subtitle: "Evangelism results", headers: _goalHeaders, rows: _ev == null ? const [] : _goalRows()),
         )
       else if (sec.contains('goals') && goals.isNotEmpty)
         _section(
@@ -477,9 +653,9 @@ class _SummaryTabState extends State<BbSummaryView> {
           ),
         ),
       if (sec.contains('months'))
-      _section(context, "Worthy Prospect + Spirit Creation", _grid(headers, byMonth, boldRows: {0}, headerColors: colors),
-          subtitle: "Students counted only when their details are complete and they attended at least once",
-          export: () => ex("Worthy Prospect + Spirit Creation", headers, byMonth)),
+      _section(context, "Worthy Prospect + Spirit Creation", _grid(monthHeaders, byMonth, boldRows: {0}, headerColors: monthColors),
+          subtitle: "Students counted only when their details are complete and they attended at least once${dropCol ? ' · Dropped: the students of that opening month who dropped' : ''}",
+          export: () => ex("Worthy Prospect + Spirit Creation", monthHeaders, byMonth)),
       if (sec.contains('centers'))
       _section(context, "Opening centers", _grid(headers, byCenter, boldRows: {0}, headerColors: colors), export: () => ex("Opening centers", headers, byCenter)),
       if (sec.contains('locations'))

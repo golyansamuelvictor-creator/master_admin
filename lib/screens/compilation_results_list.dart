@@ -719,7 +719,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       double baseTotalWidth = keys.fold(0.0, (prev, k) => prev + _getColWidth(k));
 
       double scalingFactor = max(1.0, availableWidth / baseTotalWidth);
-      double dataTableWidth = max(availableWidth, baseTotalWidth);
+      // only the row numbers (and the header rows) stay fixed
+      final rest = keys;
+      double dataTableWidth = max(availableWidth, rest.fold(0.0, (prev, k) => prev + _getColWidth(k)) * scalingFactor);
 
       return Container(
         color: AppPalette.bg(Colors.white),
@@ -727,11 +729,14 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Pinned Left Axis: Row numbers
-            SizedBox(
+            Container(
               width: rowNumWidth,
+              decoration: BoxDecoration(boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(2, 0))]),
               child: Column(
                 children: [
-                  _buildCornerBox(),
+                  Row(children: [
+                    _buildCornerBox(),
+                  ]),
                   Expanded(
                     child: ListView.builder(
                       controller: _verticalScrollRowNumbers,
@@ -740,7 +745,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                       itemExtent: dataRowHeight,
                       itemBuilder: (context, index) {
                         final isEven = index % 2 == 0;
-                        return Container(
+                        return Row(children: [
+                        Container(
+                          width: rowNumWidth,
                           height: dataRowHeight,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
@@ -758,7 +765,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                               color: AppPalette.fg(const Color(0xFF475569)),
                             ),
                           ),
-                        );
+                        ),
+                        ]);
                       },
                     ),
                   ),
@@ -780,8 +788,8 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                     width: dataTableWidth,
                     child: Column(
                       children: [
-                        _buildColumnLettersRow(keys, scalingFactor),
-                        _buildHeadersRow(keys, scalingFactor),
+                        _buildColumnLettersRow(rest, scalingFactor),
+                        _buildHeadersRow(rest, scalingFactor),
                         Expanded(
                           child: _filteredData.isEmpty
                               ? _buildEmptyState()
@@ -798,8 +806,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                                       return _buildDataRow(
                                         index,
                                         _filteredData[index],
-                                        keys,
+                                        rest,
                                         scalingFactor,
+                                        menuKeys: keys,
                                       );
                                     },
                                   ),
@@ -855,7 +864,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     );
   }
 
-  Widget _buildColumnLettersRow(List<String> keys, double factor) {
+  Widget _buildColumnLettersRow(List<String> keys, double factor, {int offset = 0}) {
     return Container(
       height: letterRowHeight,
       decoration: BoxDecoration(
@@ -875,7 +884,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
               border: Border(right: BorderSide(color: AppPalette.line(gridLineColor))),
             ),
             child: Text(
-              _getExcelColumnLetter(colIndex),
+              _getExcelColumnLetter(colIndex + offset),
               textAlign: TextAlign.center,
               style: GoogleFonts.merriweather(
                 fontSize: 10.5,
@@ -965,7 +974,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     ]);
   }
 
-  Widget _buildDataRow(int rowIndex, dynamic log, List<String> keys, double factor) {
+  Widget _buildDataRow(int rowIndex, dynamic log, List<String> keys, double factor, {List<String>? menuKeys}) {
     final bool isEven = rowIndex % 2 == 0;
     final Color rowBg = isEven ? rowEvenBg : rowOddBg;
 
@@ -982,7 +991,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
 
           return OfficeRightClick(
             longPress: true,
-            onMenu: (p) => _cellMenu(p, log, k, keys),
+            onMenu: (p) => _cellMenu(p, log, k, menuKeys ?? keys),
             child: Container(
             width: colWidth,
             height: dataRowHeight,

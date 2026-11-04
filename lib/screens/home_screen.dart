@@ -28,6 +28,7 @@ import '../services/device_accounts.dart';
 import '../services/profile_refresh.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'package:master_admin/core/app_sizes.dart';
+import 'education/education_contents.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -213,10 +214,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // ==========================================
   Future<void> _fetchLiveUpcomingEvents() async {
     try {
-      // only what the card shows: the next 15 events (or the last 5 when none are coming)
+      // only coming events: today to 7 days ahead (past events never show)
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      List res = await _supabase.from('church_events').select().gte('event_date', today).order('event_date', ascending: true).limit(15);
-      if (res.isEmpty) res = await _supabase.from('church_events').select().order('event_date', ascending: false).limit(5);
+      final weekAhead = DateFormat('yyyy-MM-dd').format(DateTime.now().add(const Duration(days: 7)));
+      List res = await _supabase.from('church_events').select().gte('event_date', today).lte('event_date', weekAhead).order('event_date', ascending: true).limit(30);
       if (mounted) {
         DateTime now = DateTime.now();
         DateTime todayMidnight = DateTime(now.year, now.month, now.day);
@@ -233,14 +234,17 @@ class _HomeScreenState extends State<HomeScreen> {
         }
 
         events.sort((a, b) => (a['_parsedDate'] as DateTime).compareTo(b['_parsedDate'] as DateTime));
-        var filtered = events.where((e) {
+        // today's events with a time leave the list 2 hours after they start
+        final filtered = events.where((e) {
           DateTime d = e['_parsedDate'] as DateTime;
-          return d.isAfter(todayMidnight.subtract(const Duration(seconds: 1)));
+          if (d.isBefore(todayMidnight)) return false;
+          final t = (e['event_time'] ?? '').toString().split(':');
+          if (t.length >= 2 && d == todayMidnight) {
+            final start = DateTime(d.year, d.month, d.day, int.tryParse(t[0]) ?? 0, int.tryParse(t[1]) ?? 0);
+            if (now.isAfter(start.add(const Duration(hours: 2)))) return false;
+          }
+          return true;
         }).toList();
-
-        if (filtered.isEmpty && events.isNotEmpty) {
-          filtered = events.reversed.take(5).toList();
-        }
 
         setState(() {
           _upcomingEvents = filtered.take(15).toList();
@@ -790,6 +794,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 1. UNIFIED COMMAND CENTER HERO BANNER (profiles data)
                   _buildUnifiedHeroBanner(isDesktop, dateStr, timeStr),
                   const SizedBox(height: 20),
+
+                  // Education Contents (leaders): JSS Articles, Cell Service,
+                  // Revelation Sealing, Test, Other — newest titles rising
+                  const EducationHomeCard(),
 
                   // 2. BALANCED 3-COLUMN BENTO GRID ON DESKTOP (100% SUPABASE)
                   if (isDesktop)

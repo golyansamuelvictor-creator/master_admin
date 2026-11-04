@@ -1010,7 +1010,9 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
       double availableWidth = constraints.maxWidth - rowNumWidth - 24;
       double baseTotalWidth = _baseTableWidth;
       double scalingFactor = math.max(1.0, availableWidth / baseTotalWidth);
-      double dataTableWidth = math.max(availableWidth, baseTotalWidth);
+      // only the row numbers (and the header rows) stay fixed
+      final rest = cols;
+      double dataTableWidth = math.max(availableWidth, rest.fold(0.0, (acc, k) => acc + (_colWidths[k] ?? 100)) * scalingFactor);
 
       return Container(
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
@@ -1023,12 +1025,15 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Row numbers: tap to select the row
-            SizedBox(
+            // Row numbers (tap to select the row)
+            Container(
               width: rowNumWidth,
+              decoration: BoxDecoration(boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(2, 0))]),
               child: Column(
                 children: [
-                  _buildCornerBox(),
+                  Row(children: [
+                    _buildCornerBox(),
+                  ]),
                   Expanded(
                     child: ListView.builder(
                       controller: _verticalScrollRowNumbers,
@@ -1037,9 +1042,11 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                       itemExtent: dataRowHeight,
                       itemBuilder: (context, index) {
                         final sel = _rowSelected(index);
-                        return GestureDetector(
+                        return Row(children: [
+                        GestureDetector(
                           onTap: () => _selectRow(index),
                           child: Container(
+                            width: rowNumWidth,
                             height: dataRowHeight,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
@@ -1052,7 +1059,8 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                             child: Text("${_page * _pageSize + index + 1}",
                                 style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.w600, color: AppPalette.fg(sel ? _selColor : const Color(0xFF475569)))),
                           ),
-                        );
+                        ),
+                        ]);
                       },
                     ),
                   ),
@@ -1073,8 +1081,8 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                     width: dataTableWidth,
                     child: Column(
                       children: [
-                        _buildColumnLettersRow(cols, scalingFactor),
-                        _buildExcelHeadersRow(cols, scalingFactor),
+                        _buildColumnLettersRow(rest, scalingFactor),
+                        _buildExcelHeadersRow(rest, scalingFactor),
                         Expanded(
                           child: _isLoading
                               ? const Center(child: CircularProgressIndicator())
@@ -1087,7 +1095,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                                           physics: const ClampingScrollPhysics(),
                                           itemCount: rows.length,
                                           itemExtent: dataRowHeight,
-                                          itemBuilder: (context, index) => _buildCompactDataRow(index, rows[index], cols, scalingFactor),
+                                          itemBuilder: (context, index) => _buildCompactDataRow(index, rows[index], rest, scalingFactor),
                                         ),
                         ),
                       ],
@@ -1134,16 +1142,16 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
     );
   }
 
-  Widget _buildColumnLettersRow(List<String> cols, double factor) {
+  Widget _buildColumnLettersRow(List<String> cols, double factor, {int offset = 0}) {
     return Container(
       height: letterRowHeight,
       decoration: BoxDecoration(color: AppPalette.bg(letterBg), border: Border(bottom: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5))),
       child: Row(
         children: List.generate(cols.length, (i) {
           final colWidth = (_colWidths[cols[i]] ?? 100) * factor;
-          final sel = _colSelected(i);
+          final sel = _colSelected(i + offset);
           return GestureDetector(
-            onTap: () => _selectColumn(i),
+            onTap: () => _selectColumn(i + offset),
             child: Container(
               width: colWidth,
               height: letterRowHeight,
@@ -1152,7 +1160,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                 color: sel ? AppPalette.bg(_selColor.withValues(alpha: 0.22)) : null,
                 border: Border(right: BorderSide(color: AppPalette.line(gridLineColor), width: 0.5)),
               ),
-              child: Text(_getExcelColumnLetter(i), style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.w600, color: AppPalette.fg(sel ? _selColor : const Color(0xFF64748B)))),
+              child: Text(_getExcelColumnLetter(i + offset), style: GoogleFonts.merriweather(fontSize: 10, fontWeight: FontWeight.w600, color: AppPalette.fg(sel ? _selColor : const Color(0xFF64748B)))),
             ),
           );
         }),
@@ -1160,7 +1168,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
     );
   }
 
-  Widget _buildExcelHeadersRow(List<String> cols, double factor) {
+  Widget _buildExcelHeadersRow(List<String> cols, double factor, {int offset = 0}) {
     return Container(
       height: headerRowHeight,
       color: AppPalette.bg(headerDarkNavy),
@@ -1178,7 +1186,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
               children: [
                 Expanded(
                   child: GestureDetector(
-                    onTap: () => _selectColumn(i),
+                    onTap: () => _selectColumn(i + offset),
                     child: Text(
                       col,
                       textAlign: TextAlign.center,
@@ -1211,7 +1219,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
     );
   }
 
-  Widget _buildCompactDataRow(int index, Map<String, dynamic> item, List<String> cols, double factor) {
+  Widget _buildCompactDataRow(int index, Map<String, dynamic> item, List<String> cols, double factor, {int offset = 0}) {
     final m = _extractMember(item);
     final mid = m['id']?.toString() ?? "";
     final missedCount = _getMissedCount(item);
@@ -1223,11 +1231,11 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
 
     Widget cell(int c, Widget child, {Alignment align = Alignment.center}) {
       final width = (_colWidths[cols[c]] ?? 100) * factor;
-      final sel = _inSel(index, c);
-      final anchor = _r0 == index && _c0 == c;
+      final sel = _inSel(index, c + offset);
+      final anchor = _r0 == index && _c0 == c + offset;
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _selectCell(index, c),
+        onTap: () => _selectCell(index, c + offset),
         child: Container(
           width: width,
           height: dataRowHeight,

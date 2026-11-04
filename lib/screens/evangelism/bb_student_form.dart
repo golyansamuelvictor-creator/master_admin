@@ -42,8 +42,44 @@ class _BbStudentFormState extends State<BbStudentForm> {
     super.dispose();
   }
 
+  bool get _guideIsStudent => (_v['guided_by_type'] ?? '').toString().toLowerCase().contains('student');
+
+  /// A guide who is a center student: their units from `center_students`,
+  /// found by name (English or Korean).
+  Future<void> _lookupCenterStudent() async {
+    final name = _c('guide_name').text.trim();
+    if (name.isEmpty) {
+      setState(() => _lookupNote = "Type the center student's name first.");
+      return;
+    }
+    try {
+      final rows = await _db
+          .from('center_students')
+          .select('student_name, korean_name, guide_location, guide_sub_location, guide_dept, guide_team, guide_cell')
+          .or('student_name.ilike.${name.replaceAll(',', ' ')},korean_name.ilike.${name.replaceAll(',', ' ')}')
+          .limit(1);
+      if (rows.isEmpty) {
+        setState(() => _lookupNote = "No center student called $name. Add them in Theology › Students, or type the units by hand.");
+        return;
+      }
+      final m = rows.first;
+      setState(() {
+        _lookupNote = null;
+        _c('guide_name').text = (m['student_name'] ?? name).toString();
+        if ((m['korean_name'] ?? '').toString().trim().isNotEmpty) _c('guide_korean_name').text = m['korean_name'].toString();
+        final vals = [m['guide_location'], m['guide_sub_location'], m['guide_dept'], m['guide_team'], m['guide_cell']];
+        for (int i = 0; i < _guideUnit.length; i++) {
+          _c(_guideUnit[i]).text = (vals[i] ?? '').toString();
+        }
+      });
+    } catch (e) {
+      setState(() => _lookupNote = "Couldn't look up $name (run 21_round20.sql): $e");
+    }
+  }
+
   /// Fills a guide's / teacher's name and units from `members` by SCJ ID.
   Future<void> _lookup(String who) async {
+    if (who == 'guide' && _guideIsStudent) return _lookupCenterStudent();
     final id = _c('${who}_scj_id').text.trim();
     if (id.isEmpty) return;
     try {
@@ -154,6 +190,24 @@ class _BbStudentFormState extends State<BbStudentForm> {
       );
 
   List<Widget> _person(String who) => [
+        // a guide who is a center student: found by name in center_students
+        if (who == 'guide' && _guideIsStudent)
+          SizedBox(
+            width: 300,
+            child: TextField(
+              controller: _c('guide_name'),
+              readOnly: widget.readOnly,
+              decoration: InputDecoration(
+                labelText: tr("Center student's name"),
+                helperText: tr("Guided by a center student: the units come from Theology › Students"),
+                isDense: true,
+                border: const OutlineInputBorder(),
+                suffixIcon: widget.readOnly ? null : IconButton(tooltip: tr("Find in Theology › Students"), icon: const Icon(Icons.search_rounded, size: 18), onPressed: _lookupCenterStudent),
+              ),
+              onSubmitted: (_) => _lookupCenterStudent(),
+            ),
+          ),
+        if (!(who == 'guide' && _guideIsStudent))
         SizedBox(
           width: 230,
           child: TextField(
@@ -175,7 +229,7 @@ class _BbStudentFormState extends State<BbStudentForm> {
         _text('${who}_dept', "Department", width: 150),
         _text('${who}_team', "Team", width: 110),
         _text('${who}_cell', "Cell Group", width: 110),
-        _text('${who}_name', "Name"),
+        if (!(who == 'guide' && _guideIsStudent)) _text('${who}_name', "Name"),
         _text('${who}_korean_name', "Korean name"),
       ];
 

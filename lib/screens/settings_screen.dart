@@ -18,6 +18,7 @@ import 'package:master_admin/services/profile_refresh.dart';
 import 'package:master_admin/services/device_sessions.dart';
 import 'package:master_admin/services/app_lock_manager.dart';
 import 'package:master_admin/services/notice_permissions.dart';
+import 'terms_screen.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -126,6 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ]),
         _Cat("About", "Version and help", Icons.info_outline_rounded, Colors.blueGrey, [
           _Item("About Master Admin", "Version ${DeviceSessions.appVersion}", Icons.info_outline_rounded, page: () => const _AboutPanel()),
+          _Item("Terms & Data Policy", "What the church keeps and how it is protected", Icons.privacy_tip_outlined, page: () => const TermsScreen(readOnly: true)),
         ]),
       ];
 

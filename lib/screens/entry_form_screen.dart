@@ -24,6 +24,7 @@ import '../entry_modules/offering_entry.dart';
 import '../core/compilation_rules.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../widgets/app_menus.dart';
+import 'asmis_screens.dart';
 
 class EntryFormScreen extends StatefulWidget {
   final String sheetName, cellName, location, subLocation, dept, team;
@@ -94,6 +95,15 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
     _determineDefaultDay(selectedDate);
     _initRoleAndData();
+    _checkAsmis();
+  }
+
+  /// ASMIS day whose pre-attendance check is open on the chosen date.
+  Map<String, dynamic>? _asmis;
+  Future<void> _checkAsmis() async {
+    if (widget.sheetName != 'Service Attendance Status') return;
+    final s = await Asmis.openOn(selectedDate);
+    if (mounted) setState(() => _asmis = s);
   }
 
   void _determineDefaultDay(DateTime dt) {
@@ -848,6 +858,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         _determineDefaultDay(picked);
       });
       _loadInitialData();
+      _checkAsmis();
     }
   }
 
@@ -1339,6 +1350,35 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                     ),
 
                   const SizedBox(height: 8),
+
+                  if (_asmis != null && widget.sheetName == 'Service Attendance Status')
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(sideMargin, 0, sideMargin, 6),
+                      child: Material(
+                        color: AppPalette.bg(const Color(0xFFEDE3F8)),
+                        borderRadius: BorderRadius.circular(10),
+                        child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.groups_3_rounded, color: AppPalette.fg(const Color(0xFF4A148C))),
+                          title: Text(Asmis.label(_asmis!), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                          subtitle: Text("ASMIS pre-attendance is open", style: const TextStyle(fontSize: 11.5)),
+                          trailing: FilledButton.tonal(
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AsmisPreAttendanceScreen(
+                                  service: _asmis!,
+                                  checkDate: selectedDate,
+                                  members: members,
+                                  options: dynamicOptions['attendance_pre'] ?? const [],
+                                ),
+                              ),
+                            ),
+                            child: const Text("Check"),
+                          ),
+                        ),
+                      ),
+                    ),
 
                   if (widget.sheetName == 'Visitations and Counselling')
                     Padding(

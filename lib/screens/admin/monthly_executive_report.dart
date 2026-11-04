@@ -14,6 +14,7 @@ import '../../core/app_sizes.dart';
 import '../../core/compilation_rules.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'tribe_monthly_report.dart';
+import '../../widgets/nice_range_picker.dart';
 
 /// One duty in the report: this period against the period before.
 class DutyStat {
@@ -801,7 +802,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           onChanged: (v) async {
             if (v == null) return;
             if (v == 'Custom period') {
-              final p = await showDateRangePicker(context: context, firstDate: DateTime(2023), lastDate: DateTime.now());
+              final p = await showNiceRangePicker(context, initial: _customRange, firstDate: DateTime(2023), lastDate: DateTime.now(), title: tr('Custom period'));
               if (p != null) {
                 setState(() {
                   _selectedPeriod = v;
@@ -1067,10 +1068,127 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
 
   List<Map<String, dynamic>> get _focusJson => [for (final f in _focus) {'col': _levelCols[f.key], 'op': 'eq', 'val': f.value}];
 
-  /// The duty's trend in the report's own area, one point per SESSION as it
-  /// is reported (each Wednesday / Sunday service, each week …), this period
-  /// and the one before (perf_trend, 18_round17.sql).
-  Future<(List<String>, List<double?>, List<double?>)> _trend(DutyStat d) async {
+  // ---- the period split into its parts (averages per part)
+
+  /// The parts, named by their real dates:
+  /// · Weekly: the last 5 service days of the chosen day (Sun 26 Oct …) for
+  ///   Service Attendance / Workers Education / ASE, else the last 5 weeks
+  ///   (27 Oct – 2 Nov …).
+  /// · Monthly: the last two complete months (in November: Sep and Oct).
+  /// · Quarterly / Half year: its months. Yearly: its quarters.
+  /// · Custom: service days or weeks (up to 8 weeks), else months.
+  /// Entries count on their service date (the last Wed / Sun on or before the
+  /// day they were entered, 22_round21.sql).
+  List<Map<String, String>> _buckets({String? day}) {
+    final f = DateFormat('yyyy-MM-dd');
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    DateTime cap(DateTime d) => d.isAfter(today) ? today : d;
+    final out = <Map<String, String>>[];
+    void add(String label, DateTime a, DateTime b) {
+      if (a.isAfter(today)) return;
+      out.add({'label': label, 'from': f.format(a), 'to': f.format(cap(b))});
+    }
+    final wd = day == null ? null : const {'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7}[day];
+    DateTime monday(DateTime d) => DateTime(d.year, d.month, d.day).subtract(Duration(days: d.weekday - 1));
+    String range(DateTime a, DateTime b) => a.month == b.month
+        ? "${a.day}–${DateFormat('d MMM').format(b)}"
+        : "${DateFormat('d MMM').format(a)} – ${DateFormat('d MMM').format(b)}";
+    void serviceDays(DateTime from, DateTime to) {
+      var d = DateTime(to.year, to.month, to.day);
+      while (d.weekday != wd) {
+        d = d.subtract(const Duration(days: 1));
+      }
+      final days = <DateTime>[];
+      while (!d.isBefore(from)) {
+        days.insert(0, d);
+        d = d.subtract(const Duration(days: 7));
+      }
+      for (final x in days) {
+        add(DateFormat('EEE d MMM').format(x), x, x);
+      }
+    }
+    void weeks(DateTime from, DateTime to) {
+      var a = monday(from);
+      while (!a.isAfter(to)) {
+        final s = a.isBefore(from) ? from : a;
+        final e = a.add(const Duration(days: 6)).isAfter(to) ? to : a.add(const Duration(days: 6));
+        add(range(s, cap(e)), s, e);
+        a = a.add(const Duration(days: 7));
+      }
+    }
+    void months(DateTime from, DateTime to) {
+      var m = DateTime(from.year, from.month, 1);
+      while (!m.isAfter(to)) {
+        final end = DateTime(m.year, m.month + 1, 0);
+        add(DateFormat('MMM yyyy').format(m), m.isBefore(from) ? from : m, end.isAfter(to) ? to : end);
+        m = DateTime(m.year, m.month + 1, 1);
+      }
+    }
+    switch (_selectedPeriod) {
+      case 'Weekly':
+        if (wd != null) {
+          // the last 5 service days of that day, up to today
+          serviceDays(today.subtract(const Duration(days: 34)), today);
+        } else {
+          weeks(monday(today).subtract(const Duration(days: 28)), today);
+        }
+        break;
+      case 'Monthly':
+        // the last two complete months
+        months(DateTime(today.year, today.month - 2, 1), DateTime(today.year, today.month, 0));
+        break;
+      case 'Quarterly':
+      case 'Half year':
+        months(_curStart, _curEnd);
+        break;
+      case 'Yearly':
+        for (int q = 0; q < 4; q++) {
+          final a = DateTime(_curStart.year, q * 3 + 1, 1);
+          final b = DateTime(a.year, a.month + 3, 0);
+          add("Q${q + 1} (${DateFormat('MMM').format(a)}–${DateFormat('MMM').format(b)})", a, b);
+        }
+        break;
+      default:
+        if (_curEnd.difference(_curStart).inDays <= 56) {
+          if (wd != null) {
+            serviceDays(_curStart, _curEnd);
+          } else {
+            weeks(_curStart, _curEnd);
+          }
+        } else {
+          months(_curStart, _curEnd);
+        }
+    }
+    return out;
+  }
+
+  /// Service Attendance, Workers Education and All Saints Education compare
+  /// Wednesday and Sunday separately.
+  static bool _hasServiceDays(String duty) =>
+      duty.startsWith('Service Attendance') || duty == 'Workers Education' || duty == 'All Saints Education';
+  String _cmpDay = 'Sun';
+
+  /// The duty chart: each part's average for the whole area (perf_trend_v2,
+  /// 21_round20.sql); before that SQL, the sessions as before.
+  Future<(List<String>, List<double?>, List<double?>)> _trend(DutyStat d, {String? day}) async {
+    try {
+      final r = await _supabase.rpc('perf_trend_v2', params: {
+        'p_duty': d.dutyName,
+        'p_buckets': _buckets(day: day),
+        'p_include_pending': _includePending,
+        'p_focus': _focusJson,
+        'p_day': day,
+      });
+      final rows = List<Map<String, dynamic>>.from((r as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      double? v(Map x) => ((x['reports'] as num?) ?? 0) == 0 ? null : (x['rate'] as num?)?.toDouble();
+      return ([for (final x in rows) x['bucket'].toString()], [for (final x in rows) v(x)], <double?>[]);
+    } catch (_) {
+      return _trendOld(d);
+    }
+  }
+
+  Future<(List<String>, List<double?>, List<double?>)> _trendOld(DutyStat d) async {
     final r = await _supabase.rpc('perf_trend', params: {
       'p_duty': d.dutyName,
       'p_from': _d(_curStart),
@@ -1082,117 +1200,163 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
     });
     final rows = List<Map<String, dynamic>>.from((r as List).map((e) => Map<String, dynamic>.from(e as Map)));
     var cur = rows.where((x) => x['period'] == 'cur').toList();
-    var prev = rows.where((x) => x['period'] == 'prev').toList();
     if (cur.length > 16) cur = cur.sublist(cur.length - 16);
-    // the sessions before, matched from the end (latest with latest)
-    if (prev.length > cur.length) prev = prev.sublist(prev.length - cur.length);
-    final labels = [for (final x in cur) x['bucket'].toString()];
     double? v(Map x) => ((x['reports'] as num?) ?? 0) == 0 ? null : (x['rate'] as num?)?.toDouble();
-    final a = [for (final x in cur) v(x)];
-    final pad = cur.length - prev.length;
-    final b = [for (int i = 0; i < pad; i++) null, for (final x in prev) v(x)];
-    return (labels, a, b);
+    return ([for (final x in cur) x['bucket'].toString()], [for (final x in cur) v(x)], <double?>[]);
   }
 
   void _openTrend(DutyStat d) {
-    final future = _trend(d);
+    final days = _hasServiceDays(d.dutyName);
+    // the same Wed / Sun as the comparison below (changing it here changes both)
+    String day = _cmpDay;
+    var future = _trend(d, day: days ? day : null);
     Navigator.push(context, MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (ctx) => Scaffold(
-        backgroundColor: AppPalette.bg(Colors.white),
-        appBar: AppBar(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setRoute) => Scaffold(
           backgroundColor: AppPalette.bg(Colors.white),
-          elevation: 0.5,
-          centerTitle: true,
-          title: Text(d.title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: AppPalette.fg(pPurple))),
-        ),
-        body: SafeArea(
-          child: FutureBuilder<(List<String>, List<double?>, List<double?>)>(
-            future: future,
-            builder: (ctx, snap) {
-              if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
-              if (snap.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't load the trend (run 18_round17.sql): ${snap.error}", textAlign: TextAlign.center)));
-              final (labels, a, b) = snap.data!;
-              LineChartBarData line(List<double?> v, Color c, {bool dashed = false}) => LineChartBarData(
-                    spots: [for (var i = 0; i < v.length; i++) if (v[i] != null) FlSpot(i.toDouble(), v[i]!)],
-                    isCurved: true,
-                    preventCurveOverShooting: true,
-                    color: c,
-                    barWidth: dashed ? 2 : 3.5,
-                    dashArray: dashed ? [6, 4] : null,
-                    dotData: const FlDotData(show: true),
-                    belowBarData: BarAreaData(show: !dashed, color: c.withValues(alpha: 0.10)),
-                  );
-              final c = _changeColor(d.diff);
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(12, 16, 20, 16),
-                child: Column(children: [
-                  Text("$_unitKey · $_periodText", textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 12.5, color: AppPalette.fg(Colors.blueGrey.shade700))),
-                  const SizedBox(height: 6),
-                  Wrap(alignment: WrapAlignment.center, spacing: 14, runSpacing: 4, children: [
-                    Text("${d.currentRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 22, fontWeight: FontWeight.w900, color: AppPalette.fg(d.color))),
-                    Text(_changeText(d.diff), style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold, color: AppPalette.fg(c))),
-                    Text("Previous ${d.previousRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade700))),
+          appBar: AppBar(
+            backgroundColor: AppPalette.bg(Colors.white),
+            elevation: 0.5,
+            centerTitle: true,
+            title: Text(d.title, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: AppPalette.fg(pPurple))),
+          ),
+          body: SafeArea(
+            child: FutureBuilder<(List<String>, List<double?>, List<double?>)>(
+              future: future,
+              builder: (ctx, snap) {
+                if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+                if (snap.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't load the chart (run 21_round20.sql): ${snap.error}", textAlign: TextAlign.center)));
+                final (labels, a, _) = snap.data!;
+                final c = _changeColor(d.diff);
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+                  child: Column(children: [
+                    Text("$_unitKey · $_periodText", textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 12.5, color: AppPalette.fg(Colors.blueGrey.shade700))),
+                    const SizedBox(height: 6),
+                    Wrap(alignment: WrapAlignment.center, spacing: 14, runSpacing: 4, children: [
+                      Text("${d.currentRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 22, fontWeight: FontWeight.w900, color: AppPalette.fg(d.color))),
+                      Text(_changeText(d.diff), style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold, color: AppPalette.fg(c))),
+                      Text("Previous ${d.previousRate.toStringAsFixed(1)}%", style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade700))),
+                    ]),
+                    if (days) ...[
+                      const SizedBox(height: 8),
+                      SegmentedButton<String>(
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                        segments: const [
+                          ButtonSegment(value: 'Wed', label: Text("Wednesday")),
+                          ButtonSegment(value: 'Sun', label: Text("Sunday")),
+                        ],
+                        selected: {day},
+                        onSelectionChanged: (v) {
+                          setRoute(() {
+                            day = v.first;
+                            future = _trend(d, day: day);
+                          });
+                          if (_cmpDay != day) {
+                            setState(() => _cmpDay = day);
+                            if (_cmpDuty != null && _hasServiceDays(_cmpDuty!)) _loadComparison();
+                          }
+                        },
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    Text("${days && (_selectedPeriod == 'Weekly' || (_selectedPeriod == 'Custom period' && _curEnd.difference(_curStart).inDays <= 56)) ? 'Each ${day == 'Wed' ? 'Wednesday' : 'Sunday'} service' : 'Average of each ${_bucketWord()}'}${days ? ' · $day only' : ''}${d.dutyName.startsWith('Service Attendance') ? ' · real-time attendance' : ''}",
+                        textAlign: TextAlign.center, style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade700))),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: labels.isEmpty || a.every((x) => x == null)
+                          ? Center(child: Text("No reports in this period.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
+                          : _bucketChart(labels, a, d.color),
+                    ),
                   ]),
-                  const SizedBox(height: 6),
-                  Wrap(alignment: WrapAlignment.center, spacing: 16, children: [
-                    Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 18, height: 4, color: d.color), const SizedBox(width: 6), const Text("This period (each session)", style: TextStyle(fontSize: 12))]),
-                    Row(mainAxisSize: MainAxisSize.min, children: [Container(width: 18, height: 2, color: Colors.grey), const SizedBox(width: 6), Text("Previous ($_prevText)", style: const TextStyle(fontSize: 12))]),
-                  ]),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: LayoutBuilder(builder: (ctx, box) {
-                      // phones: show every n-th date so the labels never run into each other
-                      final step = labels.isEmpty ? 1 : ((labels.length * 46) / (box.maxWidth - 40).clamp(80.0, 4000.0)).ceil().clamp(1, 1000);
-                      return labels.isEmpty || (a.every((x) => x == null) && b.every((x) => x == null))
-                        ? Center(child: Text("No reports in this period.", style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey))))
-                        : LineChart(LineChartData(
-                            minY: 0,
-                            maxY: 100,
-                            minX: 0,
-                            maxX: labels.length < 2 ? 1 : (labels.length - 1).toDouble(),
-                            gridData: FlGridData(
-                              show: true,
-                              drawVerticalLine: false,
-                              horizontalInterval: 20,
-                              getDrawingHorizontalLine: (v) => FlLine(color: AppPalette.line(Colors.grey.withValues(alpha: 0.18)), strokeWidth: 1),
-                            ),
-                            borderData: FlBorderData(show: true, border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black38)), left: BorderSide(color: AppPalette.line(Colors.black38)))),
-                            titlesData: FlTitlesData(
-                              leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 36, interval: 20, getTitlesWidget: (v, m) => Text("${v.toInt()}%", style: const TextStyle(fontSize: 10)))),
-                              bottomTitles: AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  interval: 1,
-                                  reservedSize: 34,
-                                  getTitlesWidget: (v, m) {
-                                    final i = v.toInt();
-                                    if (i < 0 || i >= labels.length || v != i.toDouble()) return const SizedBox();
-                                    if (i % step != 0) return const SizedBox();
-                                    return SideTitleWidget(
-                                      meta: m,
-                                      space: 6,
-                                      fitInside: SideTitleFitInsideData.fromTitleMeta(m),
-                                      child: Text(labels[i], style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
-                                    );
-                                  },
-                                ),
-                              ),
-                              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                            ),
-                            lineBarsData: [line(b, Colors.grey, dashed: true), line(a, d.color)],
-                          ));
-                    }),
-                  ),
-                ]),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
     ));
   }
+
+  String _bucketWord() => switch (_selectedPeriod) {
+        'Weekly' => 'week',
+        'Yearly' => 'quarter',
+        'Custom period' => _curEnd.difference(_curStart).inDays <= 56 ? 'week' : 'month',
+        _ => 'month',
+      };
+
+  /// Columns, one per part; the labels sit under their own column (two lines,
+  /// never on top of each other); scrolls sideways when there are many.
+  Widget _bucketChart(List<String> labels, List<double?> values, Color color) => LayoutBuilder(builder: (context, box) {
+        final width = (labels.length * 74.0).clamp(box.maxWidth, 4000.0);
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            width: width,
+            height: box.maxHeight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 22, 12, 4),
+              child: BarChart(BarChartData(
+                maxY: 100,
+                minY: 0,
+                alignment: BarChartAlignment.spaceAround,
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: 20,
+                  getDrawingHorizontalLine: (x) => FlLine(color: AppPalette.line(Colors.grey.withValues(alpha: 0.2)), strokeWidth: 1),
+                ),
+                borderData: FlBorderData(show: true, border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black38)), left: BorderSide(color: AppPalette.line(Colors.black38)))),
+                // each column's value sits just above it
+                barTouchData: BarTouchData(
+                  enabled: false,
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipColor: (_) => Colors.transparent,
+                    tooltipPadding: EdgeInsets.zero,
+                    tooltipMargin: 2,
+                    getTooltipItem: (g, gi, rod, ri) => values[g.x] == null
+                        ? null
+                        : BarTooltipItem("${values[g.x]!.toStringAsFixed(1)}%", TextStyle(color: AppPalette.fg(color), fontSize: 10.5, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                titlesData: FlTitlesData(
+                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 36, interval: 20, getTitlesWidget: (x, m) => Text("${x.toInt()}%", style: const TextStyle(fontSize: 10)))),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 36,
+                      getTitlesWidget: (x, m) {
+                        final i = x.toInt();
+                        if (i < 0 || i >= labels.length) return const SizedBox();
+                        return SideTitleWidget(
+                          meta: m,
+                          space: 4,
+                          child: SizedBox(
+                            width: 66,
+                            child: Text(labels[i].replaceFirst(' (', '\n(').replaceFirstMapped(RegExp(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) '), (m) => '${m[1]}\n'),
+                                textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, height: 1.15)),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                barGroups: [
+                  for (int i = 0; i < values.length; i++)
+                    BarChartGroupData(x: i, showingTooltipIndicators: values[i] == null ? const [] : const [0], barRods: [
+                      BarChartRodData(toY: (values[i] ?? 0).clamp(0, 100).toDouble(), width: 22, color: color, borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
+                    ]),
+                ],
+              )),
+            ),
+          ),
+        );
+      });
 
   // ==========================================
   // PERFORMANCE COMPARISON
@@ -1242,16 +1406,28 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         for (final f in _cmpFocus) {'col': f.key, 'op': 'eq', 'val': f.value},
       ];
       final r = await Future.wait<dynamic>([
-        _supabase.rpc('perf_compare_v2', params: {
+        // averages per week / month / quarter (21_round20.sql); before that SQL, per session
+        _supabase.rpc('perf_compare_v3', params: {
           'p_duty': duty,
           'p_from': _d(_curStart),
           'p_to': _d(_curEnd),
           'p_prev_from': _d(_prevStart),
           'p_prev_to': _d(_prevEnd),
+          'p_buckets': _buckets(day: _hasServiceDays(duty) ? _cmpDay : null),
           'p_include_pending': _includePending,
           'p_focus': focus,
           'p_level': _cmpPick,
-        }),
+          'p_day': _hasServiceDays(duty) ? _cmpDay : null,
+        }).catchError((_) => _supabase.rpc('perf_compare_v2', params: {
+              'p_duty': duty,
+              'p_from': _d(_curStart),
+              'p_to': _d(_curEnd),
+              'p_prev_from': _d(_prevStart),
+              'p_prev_to': _d(_prevEnd),
+              'p_include_pending': _includePending,
+              'p_focus': focus,
+              'p_level': _cmpPick,
+            })),
         _supabase.rpc('perf_levels', params: {'p_focus': _focusJson}),
       ]);
       if (!mounted || req != _cmpReq) return;
@@ -1262,7 +1438,8 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         final x = Map<String, dynamic>.from(raw as Map);
         final u = x['unit'].toString();
         level = (x['level'] ?? level).toString();
-        buckets[(x['ord'] as num).toInt()] = x['bucket'].toString();
+        // the parts are the columns; Previous / This period give the rank and change
+        if ((x['ord'] as num).toInt() < 1000) buckets[(x['ord'] as num).toInt()] = x['bucket'].toString();
         final row = byUnit.putIfAbsent(u, () => {'unit': u, 'mine': x['is_mine'] == true, 'rates': <String, double?>{}});
         (row['rates'] as Map<String, double?>)[x['bucket'].toString()] = ((x['reports'] as num?) ?? 0) == 0 ? null : (x['rate'] as num?)?.toDouble();
       }
@@ -1371,6 +1548,21 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
             selected: {_cmpChart},
             onSelectionChanged: (v) => setState(() => _cmpChart = v.first),
           ),
+          // Service Attendance, Workers Education, ASE: Wednesday and Sunday apart
+          if (_cmpDuty != null && _hasServiceDays(_cmpDuty!))
+            SegmentedButton<String>(
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: const [
+                ButtonSegment(value: 'Wed', label: Text("Wed")),
+                ButtonSegment(value: 'Sun', label: Text("Sun")),
+              ],
+              selected: {_cmpDay},
+              onSelectionChanged: (v) {
+                setState(() => _cmpDay = v.first);
+                _loadComparison();
+              },
+            ),
         ]),
         if (_cmpFocus.isNotEmpty)
           Padding(

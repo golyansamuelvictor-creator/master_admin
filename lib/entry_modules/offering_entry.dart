@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/app_palette.dart';
 import '../core/i18n.dart';
@@ -31,6 +32,9 @@ class OfferingEntry extends StatefulWidget {
 class _OfferingEntryState extends State<OfferingEntry> {
   final Map<String, TextEditingController> _ctl = {};
   final _hScroll = ScrollController();
+  final _vLeft = ScrollController(); // the fixed first column
+  final _vRight = ScrollController(); // the rest
+  final Set<String> _hidden = {}; // hidden unit / name columns (remembered on this device)
   String _search = '';
   bool _ready = false;
   late int _week = _initialWeek();
@@ -73,6 +77,43 @@ class _OfferingEntryState extends State<OfferingEntry> {
     OfferingCategories.load().then((_) {
       if (mounted) setState(() => _ready = true);
     });
+    // the two parts of the table scroll up and down together
+    _vRight.addListener(() {
+      if (_vLeft.hasClients && _vLeft.offset != _vRight.offset) _vLeft.jumpTo(_vRight.offset);
+    });
+    _vLeft.addListener(() {
+      if (_vRight.hasClients && _vRight.offset != _vLeft.offset) _vRight.jumpTo(_vLeft.offset);
+    });
+    SharedPreferences.getInstance().then((p) {
+      final h = p.getStringList('offering_hidden_cols') ?? const [];
+      if (mounted) setState(() => _hidden.addAll(h));
+    }).catchError((_) {});
+  }
+
+  void _chooseColumns() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text("Show / hide columns"),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text("The first column shown stays fixed on the left.", style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade700))),
+            for (final c in [..._unitCols.map((u) => (u.$1, u.$2)), ('english_name', 'English Name')])
+              CheckboxListTile(
+                dense: true,
+                value: !_hidden.contains(c.$1),
+                title: Text(c.$2),
+                onChanged: (v) {
+                  set(() => v == true ? _hidden.remove(c.$1) : _hidden.add(c.$1));
+                  setState(() {});
+                  SharedPreferences.getInstance().then((p) => p.setStringList('offering_hidden_cols', _hidden.toList())).catchError((_) => false);
+                },
+              ),
+          ]),
+          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text("Done"))],
+        ),
+      ),
+    );
   }
 
   @override
@@ -81,6 +122,8 @@ class _OfferingEntryState extends State<OfferingEntry> {
       c.dispose();
     }
     _hScroll.dispose();
+    _vLeft.dispose();
+    _vRight.dispose();
     super.dispose();
   }
 
@@ -136,25 +179,42 @@ class _OfferingEntryState extends State<OfferingEntry> {
     final rows = q.isEmpty
         ? widget.members
         : widget.members.where((m) => '${m['english_name']} ${m['cell_group']} ${m['team']}'.toLowerCase().contains(q)).toList();
-    final width = _unitCols.fold<double>(0, (a, c) => a + c.$3) + _nameW + cats.length * _amountW + _totalW;
+    // the unit and name columns shown; only the row numbers stay fixed
+    final shown = <(String, String, double)>[
+      for (final c in _unitCols) if (!_hidden.contains(c.$1)) c,
+      if (!_hidden.contains('english_name')) ('english_name', 'English Name', _nameW),
+    ];
+    final movable = shown;
+    const frozenW = 40.0;
+    final movableW = movable.fold<double>(0, (a, c) => a + c.$3);
+    final width = movableW + cats.length * _amountW + _totalW;
     final grand = cats.fold<num>(0, (a, c) => a + _colTotal(c.column));
     final givers = widget.members.where((m) => _rowTotal(m['id'].toString()) > 0).length;
 
+    Widget infoCell(Map m, (String, String, double) c, Color bg) => c.$1 == 'english_name'
+        ? _cell((m['english_name'] ?? '').toString(), c.$3, bold: true, align: TextAlign.left, bg: bg)
+        : _cell((m[c.$1] ?? '').toString(), c.$3, bg: bg);
+
     final header = Row(children: [
-      for (final c in _unitCols) _cell(c.$2, c.$3, bold: true, color: Colors.white, bg: widget.pPurple),
-      _cell("English Name", _nameW, bold: true, color: Colors.white, bg: widget.pPurple),
+      for (final c in movable) _cell(c.$2, c.$3, bold: true, color: Colors.white, bg: widget.pPurple),
       for (final c in cats) _cell(c.label, _amountW, bold: true, color: Colors.white, bg: widget.pPurple),
       _cell("Total", _totalW, bold: true, color: Colors.white, bg: widget.pPurple),
     ]);
     final totals = Row(children: [
-      _cell("General total", _unitCols.fold<double>(0, (a, c) => a + c.$3) + _nameW, bold: true, color: widget.pPurple, bg: const Color(0xFFF1E8FB)),
+      if (movable.isNotEmpty) _cell("General total", movableW, bold: true, color: widget.pPurple, bg: const Color(0xFFF1E8FB)),
       for (final c in cats) _cell(_fmt.format(_colTotal(c.column)), _amountW, bold: true, color: c.color, bg: const Color(0xFFF1E8FB)),
       _cell(_fmt.format(grand), _totalW, bold: true, color: widget.pPurple, bg: const Color(0xFFF1E8FB)),
     ]);
     final giverRow = Row(children: [
-      _cell("Offered", _unitCols.fold<double>(0, (a, c) => a + c.$3) + _nameW, bold: true, bg: const Color(0xFFF8FAFC)),
+      if (movable.isNotEmpty) _cell("Offered", movableW, bold: true, bg: const Color(0xFFF8FAFC)),
       for (final c in cats) _cell("${_givers(c.column)} of ${widget.members.length}", _amountW, bg: const Color(0xFFF8FAFC)),
       _cell("$givers of ${widget.members.length}", _totalW, bold: true, bg: const Color(0xFFF8FAFC)),
+    ]);
+    // the row numbers' corner, next to the header and total rows
+    final leftHead = Column(children: [
+      _cell("#", frozenW, bold: true, color: Colors.white, bg: widget.pPurple),
+      _cell("", frozenW, bg: const Color(0xFFF1E8FB)),
+      _cell("", frozenW, bg: const Color(0xFFF8FAFC)),
     ]);
 
     return Column(children: [
@@ -181,63 +241,89 @@ class _OfferingEntryState extends State<OfferingEntry> {
               onChanged: (v) => setState(() => _search = v),
             ),
           ),
+          OutlinedButton.icon(
+            onPressed: _chooseColumns,
+            icon: const Icon(Icons.view_week_rounded, size: 16),
+            label: Text("Columns${_hidden.isEmpty ? '' : ' (${_hidden.length} hidden)'}"),
+          ),
           Text("Type the amount each member gave (UGX). Empty = nothing given. Weekly Offering is given every week; the other kinds once a month.",
               textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
         ]),
       ),
       if (!_ready) const LinearProgressIndicator(minHeight: 2),
       Expanded(
-        child: Scrollbar(
-          controller: _hScroll,
-          thumbVisibility: true,
-          child: SingleChildScrollView(
-            controller: _hScroll,
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: width,
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 1. the row numbers, fixed on the left
+          Container(
+              width: frozenW,
+              decoration: BoxDecoration(boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4, offset: const Offset(2, 0))]),
               child: Column(children: [
-                header,
-                totals,
-                giverRow,
+                leftHead,
                 Expanded(
                   child: ListView.builder(
+                    controller: _vLeft,
                     itemCount: rows.length,
                     itemExtent: _rowH,
-                    itemBuilder: (_, i) {
-                      final m = rows[i];
-                      final mid = m['id'].toString();
-                      final bg = i.isEven ? Colors.white : const Color(0xFFF8FAFC);
-                      return Row(children: [
-                        for (final c in _unitCols) _cell((m[c.$1] ?? '').toString(), c.$3, bg: bg),
-                        _cell((m['english_name'] ?? '').toString(), _nameW, bold: true, align: TextAlign.left, bg: bg),
-                        for (final c in cats)
-                          Container(
-                            width: _amountW,
-                            height: _rowH,
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppPalette.bg(bg),
-                              border: Border(right: BorderSide(color: AppPalette.line(Colors.black12)), bottom: BorderSide(color: AppPalette.line(Colors.black12))),
-                            ),
-                            child: TextField(
-                              controller: _c(mid, c.column),
-                              textAlign: TextAlign.center,
-                              keyboardType: const TextInputType.numberWithOptions(decimal: false),
-                              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,]'))],
-                              style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(c.color), fontWeight: FontWeight.bold),
-                              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4), border: OutlineInputBorder(), hintText: '0'),
-                              onChanged: (v) => _set(mid, c.column, v),
-                            ),
-                          ),
-                        _cell(_fmt.format(_rowTotal(mid)), _totalW, bold: true, color: widget.pPurple, bg: bg),
-                      ]);
-                    },
+                    itemBuilder: (_, i) => _cell("${i + 1}", frozenW, bold: true, color: Colors.grey.shade700, bg: const Color(0xFFF1F5F9)),
                   ),
                 ),
               ]),
             ),
+          // 2. the rest: header rows on top, scrolls both ways
+          Expanded(
+            child: Scrollbar(
+              controller: _hScroll,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _hScroll,
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: width,
+                  child: Column(children: [
+                    header,
+                    totals,
+                    giverRow,
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _vRight,
+                        itemCount: rows.length,
+                        itemExtent: _rowH,
+                        itemBuilder: (_, i) {
+                          final m = rows[i];
+                          final mid = m['id'].toString();
+                          final bg = i.isEven ? Colors.white : const Color(0xFFF8FAFC);
+                          return Row(children: [
+                            for (final c in movable) infoCell(m as Map, c, bg),
+                            for (final c in cats)
+                              Container(
+                                width: _amountW,
+                                height: _rowH,
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppPalette.bg(bg),
+                                  border: Border(right: BorderSide(color: AppPalette.line(Colors.black12)), bottom: BorderSide(color: AppPalette.line(Colors.black12))),
+                                ),
+                                child: TextField(
+                                  controller: _c(mid, c.column),
+                                  textAlign: TextAlign.center,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,]'))],
+                                  style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(c.color), fontWeight: FontWeight.bold),
+                                  decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4), border: OutlineInputBorder(), hintText: '0'),
+                                  onChanged: (v) => _set(mid, c.column, v),
+                                ),
+                              ),
+                            _cell(_fmt.format(_rowTotal(mid)), _totalW, bold: true, color: widget.pPurple, bg: bg),
+                          ]);
+                        },
+                      ),
+                    ),
+                  ]),
+                ),
+              ),
+            ),
           ),
-        ),
+        ]),
       ),
     ]);
   }

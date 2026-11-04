@@ -607,6 +607,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
             final baseSum = _baseWidths.fold<double>(0, (s, w) => s + w);
             final scale = (availWidth > baseSum) ? (availWidth / baseSum) : 1.0;
             final widths = _baseWidths.map((w) => w * scale).toList();
+            // only the row numbers (and the header rows) stay fixed
             final totalTableWidth = widths.fold<double>(0, (s, w) => s + w);
             final filtered = _filteredStudents;
 
@@ -665,11 +666,12 @@ class _BbFileEntryState extends State<BbFileEntry> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 1. Frozen Left Pane: Corner + Virtualized Row Numbers
+                      // 1. Frozen Left Pane: Corner + Row Numbers + the first column shown
                       SizedBox(
                         width: _rowNumColWidth,
                         child: Column(
                           children: [
+                            Row(children: [
                             GestureDetector(
                               onTap: _selectAll,
                               child: Container(
@@ -685,6 +687,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                 ),
                               ),
                             ),
+                            ]),
                             Expanded(
                               child: ListView.builder(
                                 controller: _rowNumScrollController,
@@ -698,7 +701,8 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                       _selStartCol == 0 &&
                                       _selEndCol == _colTitles.length - 1;
 
-                                  return GestureDetector(
+                                  return Row(children: [
+                                  GestureDetector(
                                     onTap: () => _selectRow(idx),
                                     onSecondaryTapDown: (d) => _showContextMenu(d.globalPosition, idx, 0),
                                     child: Container(
@@ -722,7 +726,8 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                         ),
                                       ),
                                     ),
-                                  );
+                                  ),
+                                  ]);
                                 },
                               ),
                             ),
@@ -749,7 +754,8 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                       SizedBox(
                                         height: _alphaHeaderHeight,
                                         child: Row(
-                                          children: List.generate(_colLetters.length, (i) {
+                                          children: List.generate(_colLetters.length, (j) {
+                                            final i = j;
                                             final isColSel = _selStartCol != null &&
                                                 i >= math.min(_selStartCol!, _selEndCol!) &&
                                                 i <= math.max(_selStartCol!, _selEndCol!) &&
@@ -771,7 +777,8 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                       SizedBox(
                                         height: _titleHeaderHeight,
                                         child: Row(
-                                          children: List.generate(_colTitles.length, (i) {
+                                          children: List.generate(_colTitles.length, (j) {
+                                            final i = j;
                                             final isFiltered = _activeFilters.containsKey(i);
                                             return Container(
                                               width: widths[i],
@@ -812,8 +819,8 @@ class _BbFileEntryState extends State<BbFileEntry> {
                                       return SizedBox(
                                         height: _rowHeight,
                                         child: Row(
-                                          children: List.generate(_activeColIndices.length, (c) {
-                                            return _buildCell(s, r, c, widths[c], isEven);
+                                          children: List.generate(_activeColIndices.length, (j) {
+                                            return _buildCell(s, r, j, widths[j], isEven);
                                           }),
                                         ),
                                       );

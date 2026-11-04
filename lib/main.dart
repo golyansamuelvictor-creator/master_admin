@@ -11,6 +11,7 @@ import 'package:flutter_quill/flutter_quill.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/auth_screen.dart';
+import 'screens/terms_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/app_lock_manager.dart';
 import 'services/profile_refresh.dart';
@@ -48,7 +49,7 @@ void main() async {
   DemoMode.active = demo != null;
   await Supabase.initialize(
     url: demo?.$1 ?? kLiveSupabaseUrl,
-    anonKey: demo?.$2 ?? kLiveSupabaseKey,
+    publishableKey: demo?.$2 ?? kLiveSupabaseKey,
   );
 
   // Reads the device copy right away; the account copy loads in the background.
@@ -73,6 +74,10 @@ void main() async {
         // incoming voice / video calls ring on every screen
         CallService.start();
         unawaited(FormLink.checkPending());
+        // a "view as" role left from last time is cleared: the person starts as themselves
+        unawaited(Supabase.instance.client.rpc('set_acting_role', params: {'p_role': null}).then((_) {}, onError: (_) {}));
+        // the Terms and Conditions accepted before the account was created
+        unawaited(Terms.recordPending());
       }
     }
     if (st.event == AuthChangeEvent.signedOut) CallService.stop();
