@@ -10,6 +10,7 @@ import '../core/i18n.dart';
 import '../screens/admin/monthly_executive_report.dart';
 import '../screens/communication_screen.dart';
 import '../screens/education/education_contents.dart';
+import '../screens/special_activities_screen.dart' show ActivityScreen;
 import '../screens/notification_center_screen.dart';
 import '../services/chat_service.dart';
 
@@ -267,7 +268,11 @@ Widget _cardFrame(BuildContext context, {required IconData icon, required Color 
       color: AppPalette.bg(cs.surface),
       borderRadius: BorderRadius.circular(16),
       border: Border.all(color: AppPalette.line(Colors.black.withValues(alpha: 0.06))),
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 14, offset: const Offset(0, 6))],
+      // raised from below
+      boxShadow: [
+        BoxShadow(color: const Color(0xFF4A148C).withValues(alpha: 0.16), blurRadius: 22, spreadRadius: -4, offset: const Offset(0, 10)),
+        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 2)),
+      ],
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
@@ -444,6 +449,12 @@ class _HomeNotificationsCardState extends State<HomeNotificationsCard> {
       _load();
       return;
     }
+    // a special activity shared with my unit: open it
+    if (it['link_type'] == 'special_activity' && it['link_id'] != null) {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => ActivityScreen(activityId: it['link_id'].toString())));
+      _load();
+      return;
+    }
     final Widget page = it['type'] == 'chat'
         ? CommunicationScreen(userEmail: widget.userEmail, userRole: widget.userRole, openRoomId: it['room']?.toString())
         : NotificationCenterScreen(userRole: widget.userRole);
@@ -461,6 +472,7 @@ class _HomeNotificationsCardState extends State<HomeNotificationsCard> {
       'account' => (Icons.verified_user_rounded, const Color(0xFF4A148C)),
       'education' => (Icons.local_library_rounded, const Color(0xFF1565C0)),
       'asmis' => (Icons.groups_3_rounded, const Color(0xFF4A148C)),
+      'activity' => (Icons.event_note_rounded, const Color(0xFF6A1B9A)),
       'evangelism' => (Icons.campaign_rounded, const Color(0xFF00695C)),
       _ => (Icons.notifications_rounded, const Color(0xFF1565C0)),
     };

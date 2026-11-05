@@ -28,6 +28,7 @@ import 'duty_panel_screen.dart';
 import 'evangelism/bb_workspace_screen.dart';
 import 'evangelism/evangelism_results_screen.dart';
 import 'theology/student_duties.dart';
+import 'theology/student_profile.dart';
 import '../core/app_sizes.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -339,7 +340,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
       // Theology students' duties: Theology workers, and the secretaries and
       // cell leaders who see their units' students (22_round21.sql)
       final views = await StudentDuties.viewsStudents([_simulatedRole, _secondaryRole]);
-      if (mounted && views != _viewsStudents) setState(() => _viewsStudents = views);
+      final theology = views && await StudentDuties.isTheology();
+      if (mounted) {
+        setState(() {
+          _viewsStudents = views;
+          _isTheology = theology;
+        });
+      }
     } catch (e) { debugPrint("Permission Error: $e"); }
   }
 
@@ -352,9 +359,39 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   bool _viewsStudents = false;
+  bool _isTheology = false;
 
-  void _openStudentDuty(String duty) =>
-      Navigator.push(context, MaterialPageRoute(builder: (c) => StudentDutyScreen(duty: duty)));
+  void _openStudentDuty(String duty) {
+    if (duty == StudentDuties.evangelism) return _showStudentsEvangelismMenu();
+    Navigator.push(context, MaterialPageRoute(builder: (c) => StudentDutyScreen(duty: duty)));
+  }
+
+  /// Students Evangelism: participation, results and — for the Theology
+  /// workers — the students' BB File and the policies, standards & goals.
+  void _showStudentsEvangelismMenu() {
+    showGeneralDialog(context: context, pageBuilder: (context, anim1, anim2) {
+      return Scaffold(
+        backgroundColor: AppPalette.bg(const Color(0xFFFBFBFE)),
+        appBar: AppBar(backgroundColor: AppPalette.bg(Colors.white), elevation: 0.5, leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)), centerTitle: true, title: Text("Students evangelism", style: GoogleFonts.merriweather(fontSize: 16, fontWeight: FontWeight.bold))),
+        body: Padding(padding: const EdgeInsets.all(25), child: Column(children: [
+          _compactActionBtn(Icons.fact_check_rounded, "Evangelism participation", Colors.blue, () {
+            Navigator.push(context, MaterialPageRoute(builder: (c) => const StudentDutyScreen(duty: StudentDuties.evangelism)));
+          }),
+          _compactActionBtn(Icons.analytics_outlined, "Evangelism results", Colors.purple, () {
+            Navigator.push(context, MaterialPageRoute(builder: (c) => const EvangelismResultsScreen(studentsOnly: true)));
+          }),
+          if (_isTheology || selectedRole == 'admin') ...[
+            _compactActionBtn(Icons.folder_shared_outlined, "BB File (students)", Colors.orange[800]!, () {
+              Navigator.push(context, MaterialPageRoute(builder: (c) => BbWorkspaceScreen(canEdit: false, userRole: _simulatedRole ?? '', studentsOnly: true)));
+            }),
+            _compactActionBtn(Icons.gavel_rounded, "Evangelism policies, standards & goals", Colors.teal[800]!, () {
+              DutyPanelScreen.open(context, "Evangelism", role: selectedRole == 'admin' ? _simulatedRole : null);
+            }),
+          ],
+        ])),
+      );
+    });
+  }
 
   // --- DUAL-MODE & BOUNDARY PERMISSION MATRIX ---
   bool _canUserEnterData(String duty) {
@@ -480,6 +517,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     // repeated on this grid. Track growth stays for the roles that had it.
     // the students' Center Attendance for the secretaries and cell leaders too
     if (_viewsStudents && !buttons.contains(StudentDuties.attendance)) buttons.add(StudentDuties.attendance);
+    // Member Bio holds the student profiles for the Theology workers too
+    if (_viewsStudents && !buttons.contains("Member Bio")) buttons.insert(0, "Member Bio");
     buttons.add("Strategic Analysis");
     // Everyone who saves reports can follow their status (Pending / Approved / Rejected)
     if (_dynamicAdminActions.contains('Notification Center') || _dynamicDuties.isNotEmpty || _dynamicAdminActions.contains('Request Member Transfer')) {
@@ -1151,6 +1190,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
           // Member profile: the directory, and the approval of the profile
           // changes proposed by cell leaders
           _compactActionBtn(Icons.person_pin_rounded, "Member profile", Colors.blue, () => _showMemberProfileMenu(context)),
+          // Theology: the center students' profiles (center_students)
+          if (_viewsStudents)
+            _compactActionBtn(Icons.school_rounded, "Student profiles", Colors.brown, () {
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const StudentDirectoryScreen()));
+            }),
           if (isIASec || r == 'admin') ...[
             _compactActionBtn(Icons.sync_lock_rounded, "Database master sync", Colors.red[900]!, () { 
               Navigator.push(context, MaterialPageRoute(builder: (c) => const MemberSyncTool())); 

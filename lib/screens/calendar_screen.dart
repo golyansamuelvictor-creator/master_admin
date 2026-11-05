@@ -83,6 +83,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     TimeOfDay? time;
     final t0 = (existing?['event_time'] ?? '').toString().split(':');
     if (t0.length >= 2) time = TimeOfDay(hour: int.tryParse(t0[0]) ?? 9, minute: int.tryParse(t0[1]) ?? 0);
+    // repeating: none | daily | weekly | days (chosen weekdays), until a date
+    String repeat = (existing?['repeat_kind'] ?? 'none').toString();
+    final Set<int> days = {...((existing?['repeat_days'] as List?) ?? const []).map((e) => (e as num).toInt())};
+    DateTime until = DateTime.tryParse((existing?['repeat_until'] ?? '').toString()) ?? date.add(const Duration(days: 6));
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -115,6 +119,44 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
               ]),
               const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: repeat,
+                decoration: InputDecoration(labelText: tr("Repeat"), border: const OutlineInputBorder(), isDense: true),
+                items: const [
+                  DropdownMenuItem(value: 'none', child: Text("Does not repeat")),
+                  DropdownMenuItem(value: 'daily', child: Text("Every day")),
+                  DropdownMenuItem(value: 'weekly', child: Text("Every week (same day)")),
+                  DropdownMenuItem(value: 'days', child: Text("On chosen days")),
+                ],
+                onChanged: (v) => set(() {
+                  repeat = v ?? 'none';
+                  if (repeat == 'days' && days.isEmpty) days.add(date.weekday);
+                }),
+              ),
+              if (repeat == 'days') ...[
+                const SizedBox(height: 8),
+                Wrap(spacing: 4, runSpacing: 4, children: [
+                  for (int d = 1; d <= 7; d++)
+                    FilterChip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text(const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d - 1]),
+                      selected: days.contains(d),
+                      onSelected: (v) => set(() => v ? days.add(d) : days.remove(d)),
+                    ),
+                ]),
+              ],
+              if (repeat != 'none') ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.event_repeat_rounded, size: 18),
+                  label: Text("Until ${DateFormat('EEE d MMM yyyy').format(until)}  (${until.difference(date).inDays + 1} days)"),
+                  onPressed: () async {
+                    final d = await showDatePicker(context: ctx, initialDate: until.isBefore(date) ? date : until, firstDate: date, lastDate: DateTime(2035));
+                    if (d != null) set(() => until = d);
+                  },
+                ),
+              ],
+              const SizedBox(height: 10),
               TextField(controller: notes, maxLines: 3, decoration: InputDecoration(labelText: tr("Notes (optional)"), border: const OutlineInputBorder(), isDense: true)),
               const SizedBox(height: 6),
               Text("Only you can see your schedule.", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
@@ -133,6 +175,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
       'event_date': DateFormat('yyyy-MM-dd').format(date),
       'event_time': time == null ? null : "${time!.hour.toString().padLeft(2, '0')}:${time!.minute.toString().padLeft(2, '0')}:00",
+      'repeat_kind': repeat,
+      'repeat_days': repeat == 'days' ? (days.toList()..sort()) : null,
+      'repeat_until': repeat == 'none' ? null : DateFormat('yyyy-MM-dd').format(until.isBefore(date) ? date : until),
     };
     try {
       if (existing == null) {
@@ -149,7 +194,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("Couldn't save (run 17_round16.sql): ${e is PostgrestException ? e.message : e}"),
+          content: Text("Couldn't save (run 23_round22.sql): ${e is PostgrestException ? e.message : e}"),
           backgroundColor: Colors.red.shade700,
         ));
       }
@@ -162,7 +207,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       builder: (ctx) => AlertDialog(
         title: Text((e['title'] ?? '').toString(), style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(pPurple))),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text("My schedule  •  ${_timeLabel(e['event_time'])}", style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey[700]), fontWeight: FontWeight.bold)),
+          Text("My schedule  •  ${_timeLabel(e['event_time'])}${(e['repeat_kind'] ?? 'none') == 'none' || e['repeat_until'] == null ? '' : '  •  repeats until ${e['repeat_until']}'}", style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey[700]), fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
           Text((e['notes'] ?? '').toString()),
         ]),
@@ -241,7 +286,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
       for (var e in (r[2] as List)) {
         final DateTime? d = DateTime.tryParse((e['event_date'] ?? '').toString());
         if (d == null) continue;
-        newEvents.putIfAbsent(DateTime(d.year, d.month, d.day), () => []).add({...e, 'type': 'personal', 'category': 'My schedule'});
+        // a repeating schedule shows on each of its days (up to its last day)
+        for (final day in _occurrences(e, DateTime(d.year, d.month, d.day))) {
+          newEvents.putIfAbsent(day, () => []).add({...e, 'type': 'personal', 'category': 'My schedule'});
+        }
       }
       
       for (var e in (eventRes as List)) {
@@ -276,6 +324,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ));
       }
     }
+  }
+
+  /// The days a personal schedule falls on (repeat_kind / repeat_days /
+  /// repeat_until, 23_round22.sql); at most 2 years of days.
+  static List<DateTime> _occurrences(Map e, DateTime start) {
+    final kind = (e['repeat_kind'] ?? 'none').toString();
+    final until = DateTime.tryParse((e['repeat_until'] ?? '').toString());
+    if (kind == 'none' || until == null || !until.isAfter(start)) return [start];
+    final days = {...((e['repeat_days'] as List?) ?? const []).map((x) => (x as num).toInt())};
+    final out = <DateTime>[];
+    for (var d = start; !d.isAfter(until) && out.length < 730; d = DateTime(d.year, d.month, d.day + 1)) {
+      final ok = switch (kind) {
+        'daily' => true,
+        'weekly' => d.weekday == start.weekday,
+        'days' => days.isEmpty ? d.weekday == start.weekday : days.contains(d.weekday),
+        _ => d == start,
+      };
+      if (ok) out.add(d);
+    }
+    return out.isEmpty ? [start] : out;
   }
 
   List<dynamic> _getEventsForDay(DateTime day) {

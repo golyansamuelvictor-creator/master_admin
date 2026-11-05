@@ -14,6 +14,7 @@ import 'package:master_admin/core/app_palette.dart';
 
 import '../core/table_export.dart';
 import '../widgets/office_shell.dart';
+import '../widgets/share_file.dart';
 
 /// Presentations (PowerPoint style): the original hub + ribbon layout with
 /// private decks, layouts, themes, transitions, notes, slide sorter,
@@ -799,6 +800,9 @@ class _PresentationScreenState extends State<PresentationScreen> {
   Future<void> _print() => TableExport.previewBuilder(context, _titleC.text.trim().isEmpty ? 'Presentation' : _titleC.text.trim(), _buildPdf,
       fileName: '$_fileName.pdf', initial: const PdfPageFormat(_kW, _kH));
 
+  /// Share the presentation (as PDF) in My Home chats or to other apps.
+  Future<void> _share() => shareAppFile(context, fileName: '$_fileName.pdf', build: () => _buildPdf());
+
   // ------------------------------------------------------------------
   // Hub
   // ------------------------------------------------------------------
@@ -957,6 +961,7 @@ class _PresentationScreenState extends State<PresentationScreen> {
             }),
             const OfficeRibbonGap(),
             a(Icons.picture_as_pdf_outlined, "Download PDF", _exportPdf),
+            a(Icons.share_rounded, "Share", _share, tip: "Send in My Home or to other apps"),
             a(Icons.print_outlined, "Print", _print, tip: "Ctrl+P"),
             const OfficeRibbonGap(),
             a(Icons.close, "Close", _close),
@@ -1174,6 +1179,7 @@ class _PresentationScreenState extends State<PresentationScreen> {
                   onClose: _close,
                   actions: [
                     IconButton(tooltip: tr("Save now (Ctrl+S)"), icon: Icon(status.$2, color: AppPalette.fg(status.$3)), onPressed: _save),
+                    IconButton(tooltip: tr("Share"), icon: Icon(Icons.share_rounded, color: AppPalette.fg(_kOrange)), onPressed: _share),
                     IconButton(
                       tooltip: tr("Present (F5 from the start)"),
                       icon: Icon(Icons.play_circle_fill, color: AppPalette.fg(_kOrange), size: 30),

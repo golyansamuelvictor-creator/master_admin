@@ -20,6 +20,7 @@ import '../core/app_palette.dart';
 import '../core/sheet_formula.dart';
 import '../core/table_export.dart';
 import '../widgets/office_shell.dart';
+import '../widgets/share_file.dart';
 
 /// Cloud Sheets (Excel style): the original hub + ribbon layout with private
 /// workbooks, several sheets, formulas (=SUM(A1:A9) …), templates, a
@@ -935,8 +936,19 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
 
   String get _fileBase => (_titleC.text.trim().isEmpty ? 'spreadsheet' : _titleC.text.trim()).replaceAll(RegExp(r'[^A-Za-z0-9가-힣 _-]'), '');
 
-  Future<void> _exportXlsx() async {
-    try {
+  /// Share the spreadsheet (as Excel) in My Home chats or to other apps.
+  Future<void> _share() => shareAppFile(
+        context,
+        fileName: "$_fileBase.xlsx",
+        mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        build: () async {
+          final bytes = _buildBook().encode();
+          if (bytes == null) throw "Couldn't build the file";
+          return Uint8List.fromList(bytes);
+        },
+      );
+
+  xl.Excel _buildBook() {
       final book = xl.Excel.createExcel();
       final def = book.getDefaultSheet() ?? 'Sheet1';
       for (int i = 0; i < _sheets.length; i++) {
@@ -956,6 +968,12 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
           }
         }
       }
+      return book;
+  }
+
+  Future<void> _exportXlsx() async {
+    try {
+      final book = _buildBook();
       final file = "$_fileBase.xlsx";
       final bytes = book.save(fileName: file); // on the web this downloads the file
       if (!kIsWeb && bytes != null) {
@@ -1082,6 +1100,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
             a(Icons.upload_file_rounded, "Import into sheet", _importIntoSheet),
             a(Icons.grid_on_rounded, "Download Excel", _exportXlsx),
             a(Icons.picture_as_pdf_outlined, "Download PDF", _pdf),
+            a(Icons.share_rounded, "Share", _share, tip: "Send in My Home or to other apps"),
             a(Icons.print_outlined, "Print", _print, tip: "Ctrl+P"),
             const OfficeRibbonGap(),
             a(Icons.close, "Close", _close),
@@ -1219,6 +1238,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                     else
                       IconButton(tooltip: tr("Save now (Ctrl+S)"), onPressed: _save, icon: Icon(status.$2, color: AppPalette.fg(status.$3))),
                     IconButton(tooltip: tr("Download Excel (.xlsx)"), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kGreen)), onPressed: _exportXlsx),
+                    IconButton(tooltip: tr("Share"), icon: Icon(Icons.share_rounded, color: AppPalette.fg(_kGreen)), onPressed: _share),
                   ],
                 ),
                 OfficeRibbon(tabs: _ribbonTabs(), active: _tab, onTab: (i) => setState(() => _tab = i), accent: _kPurple),

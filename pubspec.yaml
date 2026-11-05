@@ -61,6 +61,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/sounds/
+    - assets/bible/   # World English Bible (public domain): Home › Bible
 
 dependency_overrides:
   intl: ^0.20.2

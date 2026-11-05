@@ -11,6 +11,7 @@ import '../../core/table_export.dart';
 import '../../core/xlsx_safe.dart';
 import '../../widgets/h_scroll.dart';
 import 'student_duties.dart' show StudentsConfig;
+import 'student_profile.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -268,65 +269,10 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
         _ => null,
       };
 
-  /// Graduate: the unit the new member joins (the department defaults to
-  /// app_config.graduate_department), and the date of birth if missing.
   Future<bool> _graduate(Map<String, dynamic> s) async {
-    final c = {
-      'location': TextEditingController(text: (s['guide_location'] ?? s['center_location'] ?? '').toString()),
-      'sub_location': TextEditingController(text: (s['guide_sub_location'] ?? '').toString()),
-      'department': TextEditingController(),
-      'team': TextEditingController(),
-      'cell_group': TextEditingController(),
-      'dob': TextEditingController(text: (s['dob'] ?? '').toString()),
-      'scj_id': TextEditingController(),
-    };
-    const labels = {
-      'location': "Location", 'sub_location': "Sub-location", 'department': "Department (empty = New Saints)", 'team': "Team",
-      'cell_group': "Cell group", 'dob': "Date of birth (YYYY-MM-DD)", 'scj_id': "Scj_id (optional)",
-    };
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text("Graduate ${s['student_name']}"),
-        content: SizedBox(
-          width: 420,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text("They are added to the members table in this unit and marked Graduated here.", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
-              const SizedBox(height: 10),
-              for (final e in c.entries)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: TextField(controller: e.value, decoration: InputDecoration(labelText: tr(labels[e.key]!), isDense: true, border: const OutlineInputBorder())),
-                ),
-            ]),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Graduate")),
-        ],
-      ),
-    );
-    if (ok != true || c['location']!.text.trim().isEmpty) return false;
-    String? v(String k) => c[k]!.text.trim().isEmpty ? null : c[k]!.text.trim();
-    try {
-      await _db.rpc('graduate_center_student', params: {
-        'p_id': s['id'],
-        'p_location': v('location'),
-        'p_sub': v('sub_location'),
-        'p_dept': v('department'),
-        'p_team': v('team'),
-        'p_cell': v('cell_group'),
-        'p_extra': {if (v('dob') != null) 'dob': v('dob'), if (v('scj_id') != null) 'scj_id': v('scj_id')},
-      });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${s['student_name']} graduated and joined the members"), backgroundColor: Colors.green.shade700));
-      _load();
-      return true;
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't graduate: ${e is PostgrestException ? e.message : e}")));
-      return false;
-    }
+    final ok = await graduateStudent(context, s);
+    if (ok) _load();
+    return ok;
   }
 
   /// Excel upload: the first row holds the column names (as in the template:
@@ -479,7 +425,11 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
                             margin: const EdgeInsets.symmetric(vertical: 3),
                             child: ListTile(
                               dense: true,
-                              onTap: () => _edit(s),
+                              // the profile (photo, level, details added later); the pencil edits the details
+                              onTap: () async {
+                                await Navigator.push(context, MaterialPageRoute(builder: (_) => StudentProfileScreen(studentId: s['id'].toString())));
+                                _load();
+                              },
                               leading: CircleAvatar(
                                 radius: 16,
                                 backgroundColor: AppPalette.bg(_kPurple.withValues(alpha: 0.1)),
@@ -499,8 +449,11 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 11),
                               ),
-                              trailing: Text((s['status'] ?? '').toString(),
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(s['status'] == 'Dropped' ? Colors.red.shade700 : (s['status'] == 'Graduated' ? Colors.blue.shade700 : Colors.green.shade700)))),
+                              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Text((s['status'] ?? '').toString(),
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(s['status'] == 'Dropped' ? Colors.red.shade700 : (s['status'] == 'Graduated' ? Colors.blue.shade700 : Colors.green.shade700)))),
+                                IconButton(tooltip: tr(widget.canEdit ? "Edit details" : "All details"), icon: Icon(widget.canEdit ? Icons.edit_rounded : Icons.list_alt_rounded, size: 18), onPressed: () => _edit(s)),
+                              ]),
                             ),
                           );
                         },
@@ -509,3 +462,64 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
     ]);
   }
 }
+
+  /// Graduate: the unit the new member joins (the department defaults to
+  /// app_config.graduate_department), and the date of birth if missing.
+Future<bool> graduateStudent(BuildContext context, Map<String, dynamic> s) async {
+  final db = Supabase.instance.client;
+    final c = {
+      'location': TextEditingController(text: (s['guide_location'] ?? s['center_location'] ?? '').toString()),
+      'sub_location': TextEditingController(text: (s['guide_sub_location'] ?? '').toString()),
+      'department': TextEditingController(),
+      'team': TextEditingController(),
+      'cell_group': TextEditingController(),
+      'dob': TextEditingController(text: (s['dob'] ?? '').toString()),
+      'scj_id': TextEditingController(),
+    };
+    const labels = {
+      'location': "Location", 'sub_location': "Sub-location", 'department': "Department (empty = New Saints)", 'team': "Team",
+      'cell_group': "Cell group", 'dob': "Date of birth (YYYY-MM-DD)", 'scj_id': "Scj_id (optional)",
+    };
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text("Graduate ${s['student_name']}"),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text("They are added to the members table in this unit and marked Graduated here.", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
+              const SizedBox(height: 10),
+              for (final e in c.entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: TextField(controller: e.value, decoration: InputDecoration(labelText: tr(labels[e.key]!), isDense: true, border: const OutlineInputBorder())),
+                ),
+            ]),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Graduate")),
+        ],
+      ),
+    );
+    if (ok != true || c['location']!.text.trim().isEmpty || !context.mounted) return false;
+    String? v(String k) => c[k]!.text.trim().isEmpty ? null : c[k]!.text.trim();
+    try {
+      await db.rpc('graduate_center_student', params: {
+        'p_id': s['id'],
+        'p_location': v('location'),
+        'p_sub': v('sub_location'),
+        'p_dept': v('department'),
+        'p_team': v('team'),
+        'p_cell': v('cell_group'),
+        'p_extra': {if (v('dob') != null) 'dob': v('dob'), if (v('scj_id') != null) 'scj_id': v('scj_id')},
+      });
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${s['student_name']} graduated and joined the members"), backgroundColor: Colors.green.shade700));
+      return true;
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't graduate: ${e is PostgrestException ? e.message : e}")));
+      return false;
+    }
+  }

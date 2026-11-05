@@ -189,6 +189,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       case 'table_view_rounded': return Icons.table_view_rounded;
       case 'description_rounded': return Icons.description_rounded;
       case 'present_to_all_rounded': return Icons.present_to_all_rounded;
+      case 'event_note_rounded': return Icons.event_note_rounded;
       default: return Icons.apps_rounded;
     }
   }

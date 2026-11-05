@@ -725,7 +725,61 @@ class _CentersView extends StatefulWidget {
 
 class _CentersViewState extends State<_CentersView> {
   final _db = Supabase.instance.client;
-  List<Map<String, dynamic>> _rows = [];
+  List<Map<String, dynamic>> _all = [];
+  // column filters: column → the values shown
+  final Map<int, Set<String>> _flt = {};
+
+  String _val(Map c, int i) => switch (i) {
+        1 => c['name'].toString(),
+        2 => (c['location'] ?? '').toString().isEmpty ? 'Not set' : c['location'].toString(),
+        3 => (c['sub_location'] ?? '').toString().isEmpty ? 'Not set' : c['sub_location'].toString(),
+        4 => c['is_opening'] == true ? 'Yes' : 'No',
+        5 => c['is_active'] == false ? 'No' : 'Yes',
+        _ => '',
+      };
+
+  List<Map<String, dynamic>> get _rows => _all.where((c) => _flt.entries.every((f) => f.value.contains(_val(c, f.key)))).toList();
+
+  Future<void> _filter(int i, String title) async {
+    final values = {for (final c in _all) _val(c, i)}.toList()..sort();
+    final chosen = {...(_flt[i] ?? values.toSet())};
+    final res = await showDialog<Set<String>?>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: Text("Filter: $title", textAlign: TextAlign.center),
+          content: SizedBox(
+            width: 320,
+            height: 360,
+            child: Column(children: [
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                TextButton(onPressed: () => set(() => chosen.addAll(values)), child: const Text("All")),
+                TextButton(onPressed: () => set(chosen.clear), child: const Text("None")),
+              ]),
+              Expanded(
+                child: ListView(children: [
+                  for (final v in values)
+                    CheckboxListTile(dense: true, value: chosen.contains(v), title: Text(v), onChanged: (x) => set(() => x == true ? chosen.add(v) : chosen.remove(v))),
+                ]),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, <String>{'\u0000clear'}), child: const Text("Clear filter")),
+            FilledButton(onPressed: () => Navigator.pop(ctx, chosen), child: const Text("Apply")),
+          ],
+        ),
+      ),
+    );
+    if (res == null) return;
+    setState(() {
+      if (res.contains('\u0000clear') || res.length == values.length) {
+        _flt.remove(i);
+      } else {
+        _flt[i] = res;
+      }
+    });
+  }
   // Locations and their sub-locations from Supabase (locations / sub_locations)
   Map<String, List<String>> _units = {};
   bool _loading = true;
@@ -757,7 +811,7 @@ class _CentersViewState extends State<_CentersView> {
       }
       if (mounted) {
         setState(() {
-          _rows = List<Map<String, dynamic>>.from(r[0] as List);
+          _all = List<Map<String, dynamic>>.from(r[0] as List);
           _units = units;
           _loading = false;
           _error = null;
@@ -866,6 +920,7 @@ class _CentersViewState extends State<_CentersView> {
     if (_error != null) return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)));
     const w0 = [40.0, 170.0, 130.0, 140.0, 80.0, 70.0, 56.0];
     const head = ["No.", "Center place", "Location", "Sub-location", "Opening", "In use", ""];
+    final rows = _rows;
     return ListView(padding: AppSizes.page, children: [
       Text("Each center belongs to a location and sub-location of the church. \"Opening\" centers are listed in the Summary's Opening Centers table; switch off a center that is no longer used.",
           textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
@@ -874,9 +929,10 @@ class _CentersViewState extends State<_CentersView> {
       const SizedBox(height: 10),
       LayoutBuilder(
         builder: (context, box) {
-          // stretch the columns over the whole width (small margin each side)
+          // stretch the columns over the width, about 2 cm in from each side on wide screens
+          final avail = box.maxWidth >= 900 ? box.maxWidth - 150 : box.maxWidth;
           final sum = w0.fold<double>(0, (a, b) => a + b);
-          final k = box.maxWidth > sum ? box.maxWidth / sum : 1.0;
+          final k = avail > sum ? avail / sum : 1.0;
           final w = [for (final x in w0) x * k];
           return box.maxWidth < 640 ? _phoneList() : SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -884,12 +940,39 @@ class _CentersViewState extends State<_CentersView> {
             constraints: BoxConstraints(minWidth: box.maxWidth),
             child: Center(
               child: Column(children: [
-                Row(mainAxisSize: MainAxisSize.min, children: [for (int i = 0; i < head.length; i++) _cell(head[i], w[i], head: true, bg: const Color(0xFF1E293B))]),
-                if (_rows.isEmpty)
-                  Padding(padding: const EdgeInsets.all(20), child: Text("No centers yet. Tap \"Add center\".", style: TextStyle(color: AppPalette.fg(Colors.grey)))),
-                for (int r = 0; r < _rows.length; r++)
+                if (_flt.isNotEmpty)
+                  ActionChip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: const Icon(Icons.filter_alt_off_rounded, size: 15),
+                    label: Text("${rows.length} of ${_all.length} · clear filters", style: const TextStyle(fontSize: 11)),
+                    onPressed: () => setState(_flt.clear),
+                  ),
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  for (int i = 0; i < head.length; i++)
+                    i >= 1 && i <= 5
+                        // the columns with a filter
+                        ? Container(
+                            width: w[i],
+                            height: 24,
+                            decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFF1E293B)), border: Border.all(color: AppPalette.line(Colors.black26), width: 0.5)),
+                            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              Flexible(child: Text(head[i], maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white))),
+                              InkWell(
+                                onTap: () => _filter(i, head[i]),
+                                child: Padding(
+                                  padding: const EdgeInsets.only(left: 3),
+                                  child: Icon(_flt.containsKey(i) ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: _flt.containsKey(i) ? const Color(0xFFF59E0B) : Colors.white70),
+                                ),
+                              ),
+                            ]),
+                          )
+                        : _cell(head[i], w[i], head: true, bg: const Color(0xFF1E293B)),
+                ]),
+                if (rows.isEmpty)
+                  Padding(padding: const EdgeInsets.all(20), child: Text(_all.isEmpty ? "No centers yet. Tap \"Add center\"." : "No center matches the filters.", style: TextStyle(color: AppPalette.fg(Colors.grey)))),
+                for (int r = 0; r < rows.length; r++)
                   Builder(builder: (_) {
-                    final c = _rows[r];
+                    final c = rows[r];
                     final off = c['is_active'] == false;
                     final bg = r.isEven ? Colors.white : const Color(0xFFF8FAFC);
                     final missing = (c['location'] ?? '').toString().isEmpty || (c['sub_location'] ?? '').toString().isEmpty;

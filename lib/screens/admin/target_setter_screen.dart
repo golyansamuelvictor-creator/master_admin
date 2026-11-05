@@ -1,4 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
+import '../../widgets/h_scroll.dart';
 import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -387,11 +388,12 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
 
   Widget _pick(String label, List<String> items, String? value, ValueChanged<String> onChanged, {String Function(String)? show}) {
     return SizedBox(
-      width: 200,
+      width: 180,
       child: DropdownButtonFormField<String>(
         isExpanded: true,
         initialValue: items.contains(value) ? value : null,
-        decoration: InputDecoration(labelText: tr(label), isDense: true, border: const OutlineInputBorder()),
+        style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.black87)),
+        decoration: InputDecoration(labelText: tr(label), isDense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: const OutlineInputBorder()),
         items: [for (final i in items) DropdownMenuItem(value: i, child: Text(show?.call(i) ?? i, overflow: TextOverflow.ellipsis))],
         onChanged: (v) {
           if (v != null) onChanged(v);
@@ -403,56 +405,48 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
   Widget _settingsCard() {
     final mine = _levels[_duty] ?? const <_Level>[];
     final lv = _path.first;
-    return _card(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(6, 0, 6, 10),
-          child: Row(children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: AppPalette.bg(pPurple.withValues(alpha: 0.10)), borderRadius: BorderRadius.circular(8)),
-              child: Icon(Icons.track_changes_rounded, size: 18, color: AppPalette.fg(pPurple)),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text("Goal settings", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: AppPalette.fg(pPurple))),
-            ),
-            if (_duty != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: AppPalette.bg(pPurple), borderRadius: BorderRadius.circular(20)),
-                child: Text(_duty!, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-              ),
-          ]),
-        ),
-        Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
-        if (!widget.embedded) _pick("Duty", _duties, _duty, (v) => _selectDuty(v)),
-        if (mine.length > 1)
-          _pick("Goals for", [for (var i = 0; i < mine.length; i++) '$i'], '${mine.indexOf(lv)}', (v) {
-            setState(() => _path
-              ..clear()
-              ..add(mine[int.parse(v)]));
+    // everything on one line (scrolls sideways on small screens): half the height
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppPalette.bg(Colors.white),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
+        boxShadow: [BoxShadow(color: pPurple.withValues(alpha: 0.10), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 5))],
+      ),
+      child: HScroll(
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, spacing: 8, children: [
+          Container(
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(color: AppPalette.bg(pPurple.withValues(alpha: 0.10)), borderRadius: BorderRadius.circular(8)),
+            child: Icon(Icons.track_changes_rounded, size: 16, color: AppPalette.fg(pPurple)),
+          ),
+          Text("Goal settings", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(pPurple))),
+          if (!widget.embedded) _pick("Duty", _duties, _duty, (v) => _selectDuty(v)),
+          if (mine.length > 1)
+            _pick("Goals for", [for (var i = 0; i < mine.length; i++) '$i'], '${mine.indexOf(lv)}', (v) {
+              setState(() => _path
+                ..clear()
+                ..add(mine[int.parse(v)]));
+              _load();
+            }, show: (i) {
+              final l = mine[int.parse(i)];
+              return "${_levelNames[l.child]} of ${l.parent == 'church' ? 'the church' : 'my ${_levelNames[l.parent]!.toLowerCase().replaceAll(RegExp(r's$'), '')}'}";
+            }),
+          _pick("What is counted", [for (final m in _metrics) m['metric'].toString()], _metric, (v) {
+            setState(() => _metric = v);
             _load();
-          }, show: (i) {
-            final l = mine[int.parse(i)];
-            return "${_levelNames[l.child]} of ${l.parent == 'church' ? 'the church' : 'my ${_levelNames[l.parent]!.toLowerCase().replaceAll(RegExp(r's$'), '')}'}";
           }),
-        _pick("What is counted", [for (final m in _metrics) m['metric'].toString()], _metric, (v) {
-          setState(() => _metric = v);
-          _load();
-        }),
-        _pick("Goal period", _kinds, _kind, (v) {
-          setState(() => _kind = v);
-          _load();
-        }, show: (k) => k[0].toUpperCase() + k.substring(1)),
-        SizedBox(
-          width: 200,
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.calendar_month_rounded, size: 18),
+          _pick("Goal period", _kinds, _kind, (v) {
+            setState(() => _kind = v);
+            _load();
+          }, show: (k) => k[0].toUpperCase() + k.substring(1)),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.calendar_month_rounded, size: 16),
             label: Text(_kind.contains('months')
                 ? "${DateFormat('MMM yyyy').format(_start)} – ${DateFormat('MMM yyyy').format(DateTime(_start.year, _start.month + (_kind == '2 months' ? 1 : 2)))}"
                 : DateFormat('MMMM yyyy').format(_start)),
-            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+            style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
             onPressed: () async {
               final p = await showDatePicker(context: context, initialDate: _start, firstDate: DateTime(2023), lastDate: DateTime(2035), helpText: tr("Pick any day of the starting month"));
               if (p != null) {
@@ -461,9 +455,14 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
               }
             },
           ),
-        ),
+          if (_duty != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: AppPalette.bg(pPurple), borderRadius: BorderRadius.circular(20)),
+              child: Text(_duty!, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
         ]),
-      ]),
+      ),
     );
   }
 

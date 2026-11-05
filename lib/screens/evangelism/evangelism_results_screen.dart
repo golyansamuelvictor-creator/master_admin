@@ -14,7 +14,9 @@ const Color _kPurple = Color(0xFF4A148C);
 class EvangelismResultsScreen extends StatefulWidget {
   /// Results By Units (Compilation screen): goals vs current down to the cell.
   final VoidCallback? onOpenClassic;
-  const EvangelismResultsScreen({super.key, this.onOpenClassic});
+  /// Students' evangelism: only the BB students guided by center students.
+  final bool studentsOnly;
+  const EvangelismResultsScreen({super.key, this.onOpenClassic, this.studentsOnly = false});
   @override
   State<EvangelismResultsScreen> createState() => _EvangelismResultsScreenState();
 }
@@ -51,7 +53,7 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
   Future<void> _init() async {
     try {
       final cfg = await BbSettings.load();
-      final s = await Supabase.instance.client.rpc('bb_summary');
+      final s = await Supabase.instance.client.rpc('bb_summary', params: {if (widget.studentsOnly) 'p_students': true});
       final locs = ((s as Map)['locations'] as List?)?.map((e) => e.toString()).toList() ?? [];
       if (mounted) {
         setState(() {
@@ -146,7 +148,7 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
       backgroundColor: AppPalette.bg(const Color(0xFFF6F4FA)),
       appBar: AppBar(
         centerTitle: true,
-        title: Text("Evangelism results", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(_kPurple))),
+        title: Text(widget.studentsOnly ? "Students' evangelism results" : "Evangelism results", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(_kPurple))),
         actions: [
           if (!wide && cfg != null)
             IconButton(
@@ -182,6 +184,7 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
                       location: _location,
                       center: _center,
                       sections: Set.of(_sections),
+                      studentsOnly: widget.studentsOnly,
                     ),
                   ),
                 ]),

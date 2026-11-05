@@ -15,6 +15,7 @@ import 'package:master_admin/core/app_palette.dart';
 
 import '../core/table_export.dart';
 import '../widgets/office_shell.dart';
+import '../widgets/share_file.dart';
 
 /// Official Documents (Word style): the original hub + ribbon layout, with a
 /// real formatting toolbar, templates, autosave, right-click menu, shortcuts,
@@ -546,6 +547,9 @@ class _DocumentScreenState extends State<DocumentScreen> {
 
   Future<void> _print() => TableExport.previewBuilder(context, _titleC.text.trim().isEmpty ? 'Document' : _titleC.text.trim(), _buildPdf, fileName: '$_fileName.pdf');
 
+  /// Share the document (as PDF) in My Home chats or to other apps.
+  Future<void> _share() => shareAppFile(context, fileName: '$_fileName.pdf', build: () => _buildPdf(PdfPageFormat.a4));
+
   // ------------------------------------------------------------------
   // Editing commands (ribbon, right-click menu, shortcuts)
   // ------------------------------------------------------------------
@@ -788,6 +792,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
             a(Icons.copy_rounded, "Make a copy", _docId == null ? null : () => _duplicate({'id': _docId})),
             const OfficeRibbonGap(),
             a(Icons.picture_as_pdf_outlined, "Download PDF", _exportPdf),
+            a(Icons.share_rounded, "Share", _share, tip: "Send in My Home or to other apps"),
             a(Icons.print_outlined, "Print", _print, tip: "Ctrl+P"),
             const OfficeRibbonGap(),
             a(Icons.close, "Close", _close),
@@ -899,6 +904,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
                   onClose: _close,
                   actions: [
                     IconButton(tooltip: tr("Save now (Ctrl+S)"), icon: Icon(status.$2, color: AppPalette.fg(status.$3)), onPressed: _save),
+                    IconButton(tooltip: tr("Share"), icon: Icon(Icons.share_rounded, color: AppPalette.fg(_kPurple)), onPressed: _share),
                     if (!mobile) IconButton(tooltip: tr("Print preview (Ctrl+P)"), icon: Icon(Icons.print_outlined, color: AppPalette.fg(Colors.blueGrey)), onPressed: _print),
                   ],
                 ),

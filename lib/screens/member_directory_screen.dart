@@ -4,6 +4,8 @@ import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'member_detail_screen.dart';
+import 'theology/student_duties.dart' show StudentDuties;
+import 'theology/student_profile.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'package:master_admin/core/app_sizes.dart';
 import 'package:master_admin/widgets/compact_card.dart';
@@ -56,7 +58,13 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
   void initState() {
     super.initState();
     _fetchRoleMetadata();
+    // Theology workers (and their units' leaders) also look up students here
+    StudentDuties.viewsStudents([widget.userRole]).then((v) {
+      if (mounted && v) setState(() => _students = true);
+    });
   }
+
+  bool _students = false;
 
   Future<void> _fetchRoleMetadata() async {
     try {
@@ -403,6 +411,12 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
         foregroundColor: AppPalette.fg(Colors.black),
         elevation: 0.5,
         actions: [
+          if (_students)
+            TextButton.icon(
+              icon: const Icon(Icons.school_rounded, size: 18),
+              label: const Text("Students"),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StudentDirectoryScreen())),
+            ),
           IconButton(
             tooltip: tr("Reload"),
             icon: const Icon(Icons.refresh_rounded),

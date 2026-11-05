@@ -10,8 +10,8 @@ import 'package:video_player/video_player.dart';
 
 import '../../core/app_palette.dart';
 import '../../core/i18n.dart';
-import '../../widgets/h_scroll.dart';
 import '../../widgets/nice_range_picker.dart';
+import '../../widgets/home_live_cards.dart' show VerticalMarquee;
 
 const Color _kPurple = Color(0xFF4A148C);
 const String _bucket = 'education';
@@ -148,61 +148,108 @@ class _EducationContentsScreenState extends State<EducationContentsScreen> {
     if (saved == true) _load(reset: true);
   }
 
-  Widget _card(Map<String, dynamic> c) {
+  /// One content: raised card with a coloured edge; the newest one is a
+  /// large feature card with its picture on top.
+  Widget _card(Map<String, dynamic> c, {bool feature = false}) {
     final color = EduContents.color(widget.category);
     final media = List<Map<String, dynamic>>.from(((c['media'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
     final image = media.where((m) => m['type'] == 'image').firstOrNull;
     final date = DateTime.tryParse((c['content_date'] ?? '').toString());
     final kinds = {for (final m in media) m['type']};
-    return Card(
-      elevation: 1.5,
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EducationContentDetail(content: c, canEdit: _manager, onEdit: () => _openEditor(c)))),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (image != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.network(image['url'].toString(), width: 86, height: 86, fit: BoxFit.cover, errorBuilder: (a, b, c) => const SizedBox(width: 86, height: 86)),
-                ),
-              ),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(color: AppPalette.bg(color.withValues(alpha: 0.1)), borderRadius: BorderRadius.circular(6)),
-                    child: Text(date == null ? '' : DateFormat('EEE d MMM yyyy').format(date), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(color))),
-                  ),
-                  const SizedBox(width: 6),
-                  for (final k in kinds)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 3),
-                      child: Icon(
-                        switch (k) { 'image' => Icons.image_outlined, 'audio' => Icons.headphones_rounded, 'video' => Icons.smart_display_outlined, 'link' => Icons.link_rounded, _ => Icons.attach_file_rounded },
-                        size: 14,
-                        color: AppPalette.fg(Colors.blueGrey),
-                      ),
-                    ),
-                  if (c['is_published'] == false) Text(" · Draft", style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.orange.shade800))),
-                ]),
-                const SizedBox(height: 5),
-                Text((c['title'] ?? '').toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14)),
-                const SizedBox(height: 4),
-                Text(EduContents.snippet(c), maxLines: 3, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 12, height: 1.35, color: AppPalette.fg(Colors.black87))),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text("Read more →", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(color))),
-                ),
-              ]),
-            ),
+    void open() => Navigator.push(context, MaterialPageRoute(builder: (_) => EducationContentDetail(content: c, canEdit: _manager, onEdit: () => _openEditor(c))));
+    final badges = Row(children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: AppPalette.bg(color.withValues(alpha: 0.12)), borderRadius: BorderRadius.circular(20)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.event_rounded, size: 12, color: AppPalette.fg(color)),
+          const SizedBox(width: 4),
+          Text(date == null ? '' : DateFormat('EEE d MMM yyyy').format(date), style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(color))),
+        ]),
+      ),
+      const SizedBox(width: 6),
+      for (final k in kinds)
+        Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: Icon(
+            switch (k) { 'image' => Icons.image_outlined, 'audio' => Icons.headphones_rounded, 'video' => Icons.smart_display_outlined, 'link' => Icons.link_rounded, _ => Icons.attach_file_rounded },
+            size: 15,
+            color: AppPalette.fg(Colors.blueGrey),
+          ),
+        ),
+      if (c['is_published'] == false) Text("Draft", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.orange.shade800))),
+      const Spacer(),
+      if (feature)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(color: AppPalette.solid(color), borderRadius: BorderRadius.circular(20)),
+          child: const Text("Latest", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white)),
+        ),
+    ]);
+    final text = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      badges,
+      const SizedBox(height: 8),
+      Text((c['title'] ?? '').toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: feature ? 17 : 14.5, height: 1.25)),
+      const SizedBox(height: 6),
+      Text(EduContents.snippet(c, feature ? 260 : 170), maxLines: feature ? 4 : 3, overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.merriweather(fontSize: 12.3, height: 1.45, color: AppPalette.fg(Colors.blueGrey.shade800))),
+      const SizedBox(height: 8),
+      Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [AppPalette.solid(color), AppPalette.solid(Color.lerp(color, Colors.black, 0.25)!)]),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text("Read more", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white)),
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.white),
           ]),
+        ),
+      ),
+    ]);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(color: color.withValues(alpha: 0.20), blurRadius: 20, spreadRadius: -4, offset: const Offset(0, 10)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 3, offset: const Offset(0, 1)),
+        ],
+      ),
+      child: Material(
+        color: AppPalette.bg(Colors.white),
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: open,
+          child: feature
+              ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  if (image != null)
+                    AspectRatio(
+                      aspectRatio: 16 / 7,
+                      child: Image.network(image['url'].toString(), fit: BoxFit.cover, errorBuilder: (a, b, e) => Container(color: AppPalette.bg(color.withValues(alpha: 0.1)))),
+                    )
+                  else
+                    Container(height: 6, decoration: BoxDecoration(gradient: LinearGradient(colors: [AppPalette.solid(color), AppPalette.solid(Color.lerp(color, Colors.white, 0.4)!)]))),
+                  Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 14), child: text),
+                ])
+              : IntrinsicHeight(
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Container(width: 5, color: AppPalette.solid(color)),
+                    Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 14, 12), child: text)),
+                    if (image != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(0, 12, 12, 12),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(image['url'].toString(), width: 96, fit: BoxFit.cover, errorBuilder: (a, b, e) => const SizedBox(width: 96)),
+                        ),
+                      ),
+                  ]),
+                ),
         ),
       ),
     );
@@ -211,37 +258,53 @@ class _EducationContentsScreenState extends State<EducationContentsScreen> {
   @override
   Widget build(BuildContext context) {
     final color = EduContents.color(widget.category);
-    return Scaffold(
-      backgroundColor: AppPalette.bg(const Color(0xFFF6F4FA)),
-      appBar: AppBar(
-        centerTitle: true,
-        toolbarHeight: 46,
-        title: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(EduContents.icon(widget.category), color: AppPalette.fg(color), size: 20),
-          const SizedBox(width: 8),
-          Flexible(child: Text(widget.category, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: AppPalette.fg(_kPurple)))),
-        ]),
+    final dark = Color.lerp(color, Colors.black, 0.35)!;
+    final rangeText = _range == null
+        ? "Any date"
+        : (DateUtils.isSameDay(_range!.start, _range!.end)
+            ? DateFormat('d MMM yyyy').format(_range!.start)
+            : "${DateFormat('d MMM').format(_range!.start)} – ${DateFormat('d MMM yyyy').format(_range!.end)}");
+    // a compact header: back, the kind's icon and name on one line, then the search bar
+    final header = Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [AppPalette.solid(color), AppPalette.solid(dark)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 14, offset: const Offset(0, 6))],
       ),
-      floatingActionButton: _manager
-          ? FloatingActionButton.extended(onPressed: () => _openEditor(), icon: const Icon(Icons.add_rounded), label: const Text("Add"))
-          : null,
-      body: Column(children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
-          decoration: BoxDecoration(color: AppPalette.bg(Colors.white), border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black12)))),
-          child: HScroll(
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, spacing: 6, children: [
-              SizedBox(
-                width: 240,
-                height: 36,
+      padding: const EdgeInsets.fromLTRB(4, 0, 12, 10),
+      child: SafeArea(
+        bottom: false,
+        child: Column(children: [
+          Row(children: [
+            const BackButton(color: Colors.white),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.16), shape: BoxShape.circle),
+              child: Icon(EduContents.icon(widget.category), color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(widget.category, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.white)),
+                Text(_rows.isEmpty && _loading ? "Loading…" : "Newest first · ${_rows.length}${_more ? '+' : ''} contents",
+                    style: GoogleFonts.merriweather(fontSize: 10.5, color: Colors.white70)),
+              ]),
+            ),
+          ]),
+          Container(
+            height: 40,
+            padding: const EdgeInsets.fromLTRB(10, 0, 4, 0),
+            decoration: BoxDecoration(
+              color: AppPalette.bg(Colors.white),
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 10, offset: const Offset(0, 4))],
+            ),
+            child: Row(children: [
+              Icon(Icons.search_rounded, size: 19, color: AppPalette.fg(color)),
+              const SizedBox(width: 6),
+              Expanded(
                 child: TextField(
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    hintText: tr("Search by keyword"),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
-                  ),
+                  decoration: InputDecoration(hintText: tr("Search by keyword"), isDense: true, border: InputBorder.none),
                   onChanged: (v) {
                     _q = v;
                     _debounce?.cancel();
@@ -251,12 +314,10 @@ class _EducationContentsScreenState extends State<EducationContentsScreen> {
               ),
               ActionChip(
                 visualDensity: VisualDensity.compact,
-                avatar: const Icon(Icons.date_range_rounded, size: 16),
-                label: Text(_range == null
-                    ? "Any date"
-                    : (DateUtils.isSameDay(_range!.start, _range!.end)
-                        ? DateFormat('d MMM yyyy').format(_range!.start)
-                        : "${DateFormat('d MMM').format(_range!.start)} – ${DateFormat('d MMM yyyy').format(_range!.end)}")),
+                avatar: Icon(Icons.date_range_rounded, size: 15, color: AppPalette.fg(color)),
+                label: Text(rangeText, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(color))),
+                side: BorderSide(color: AppPalette.line(color.withValues(alpha: 0.3))),
+                backgroundColor: AppPalette.bg(color.withValues(alpha: 0.06)),
                 onPressed: () async {
                   final r = await showNiceRangePicker(context, initial: _range, firstDate: DateTime(2020), lastDate: DateTime.now().add(const Duration(days: 365)), title: tr('Contents of'));
                   if (r != null) {
@@ -277,7 +338,16 @@ class _EducationContentsScreenState extends State<EducationContentsScreen> {
                 ),
             ]),
           ),
-        ),
+        ]),
+      ),
+    );
+    return Scaffold(
+      backgroundColor: AppPalette.bg(Color.alphaBlend(color.withValues(alpha: 0.05), const Color(0xFFF7F5FB))),
+      floatingActionButton: _manager
+          ? FloatingActionButton.extended(backgroundColor: AppPalette.solid(color), foregroundColor: Colors.white, onPressed: () => _openEditor(), icon: const Icon(Icons.add_rounded), label: const Text("Add"))
+          : null,
+      body: Column(children: [
+        header,
         Expanded(
           child: _error != null
               ? Center(child: Padding(padding: const EdgeInsets.all(20), child: Text(_error!, textAlign: TextAlign.center)))
@@ -289,17 +359,26 @@ class _EducationContentsScreenState extends State<EducationContentsScreen> {
                           ? ListView(children: [
                               Padding(
                                 padding: const EdgeInsets.all(40),
-                                child: Text(_q.isNotEmpty || _range != null ? "Nothing matches." : "No contents yet.",
-                                    textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey.shade600))),
+                                child: Column(children: [
+                                  Icon(EduContents.icon(widget.category), size: 48, color: AppPalette.fg(color.withValues(alpha: 0.35))),
+                                  const SizedBox(height: 10),
+                                  Text(_q.isNotEmpty || _range != null ? "Nothing matches." : "No contents yet.",
+                                      textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey.shade600))),
+                                ]),
                               ),
                             ])
+                          // the full width, about 0.6 cm from each side
                           : ListView.builder(
-                              padding: const EdgeInsets.fromLTRB(10, 10, 10, 90),
+                              padding: const EdgeInsets.fromLTRB(22, 14, 22, 90),
                               itemCount: _rows.length + (_more ? 1 : 0),
                               itemBuilder: (_, i) {
                                 if (i < _rows.length) {
-                                  // newest first; a date heading where the day changes
-                                  return _card(_rows[i]);
+                                  // each card slides up and fades in, one after the other
+                                  return _Rise(
+                                    key: ValueKey(_rows[i]['id']),
+                                    delay: Duration(milliseconds: 70 * (i % 10)),
+                                    child: _card(_rows[i], feature: i == 0 && _q.isEmpty && _range == null),
+                                  );
                                 }
                                 return Center(
                                   child: TextButton.icon(
@@ -317,8 +396,47 @@ class _EducationContentsScreenState extends State<EducationContentsScreen> {
   }
 }
 
-/// The whole content: text, pictures, audio, video, files and links.
-class EducationContentDetail extends StatelessWidget {
+/// Slides its child up and fades it in once, after [delay].
+class _Rise extends StatefulWidget {
+  final Widget child;
+  final Duration delay;
+  const _Rise({super.key, required this.child, this.delay = Duration.zero});
+  @override
+  State<_Rise> createState() => _RiseState();
+}
+
+class _RiseState extends State<_Rise> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(widget.delay, () {
+      if (mounted) _c.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+    return FadeTransition(
+      opacity: a,
+      child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero).animate(a), child: widget.child),
+    );
+  }
+}
+
+/// The whole content, laid out like a magazine article: a cover (the first
+/// picture or the kind's colours) with the title, the date and reading time,
+/// the summary as a highlighted lead, the text in a comfortable column with a
+/// large first letter, then the pictures, audio, video, files and links.
+class EducationContentDetail extends StatefulWidget {
   final Map<String, dynamic> content;
   final bool canEdit;
   final VoidCallback? onEdit;
@@ -333,83 +451,236 @@ class EducationContentDetail extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final c = content;
-    final cat = (c['category'] ?? '').toString();
-    final color = EduContents.color(cat);
-    final media = List<Map<String, dynamic>>.from(((c['media'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
-    final images = media.where((m) => m['type'] == 'image').toList();
-    final date = DateTime.tryParse((c['content_date'] ?? '').toString());
-    return Scaffold(
-      backgroundColor: AppPalette.bg(Colors.white),
-      appBar: AppBar(
-        centerTitle: true,
-        toolbarHeight: 46,
-        title: Text(cat, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(_kPurple))),
-        actions: [
-          if (canEdit && onEdit != null)
-            IconButton(
-              tooltip: tr("Edit"),
-              icon: const Icon(Icons.edit_rounded),
-              onPressed: () {
-                Navigator.pop(context);
-                onEdit!();
-              },
-            ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
-          child: ListView(padding: const EdgeInsets.fromLTRB(16, 14, 16, 60), children: [
-            if (date != null)
-              Text(DateFormat('EEEE d MMMM yyyy').format(date), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(color))),
-            const SizedBox(height: 6),
-            SelectableText((c['title'] ?? '').toString(), style: GoogleFonts.merriweather(fontSize: 21, fontWeight: FontWeight.w900, height: 1.25)),
-            if ((c['summary'] ?? '').toString().trim().isNotEmpty) ...[
-              const SizedBox(height: 8),
-              SelectableText(c['summary'].toString(), style: GoogleFonts.merriweather(fontSize: 13.5, fontStyle: FontStyle.italic, color: AppPalette.fg(Colors.blueGrey.shade700), height: 1.45)),
-            ],
-            for (final m in images) ...[
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  onTap: () => showDialog(
-                    context: context,
-                    builder: (_) => Dialog.fullscreen(
-                      backgroundColor: Colors.black,
-                      child: Stack(children: [
-                        Center(child: InteractiveViewer(child: Image.network(m['url'].toString()))),
-                        Positioned(top: 8, right: 8, child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context))),
-                      ]),
-                    ),
-                  ),
-                  child: Image.network(m['url'].toString(), fit: BoxFit.cover, errorBuilder: (a, b, c) => const SizedBox.shrink()),
-                ),
-              ),
-            ],
-            for (final m in media.where((m) => m['type'] == 'audio' || m['type'] == 'video')) ...[
-              const SizedBox(height: 12),
-              EduMediaPlayer(url: m['url'].toString(), name: (m['name'] ?? '').toString(), video: m['type'] == 'video'),
-            ],
-            if ((c['body'] ?? '').toString().trim().isNotEmpty) ...[
-              const SizedBox(height: 16),
-              SelectableText(c['body'].toString(), style: GoogleFonts.merriweather(fontSize: 14.5, height: 1.65)),
-            ],
-            for (final m in media.where((m) => m['type'] == 'file' || m['type'] == 'link')) ...[
-              const SizedBox(height: 8),
-              ListTile(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppPalette.line(Colors.black12))),
-                leading: Icon(m['type'] == 'link' ? Icons.link_rounded : Icons.attach_file_rounded, color: AppPalette.fg(color)),
-                title: Text((m['name'] ?? m['url']).toString(), maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-                onTap: () => launchUrl(Uri.parse(m['url'].toString()), mode: LaunchMode.externalApplication),
-              ),
-            ],
+  State<EducationContentDetail> createState() => _EducationContentDetailState();
+}
+
+class _EducationContentDetailState extends State<EducationContentDetail> {
+  final _scroll = ScrollController();
+  double _progress = 0;
+  double _size = 15.5;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (!_scroll.hasClients || _scroll.position.maxScrollExtent <= 0) return;
+      final p = (_scroll.offset / _scroll.position.maxScrollExtent).clamp(0.0, 1.0);
+      if ((p - _progress).abs() > 0.01) setState(() => _progress = p);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _openImage(String url) => showDialog(
+        context: context,
+        builder: (ctx) => Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: Stack(children: [
+            Center(child: InteractiveViewer(child: Image.network(url))),
+            Positioned(top: 8, right: 8, child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(ctx))),
           ]),
         ),
-      ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.content;
+    final cat = (c['category'] ?? '').toString();
+    final color = EduContents.color(cat);
+    final dark = Color.lerp(color, Colors.black, 0.45)!;
+    final media = List<Map<String, dynamic>>.from(((c['media'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
+    final images = media.where((m) => m['type'] == 'image').toList();
+    final cover = images.isEmpty ? null : images.first['url'].toString();
+    final rest = images.skip(1).toList();
+    final date = DateTime.tryParse((c['content_date'] ?? '').toString());
+    final body = (c['body'] ?? '').toString().trim();
+    final summary = (c['summary'] ?? '').toString().trim();
+    final words = '$summary $body'.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    final minutes = (words / 200).ceil().clamp(1, 120);
+    final paras = body.split(RegExp(r'\n\s*\n|\n')).map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    final textStyle = GoogleFonts.merriweather(fontSize: _size, height: 1.85, color: AppPalette.fg(const Color(0xFF263238)));
+
+    Widget chip(IconData i, String t) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(i, size: 13, color: Colors.white),
+            const SizedBox(width: 5),
+            Text(t, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+          ]),
+        );
+
+    return Scaffold(
+      backgroundColor: AppPalette.bg(const Color(0xFFFAF8F5)),
+      body: Stack(children: [
+        CustomScrollView(controller: _scroll, slivers: [
+          SliverAppBar(
+            pinned: true,
+            expandedHeight: cover == null ? 230 : 300,
+            backgroundColor: AppPalette.solid(dark),
+            foregroundColor: Colors.white,
+            title: Text(cat, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: Colors.white)),
+            actions: [
+              PopupMenuButton<String>(
+                tooltip: tr("Text size"),
+                icon: const Icon(Icons.format_size_rounded),
+                onSelected: (v) => setState(() => _size = (v == '+' ? _size + 1.5 : _size - 1.5).clamp(12.0, 26.0)),
+                itemBuilder: (_) => const [PopupMenuItem(value: '+', child: Text("Larger text")), PopupMenuItem(value: '-', child: Text("Smaller text"))],
+              ),
+              if (widget.canEdit && widget.onEdit != null)
+                IconButton(
+                  tooltip: tr("Edit"),
+                  icon: const Icon(Icons.edit_rounded),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    widget.onEdit!();
+                  },
+                ),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              collapseMode: CollapseMode.parallax,
+              background: Stack(fit: StackFit.expand, children: [
+                if (cover != null)
+                  Image.network(cover, fit: BoxFit.cover, errorBuilder: (a, b, e) => Container(color: AppPalette.solid(color)))
+                else
+                  Container(
+                    decoration: BoxDecoration(gradient: LinearGradient(colors: [AppPalette.solid(color), AppPalette.solid(dark)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                    child: Align(alignment: const Alignment(0.85, -0.2), child: Icon(EduContents.icon(cat), size: 140, color: Colors.white.withValues(alpha: 0.10))),
+                  ),
+                // the title sits on a dark fade so it always reads well
+                const DecoratedBox(
+                  decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Color(0xCC000000)], begin: Alignment.center, end: Alignment.bottomCenter)),
+                ),
+                Positioned(
+                  left: 22,
+                  right: 22,
+                  bottom: 18,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text((c['title'] ?? '').toString(),
+                        maxLines: 3, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 23, fontWeight: FontWeight.w900, height: 1.25, color: Colors.white)),
+                    const SizedBox(height: 10),
+                    Wrap(spacing: 6, runSpacing: 6, children: [
+                      if (date != null) chip(Icons.event_rounded, DateFormat('EEEE d MMMM yyyy').format(date)),
+                      chip(Icons.schedule_rounded, "$minutes min read"),
+                      if (media.any((m) => m['type'] == 'audio' || m['type'] == 'video')) chip(Icons.play_circle_rounded, "Audio / video"),
+                    ]),
+                  ]),
+                ),
+              ]),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 780),
+                child: _Rise(
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(16, 18, 16, 60),
+                    padding: const EdgeInsets.fromLTRB(22, 22, 22, 26),
+                    decoration: BoxDecoration(
+                      color: AppPalette.bg(Colors.white),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(color: color.withValues(alpha: 0.14), blurRadius: 24, spreadRadius: -6, offset: const Offset(0, 12)),
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 3, offset: const Offset(0, 1)),
+                      ],
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      // the lead
+                      if (summary.isNotEmpty)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 20),
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                          decoration: BoxDecoration(
+                            color: AppPalette.bg(color.withValues(alpha: 0.07)),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border(left: BorderSide(color: AppPalette.solid(color), width: 4)),
+                          ),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Icon(Icons.format_quote_rounded, color: AppPalette.fg(color), size: 26),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: SelectableText(summary,
+                                  style: GoogleFonts.merriweather(fontSize: _size + 0.5, fontStyle: FontStyle.italic, height: 1.6, color: AppPalette.fg(Color.lerp(color, Colors.black, 0.3)!))),
+                            ),
+                          ]),
+                        ),
+                      // the text: a large first letter, then comfortable paragraphs
+                      for (final (i, p) in paras.indexed)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: i == 0 && p.length > 1
+                              ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8, top: 2),
+                                    child: Text(p.substring(0, 1), style: GoogleFonts.merriweather(fontSize: _size * 3.2, height: 1, fontWeight: FontWeight.w900, color: AppPalette.fg(color))),
+                                  ),
+                                  Expanded(child: SelectableText(p.substring(1), style: textStyle)),
+                                ])
+                              : SelectableText(p, style: textStyle),
+                        ),
+                      for (final m in media.where((m) => m['type'] == 'audio' || m['type'] == 'video')) ...[
+                        const SizedBox(height: 6),
+                        EduMediaPlayer(url: m['url'].toString(), name: (m['name'] ?? '').toString(), video: m['type'] == 'video'),
+                        const SizedBox(height: 10),
+                      ],
+                      if (rest.isNotEmpty || (cover != null && paras.isEmpty)) ...[
+                        const SizedBox(height: 8),
+                        Text("Pictures", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13.5, color: AppPalette.fg(color))),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 150,
+                          child: ListView(scrollDirection: Axis.horizontal, children: [
+                            for (final m in (rest.isEmpty ? images : rest))
+                              Padding(
+                                padding: const EdgeInsets.only(right: 10),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () => _openImage(m['url'].toString()),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Image.network(m['url'].toString(), width: 200, height: 150, fit: BoxFit.cover, errorBuilder: (a, b, e) => const SizedBox(width: 200)),
+                                  ),
+                                ),
+                              ),
+                          ]),
+                        ),
+                      ],
+                      if (media.any((m) => m['type'] == 'file' || m['type'] == 'link')) ...[
+                        const SizedBox(height: 16),
+                        Text("Files & links", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13.5, color: AppPalette.fg(color))),
+                        const SizedBox(height: 8),
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          for (final m in media.where((m) => m['type'] == 'file' || m['type'] == 'link'))
+                            ActionChip(
+                              avatar: Icon(m['type'] == 'link' ? Icons.link_rounded : Icons.attach_file_rounded, size: 16, color: AppPalette.fg(color)),
+                              label: Text((m['name'] ?? m['url']).toString(), overflow: TextOverflow.ellipsis),
+                              onPressed: () => launchUrl(Uri.parse(m['url'].toString()), mode: LaunchMode.externalApplication),
+                            ),
+                        ]),
+                      ],
+                      const SizedBox(height: 18),
+                      Center(child: Container(width: 60, height: 3, decoration: BoxDecoration(color: AppPalette.solid(color.withValues(alpha: 0.4)), borderRadius: BorderRadius.circular(2)))),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ]),
+        // reading progress
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: LinearProgressIndicator(value: _progress, minHeight: 3, backgroundColor: Colors.transparent, color: AppPalette.solid(color)),
+        ),
+      ]),
     );
   }
 }
@@ -798,7 +1069,11 @@ class _EducationHomeCardState extends State<EducationHomeCard> {
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppPalette.line(const Color(0xFFE4DAF2))),
-        boxShadow: [BoxShadow(color: _kPurple.withValues(alpha: 0.10), blurRadius: 14, offset: const Offset(0, 5))],
+        // raised from below, like the other Home cards
+        boxShadow: [
+          BoxShadow(color: _kPurple.withValues(alpha: 0.16), blurRadius: 22, spreadRadius: -4, offset: const Offset(0, 10)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 2)),
+        ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -821,94 +1096,72 @@ class _EducationHomeCardState extends State<EducationHomeCard> {
   Widget _tile(String c) {
     final color = EduContents.color(c);
     final items = _latest[c] ?? const <Map<String, dynamic>>[];
-    return Material(
-      color: AppPalette.bg(color.withValues(alpha: 0.06)),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
+    // raised tile; its newest titles keep moving up (as Quick Reminders)
+    return Container(
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EducationContentsScreen(category: c))),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: AppPalette.solid(color), borderRadius: BorderRadius.circular(9)),
-                child: Icon(EduContents.icon(c), color: Colors.white, size: 16),
-              ),
-              const SizedBox(width: 8),
-              Expanded(child: Text(EduContents.short(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12.5))),
-              Icon(Icons.chevron_right_rounded, size: 18, color: AppPalette.fg(color)),
-            ]),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 46,
-              child: items.isEmpty
-                  ? Align(alignment: Alignment.centerLeft, child: Text("Nothing new yet", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))))
-                  : _RisingTicker(items: items, color: color),
-            ),
-          ]),
-        ),
+        boxShadow: [
+          BoxShadow(color: color.withValues(alpha: 0.22), blurRadius: 14, spreadRadius: -3, offset: const Offset(0, 7)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1)),
+        ],
       ),
-    );
-  }
-}
-
-/// The newest titles, each rising from the bottom and moving on after a few
-/// seconds. Tap one to read it.
-class _RisingTicker extends StatefulWidget {
-  final List<Map<String, dynamic>> items;
-  final Color color;
-  const _RisingTicker({required this.items, required this.color});
-  @override
-  State<_RisingTicker> createState() => _RisingTickerState();
-}
-
-class _RisingTickerState extends State<_RisingTicker> {
-  int _i = 0;
-  Timer? _t;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.items.length > 1) {
-      _t = Timer.periodic(const Duration(seconds: 4), (_) {
-        if (mounted) setState(() => _i = (_i + 1) % widget.items.length);
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _t?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final m = widget.items[_i % widget.items.length];
-    final date = DateTime.tryParse((m['content_date'] ?? '').toString());
-    return ClipRect(
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 650),
-        transitionBuilder: (child, anim) {
-          // the new one rises from below; the old one goes up and fades
-          final rise = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic));
-          return SlideTransition(position: rise, child: FadeTransition(opacity: anim, child: child));
-        },
-        layoutBuilder: (current, previous) => Stack(alignment: Alignment.topLeft, children: [...previous, if (current != null) current]),
+      child: Material(
+        color: AppPalette.bg(Color.alphaBlend(color.withValues(alpha: 0.07), Colors.white)),
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
-          key: ValueKey(m['id']),
-          onTap: () => EducationContentDetail.openById(context, m['id'].toString()),
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              Text((m['title'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
-              Text(
-                [if (date != null) DateFormat('d MMM').format(date), EduContents.snippet(m, 70)].where((x) => x.isNotEmpty).join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 10.5, color: AppPalette.fg(Colors.blueGrey.shade600)),
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EducationContentsScreen(category: c))),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [AppPalette.solid(color), AppPalette.solid(Color.lerp(color, Colors.black, 0.25)!)]),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(EduContents.icon(c), color: Colors.white, size: 16),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(EduContents.short(c), maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12.5))),
+                Icon(Icons.chevron_right_rounded, size: 18, color: AppPalette.fg(color)),
+              ]),
+              const SizedBox(height: 6),
+              // the same height for every kind; each content gives two moving
+              // lines (its title, then its summary), so even one keeps moving
+              SizedBox(
+                height: 60,
+                child: items.isEmpty
+                    ? Align(alignment: Alignment.centerLeft, child: Text("Nothing new yet", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))))
+                    : VerticalMarquee(
+                        count: items.length * 2,
+                        visible: 2,
+                        itemHeight: 30,
+                        every: const Duration(milliseconds: 2400),
+                        itemBuilder: (_, i) {
+                          final m = items[i ~/ 2];
+                          final date = DateTime.tryParse((m['content_date'] ?? '').toString());
+                          final title = i.isEven;
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () => EducationContentDetail.openById(context, m['id'].toString()),
+                            child: Row(children: [
+                              Icon(title ? Icons.circle : Icons.subdirectory_arrow_right_rounded, size: title ? 6 : 12, color: AppPalette.fg(color)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(title ? (m['title'] ?? '').toString() : (EduContents.snippet(m, 80).isEmpty ? "Tap to read" : EduContents.snippet(m, 80)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: title
+                                        ? GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppPalette.fg(Colors.black87))
+                                        : GoogleFonts.merriweather(fontSize: 10.5, fontStyle: FontStyle.italic, color: AppPalette.fg(Colors.blueGrey.shade700))),
+                              ),
+                              if (title && date != null) Text(DateFormat('d MMM').format(date), style: TextStyle(fontSize: 10, color: AppPalette.fg(Colors.blueGrey.shade600))),
+                            ]),
+                          );
+                        },
+                      ),
               ),
             ]),
           ),
@@ -917,3 +1170,4 @@ class _RisingTickerState extends State<_RisingTicker> {
     );
   }
 }
+

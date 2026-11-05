@@ -28,7 +28,10 @@ const Color _kPurple = Color(0xFF4A148C);
 class BbWorkspaceScreen extends StatefulWidget {
   final bool canEdit;
   final String userRole;
-  const BbWorkspaceScreen({super.key, required this.canEdit, required this.userRole});
+  /// Theology: only the BB students guided by center students (their units'
+  /// centers / locations; the database decides who is visible).
+  final bool studentsOnly;
+  const BbWorkspaceScreen({super.key, required this.canEdit, required this.userRole, this.studentsOnly = false});
 
   @override
   State<BbWorkspaceScreen> createState() => _BbWorkspaceScreenState();
@@ -40,13 +43,15 @@ class BbSettings {
     final db = Supabase.instance.client;
     final r = await Future.wait<dynamic>([
       db.from('evangelism_stages').select().eq('is_active', true).order('sort_order', ascending: true),
-      db.from('evangelism_opening_months').select('label, month_start').eq('is_open', true).order('month_start', ascending: true),
+      db.from('evangelism_opening_months').select('label, month_start, is_open').order('month_start', ascending: true),
       db.from('evangelism_centers').select('name, location, sub_location').eq('is_active', true).order('sort_order', ascending: true),
       db.from('entry_field_options').select('field_key, option_label, sort_order').eq('sheet_name', 'BB File').eq('is_active', true).order('sort_order', ascending: true),
     ]);
     final c = BbSettings();
     c.stages = List<Map<String, dynamic>>.from(r[0] as List);
-    c.months = [for (final m in r[1] as List) m['label'].toString()];
+    c.months = [for (final m in r[1] as List) if (m['is_open'] == true) m['label'].toString()];
+    // months the Evangelism Department closed: their students go to History
+    c.closedMonths = [for (final m in r[1] as List) if (m['is_open'] != true) m['label'].toString()];
     c.centers = [for (final x in r[2] as List) x['name'].toString()];
     c.centerUnits = {
       for (final x in r[2] as List) x['name'].toString(): [x['location'], x['sub_location']].where((v) => (v ?? '').toString().isNotEmpty).join(' - '),
@@ -59,6 +64,16 @@ class BbSettings {
 
   List<Map<String, dynamic>> stages = [];
   List<String> months = [];
+  List<String> closedMonths = [];
+
+  /// The same settings listing other months (History lists the closed ones).
+  BbSettings withMonths(List<String> m) => BbSettings()
+    ..stages = stages
+    ..months = m
+    ..closedMonths = closedMonths
+    ..centers = centers
+    ..centerUnits = centerUnits
+    ..options = options;
   List<String> centers = [];
   /// center → "Location - Sub-location" (from the Evangelism Department's centers table)
   Map<String, String> centerUnits = {};
@@ -73,6 +88,7 @@ class BbSettings {
 
 class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
   final _db = Supabase.instance.client;
+  bool _history = false;
   final BbSettings _cfg = BbSettings();
   List<Map<String, dynamic>> _students = [];
   bool _loading = true;
@@ -98,6 +114,7 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
       _cfg
         ..stages = cfg.stages
         ..months = cfg.months
+        ..closedMonths = cfg.closedMonths
         ..centers = cfg.centers
         ..centerUnits = cfg.centerUnits
         ..options = cfg.options;
@@ -140,6 +157,15 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
       ("Dropped", Icons.person_off_outlined),
       ("Student cards", Icons.badge_outlined),
     ];
+    // Current: the open months' students (not dropped). History: the months
+    // the Evangelism Department closed and the dropped students.
+    bool closed(Map s) => (s['month'] ?? '').toString().isNotEmpty && _cfg.closedMonths.contains(s['month']);
+    bool dropped(Map s) => (s['bb_status'] ?? '').toString().toLowerCase().startsWith('drop');
+    bool mine(Map s) => !widget.studentsOnly || (s['guided_by_type'] ?? '').toString().toLowerCase().contains('student');
+    final pool = _students.where(mine).toList();
+    final shown = pool.where((s) => _history ? (closed(s) || dropped(s)) : !(closed(s) || dropped(s))).toList();
+    final droppedPool = pool.where((s) => _history ? closed(s) : !closed(s)).toList();
+    final cfg = _history ? _cfg.withMonths([..._cfg.closedMonths, ..._cfg.months]) : _cfg;
     return DefaultTabController(
       length: tabs.length,
       child: Scaffold(
@@ -147,9 +173,22 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
         appBar: AppBar(
           centerTitle: true,
           toolbarHeight: 46,
-          title: Text(widget.canEdit ? "BB File" : "BB File · compiled for your unit",
+          title: Text("${widget.studentsOnly ? "Students' BB File" : (widget.canEdit ? "BB File" : "BB File · compiled for your unit")}${_history ? ' · History' : ''}",
               style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: AppPalette.fg(_kPurple))),
-          actions: [IconButton(tooltip: tr("Refresh"), icon: const Icon(Icons.refresh_rounded), onPressed: _load)],
+          actions: [
+            // History: closed opening months and dropped students (read only)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: FilterChip(
+                visualDensity: VisualDensity.compact,
+                avatar: Icon(Icons.history_rounded, size: 16, color: AppPalette.fg(_kPurple)),
+                label: const Text("History"),
+                selected: _history,
+                onSelected: (v) => setState(() => _history = v),
+              ),
+            ),
+            IconButton(tooltip: tr("Refresh"), icon: const Icon(Icons.refresh_rounded), onPressed: _load),
+          ],
           bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.center,
@@ -161,11 +200,11 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
             : _error != null
                 ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)))
                 : TabBarView(physics: const NeverScrollableScrollPhysics(), children: [
-                    BbSheet(key: ValueKey('bb$_rev'), attendance: false, cfg: _cfg, students: _students, attended: _attended, canEdit: widget.canEdit, onSaved: _load),
-                    BbSheet(key: ValueKey('at$_rev'), attendance: true, cfg: _cfg, students: _students, attended: _attended, canEdit: widget.canEdit, onSaved: _load),
+                    BbSheet(key: ValueKey('bb$_rev$_history'), attendance: false, cfg: cfg, students: shown, attended: _attended, canEdit: widget.canEdit && !_history, onSaved: _load),
+                    BbSheet(key: ValueKey('at$_rev$_history'), attendance: true, cfg: cfg, students: shown, attended: _attended, canEdit: widget.canEdit && !_history, onSaved: _load),
                     _MissedTab(key: ValueKey('mis$_rev')),
-                    _DroppedTab(key: ValueKey('drop$_rev'), students: _students, canEdit: widget.canEdit, onSaved: _load),
-                    _FileTab(cfg: _cfg, students: _students, canEdit: widget.canEdit, onOpen: _openStudent),
+                    _DroppedTab(key: ValueKey('drop$_rev$_history'), students: droppedPool, canEdit: widget.canEdit, onSaved: _load),
+                    _FileTab(cfg: cfg, students: shown, canEdit: widget.canEdit && !_history, onOpen: _openStudent),
                   ]),
       ),
     );
@@ -279,8 +318,10 @@ class BbSummaryView extends StatefulWidget {
   final String? center;
   final String? month;
   final Set<String> sections; // goals, months, centers, locations, detail, checker
+  /// Students' evangelism: the BB students guided by center students (23_round22.sql)
+  final bool studentsOnly;
   const BbSummaryView({super.key, required this.cfg, this.location, this.subLocation, this.center, this.month,
-      this.sections = const {'goals', 'months', 'centers', 'locations', 'detail', 'checker'}});
+      this.sections = const {'goals', 'months', 'centers', 'locations', 'detail', 'checker'}, this.studentsOnly = false});
   @override
   State<BbSummaryView> createState() => _SummaryTabState();
 }
@@ -317,6 +358,7 @@ class _SummaryTabState extends State<BbSummaryView> {
         'p_location': widget.location,
         'p_sub_location': widget.subLocation,
         'p_center': widget.center,
+        if (widget.studentsOnly) 'p_students': true,
       });
       if (mounted) {
         setState(() {
@@ -343,6 +385,7 @@ class _SummaryTabState extends State<BbSummaryView> {
       'p_sub': at(1),
       'p_dept': at(2),
       'p_team': at(3),
+      if (widget.studentsOnly) 'p_students': true,
     }).then((r) => Map<String, dynamic>.from(r as Map));
   }
 

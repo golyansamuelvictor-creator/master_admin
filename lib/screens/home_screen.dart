@@ -29,6 +29,8 @@ import '../services/profile_refresh.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'package:master_admin/core/app_sizes.dart';
 import 'education/education_contents.dart';
+import 'bible/bible_screen.dart';
+import 'special_activities_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -508,6 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
     else if (v == 'document_main') page = DocumentScreen(title: "Docs", userEmail: email, userRole: selectedRole);
     else if (v == 'ppt_main') page = PresentationScreen(title: "Presentation", userEmail: email, userRole: selectedRole);
     else if (v == 'my_home') page = CommunicationScreen(userEmail: email, userRole: selectedRole);
+    else if (v == 'special_activities') page = const SpecialActivitiesScreen();
     if (page == null) return;
     final target = page;
     Navigator.push(context, MaterialPageRoute(builder: (c) => target)).then((_) {
@@ -700,12 +703,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppPalette.line(isHovered ? pAccent.withValues(alpha: 0.28) : pAccent.withValues(alpha: 0.10)),
                   width: 1.2,
                 ),
+            // raised from below: a soft tinted shadow under the card
             boxShadow: [
               BoxShadow(
-                color: isHovered ? pPurple.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.03),
-                blurRadius: isHovered ? 20 : 12,
-                offset: const Offset(0, 4),
+                color: pPurple.withValues(alpha: isHovered ? 0.24 : 0.16),
+                blurRadius: isHovered ? 26 : 22,
+                spreadRadius: -4,
+                offset: Offset(0, isHovered ? 14 : 10),
               ),
+              BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4, offset: const Offset(0, 2)),
             ],
           ),
           child: child,
@@ -825,6 +831,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               _buildUpcomingEventsCard(),
                               const SizedBox(height: 18),
                               _buildIntentionsSnippetCard(),
+                              const SizedBox(height: 18),
+                              // Holy Bible: the verse of the day
+                              const BibleHomeCard(),
                             ],
                           ),
                         ),
@@ -857,6 +866,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 16),
                         _buildIntentionsSnippetCard(),
                         const SizedBox(height: 16),
+                        const BibleHomeCard(),
                         _buildQuickPicks(),
                       ],
                     ),
@@ -1416,6 +1426,11 @@ class _HomeScreenState extends State<HomeScreen> {
               color: AppPalette.bg(pSoft),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.12))),
+              // inner cards are raised too
+              boxShadow: [
+                BoxShadow(color: pPurple.withValues(alpha: 0.12), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 6)),
+                BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 2, offset: const Offset(0, 1)),
+              ],
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(g, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: AppPalette.fg(pInk))),
@@ -1533,6 +1548,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppPalette.bg(pSoft),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.12))),
+                  boxShadow: [BoxShadow(color: pPurple.withValues(alpha: 0.10), blurRadius: 10, spreadRadius: -3, offset: const Offset(0, 5))],
                 ),
                 child: Row(
                   children: [
@@ -1674,6 +1690,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppPalette.bg(pSoft),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: AppPalette.line(Colors.grey.withValues(alpha: 0.12))),
+                  boxShadow: [BoxShadow(color: pPurple.withValues(alpha: 0.10), blurRadius: 10, spreadRadius: -3, offset: const Offset(0, 5))],
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,

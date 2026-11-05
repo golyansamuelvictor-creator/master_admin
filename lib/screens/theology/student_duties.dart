@@ -52,22 +52,42 @@ class StudentDuties {
   static bool _like(String role, String pattern) =>
       RegExp('^${RegExp.escape(pattern).replaceAll('%', '.*').replaceAll('_', '.')}\$').hasMatch(role.toLowerCase());
 
-  /// Does one of these roles see the students' results (Theology, or the
-  /// secretaries and cell leaders listed in app_config.student_viewer_roles)?
+  /// Does one of these roles see the students? Theology workers (location
+  /// and church), and the location, sub-location, department, team and cell
+  /// leaders and secretaries (app_config.student_viewer_roles) for their own
+  /// units' students. No church (24) department except Theology.
   static Future<bool> viewsStudents(List<String?> roles) async {
     final rs = roles.whereType<String>().where((r) => r.isNotEmpty).map((r) => r.toLowerCase()).toList();
     if (rs.isEmpty) return false;
     if (rs.contains('admin')) return true;
-    var patterns = const ['theo_%', 'theology_dept_%', 'church_head_instructor', '%_sec', '%cell_leader%', '%secretary%'];
+    var theology = const ['theo_%', 'theology_dept_%', 'church_head_instructor'];
+    var viewers = const ['loc_%', 'sub_loc_%', 'dept_%', 'team_%', '%cell_leader%', '%cell_sec%'];
+    final grouping = <String, String>{};
     try {
-      final rows = await Supabase.instance.client
+      final db = Supabase.instance.client;
+      final rows = await db
           .from('app_config')
           .select('config_key, config_value')
           .inFilter('config_key', ['theology_church_roles', 'theology_location_roles', 'student_viewer_roles']);
-      final p = <String>[for (final r in rows) ...List<String>.from((r['config_value'] as List?) ?? const [])];
-      if (p.isNotEmpty) patterns = p;
+      final t = <String>[], v = <String>[];
+      for (final r in rows) {
+        final list = List<String>.from((r['config_value'] as List?) ?? const []);
+        (r['config_key'] == 'student_viewer_roles' ? v : t).addAll(list);
+      }
+      if (t.isNotEmpty) theology = t;
+      if (v.isNotEmpty) viewers = v;
+      final g = await db.from('app_roles').select('role_key, "Grouping"').inFilter('role_key', rs);
+      for (final r in g) {
+        grouping[r['role_key'].toString().toLowerCase()] = (r['Grouping'] ?? '').toString();
+      }
     } catch (_) {}
-    return rs.any((r) => patterns.any((p) => _like(r, p)));
+    if (rs.any((r) => theology.any((p) => _like(r, p)))) return true;
+    // church departments (24-Dept …) and church-level roles never see them
+    bool church(String r) {
+      final g = (grouping[r] ?? '').toLowerCase();
+      return g.startsWith('24-dept') || g.startsWith('church') || r.startsWith('church_');
+    }
+    return rs.any((r) => !church(r) && viewers.any((p) => _like(r, p)));
   }
 }
 
@@ -215,13 +235,19 @@ class _StudentDutyScreenState extends State<StudentDutyScreen> {
 }
 
 /// A table with the header rows fixed on top and the row numbers fixed on the
-/// left; everything else scrolls both ways.
+/// left; everything else scrolls both ways and is centred. With [textOf]
+/// each column header gets a filter (pick the values to show) and columns can
+/// be hidden / shown again (the corner button).
 class FrozenGrid extends StatefulWidget {
   final List<(String, double)> columns;
   final int rows;
   final Widget Function(int row, int col) cell;
   final double rowHeight;
-  const FrozenGrid({super.key, required this.columns, required this.rows, required this.cell, this.rowHeight = 40});
+  /// The text of a cell, for the filters (null: no filters).
+  final String Function(int row, int col)? textOf;
+  /// Rows drawn in bold with a tint (e.g. a total on top).
+  final Set<int> boldRows;
+  const FrozenGrid({super.key, required this.columns, required this.rows, required this.cell, this.rowHeight = 40, this.textOf, this.boldRows = const {}});
   @override
   State<FrozenGrid> createState() => _FrozenGridState();
 }
@@ -229,6 +255,8 @@ class FrozenGrid extends StatefulWidget {
 class _FrozenGridState extends State<FrozenGrid> {
   final _left = ScrollController(), _right = ScrollController(), _h = ScrollController();
   bool _sync = false;
+  final Set<int> _hidden = {};
+  final Map<int, Set<String>> _filters = {}; // column → the values shown
 
   @override
   void initState() {
@@ -251,79 +279,227 @@ class _FrozenGridState extends State<FrozenGrid> {
     super.dispose();
   }
 
+  List<int> get _rows {
+    final t = widget.textOf;
+    final all = [for (int r = 0; r < widget.rows; r++) r];
+    if (t == null || _filters.isEmpty) return all;
+    return all.where((r) => _filters.entries.every((f) => f.value.contains(t(r, f.key).trim()))).toList();
+  }
+
+  Future<void> _filter(int c) async {
+    final t = widget.textOf!;
+    final values = {for (int r = 0; r < widget.rows; r++) t(r, c).trim()}.toList()..sort();
+    final chosen = {...(_filters[c] ?? values.toSet())};
+    String q = '';
+    final res = await showDialog<Set<String>?>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+        final shown = values.where((v) => q.isEmpty || v.toLowerCase().contains(q.toLowerCase())).toList();
+        return AlertDialog(
+          title: Text("Filter: ${widget.columns[c].$1}", textAlign: TextAlign.center),
+          content: SizedBox(
+            width: 340,
+            height: 380,
+            child: Column(children: [
+              TextField(decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search"), isDense: true, border: const OutlineInputBorder()), onChanged: (v) => set(() => q = v)),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                TextButton(onPressed: () => set(() => chosen.addAll(shown)), child: const Text("All")),
+                TextButton(onPressed: () => set(() => chosen.removeAll(shown)), child: const Text("None")),
+              ]),
+              Expanded(
+                child: ListView(children: [
+                  for (final v in shown)
+                    CheckboxListTile(
+                      dense: true,
+                      value: chosen.contains(v),
+                      title: Text(v.isEmpty ? "(empty)" : v),
+                      onChanged: (x) => set(() => x == true ? chosen.add(v) : chosen.remove(v)),
+                    ),
+                ]),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, <String>{'\u0000clear'}), child: const Text("Clear filter")),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+            FilledButton(onPressed: () => Navigator.pop(ctx, chosen), child: const Text("Apply")),
+          ],
+        );
+      }),
+    );
+    if (res == null) return;
+    setState(() {
+      if (res.contains('\u0000clear') || res.length == values.length) {
+        _filters.remove(c);
+      } else {
+        _filters[c] = res;
+      }
+    });
+  }
+
+  Future<void> _chooseColumns() async {
+    final hidden = {..._hidden};
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text("Show / hide columns", textAlign: TextAlign.center),
+          content: SizedBox(
+            width: 320,
+            child: ListView(shrinkWrap: true, children: [
+              for (int c = 0; c < widget.columns.length; c++)
+                CheckboxListTile(
+                  dense: true,
+                  value: !hidden.contains(c),
+                  title: Text(widget.columns[c].$1),
+                  onChanged: (v) => set(() => v == true ? hidden.remove(c) : hidden.add(c)),
+                ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => set(hidden.clear), child: const Text("Show all")),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("OK")),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) {
+      setState(() {
+        _hidden
+          ..clear()
+          ..addAll(hidden.length >= widget.columns.length ? const <int>{} : hidden);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    const numW = 40.0, headH = 38.0;
+    final numW = 40.0, headH = widget.rowHeight < 30 ? 34.0 : 38.0;
     final rowH = widget.rowHeight;
     final line = AppPalette.line(Colors.black12);
+    final rows = _rows;
+    final cols = [for (int c = 0; c < widget.columns.length; c++) if (!_hidden.contains(c)) c];
     return LayoutBuilder(builder: (context, box) {
-      final base = widget.columns.fold<double>(0, (a, c) => a + c.$2);
+      final base = cols.fold<double>(0, (a, c) => a + widget.columns[c].$2);
       final scale = base > 0 && box.maxWidth - numW > base ? (box.maxWidth - numW) / base : 1.0;
-      final widths = [for (final c in widget.columns) c.$2 * scale];
-      final total = widths.fold<double>(0, (a, w) => a + w);
-      Widget head(String t, double w) => Container(
-            width: w,
-            height: headH,
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFF1E293B)), border: Border(right: BorderSide(color: Colors.white24))),
-            child: Text(t, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-          );
-      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(
-          width: numW,
-          child: Column(children: [
-            head("#", numW),
+      final widths = {for (final c in cols) c: widget.columns[c].$2 * scale};
+      final total = widths.values.fold<double>(0, (a, w) => a + w);
+      Widget head(int c) {
+        final filtered = _filters.containsKey(c);
+        return Container(
+          width: widths[c],
+          height: headH,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: const BoxDecoration(color: Color(0xFF1E293B), border: Border(right: BorderSide(color: Colors.white24))),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Flexible(
+              child: Text(widget.columns[c].$1, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                  style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white)),
+            ),
+            if (widget.textOf != null)
+              InkWell(
+                onTap: () => _filter(c),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 3),
+                  child: Icon(filtered ? Icons.filter_alt : Icons.filter_alt_outlined, size: 13, color: filtered ? const Color(0xFFF59E0B) : Colors.white70),
+                ),
+              ),
+          ]),
+        );
+      }
+
+      return Column(children: [
+        if (_filters.isNotEmpty || _hidden.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Wrap(alignment: WrapAlignment.center, spacing: 6, children: [
+              if (_filters.isNotEmpty)
+                ActionChip(
+                  visualDensity: VisualDensity.compact,
+                  avatar: const Icon(Icons.filter_alt_off_rounded, size: 15),
+                  label: Text("${rows.length} of ${widget.rows} · clear filters", style: const TextStyle(fontSize: 11)),
+                  onPressed: () => setState(_filters.clear),
+                ),
+              if (_hidden.isNotEmpty)
+                ActionChip(
+                  visualDensity: VisualDensity.compact,
+                  avatar: const Icon(Icons.visibility_rounded, size: 15),
+                  label: Text("${_hidden.length} hidden · show all", style: const TextStyle(fontSize: 11)),
+                  onPressed: () => setState(_hidden.clear),
+                ),
+            ]),
+          ),
+        Expanded(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(
+              width: numW,
+              child: Column(children: [
+                // the corner: show / hide columns
+                InkWell(
+                  onTap: _chooseColumns,
+                  child: Container(
+                    width: numW,
+                    height: headH,
+                    color: const Color(0xFF334155),
+                    child: const Tooltip(message: "Show / hide columns", child: Icon(Icons.view_week_rounded, size: 16, color: Colors.white)),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _left,
+                    itemCount: rows.length,
+                    itemExtent: rowH,
+                    itemBuilder: (_, i) => Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF1F5F9)), border: Border(bottom: BorderSide(color: line), right: BorderSide(color: line))),
+                      child: Text("${i + 1}", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey.shade700))),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
             Expanded(
-              child: ListView.builder(
-                controller: _left,
-                itemCount: widget.rows,
-                itemExtent: rowH,
-                itemBuilder: (_, i) => Container(
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFF1F5F9)), border: Border(bottom: BorderSide(color: line), right: BorderSide(color: line))),
-                  child: Text("${i + 1}", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.grey.shade700))),
+              child: Scrollbar(
+                controller: _h,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _h,
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: total,
+                    child: Column(children: [
+                      Row(children: [for (final c in cols) head(c)]),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _right,
+                          itemCount: rows.length,
+                          itemExtent: rowH,
+                          itemBuilder: (_, i) {
+                            final r = rows[i];
+                            final bold = widget.boldRows.contains(r);
+                            return Row(children: [
+                              for (final c in cols)
+                                Container(
+                                  width: widths[c],
+                                  height: rowH,
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: AppPalette.bg(bold ? const Color(0xFFFFF8E1) : (i.isEven ? Colors.white : const Color(0xFFF8FAFC))),
+                                    border: Border(bottom: BorderSide(color: line), right: BorderSide(color: line)),
+                                  ),
+                                  child: widget.cell(r, c),
+                                ),
+                            ]);
+                          },
+                        ),
+                      ),
+                    ]),
+                  ),
                 ),
               ),
             ),
           ]),
-        ),
-        Expanded(
-          child: Scrollbar(
-            controller: _h,
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              controller: _h,
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: total,
-                child: Column(children: [
-                  Row(children: [for (int c = 0; c < widths.length; c++) head(widget.columns[c].$1, widths[c])]),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _right,
-                      itemCount: widget.rows,
-                      itemExtent: rowH,
-                      itemBuilder: (_, r) => Row(children: [
-                        for (int c = 0; c < widths.length; c++)
-                          Container(
-                            width: widths[c],
-                            height: rowH,
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: AppPalette.bg(r.isEven ? Colors.white : const Color(0xFFF8FAFC)),
-                              border: Border(bottom: BorderSide(color: line), right: BorderSide(color: line)),
-                            ),
-                            child: widget.cell(r, c),
-                          ),
-                      ]),
-                    ),
-                  ),
-                ]),
-              ),
-            ),
-          ),
         ),
       ]);
     });
@@ -509,7 +685,7 @@ class _EntryTabState extends State<_EntryTab> {
   Widget _text(String id, String k, {bool number = false, bool enabled = true, String hint = ''}) => TextField(
         controller: _c(id, k),
         enabled: enabled,
-        textAlign: number ? TextAlign.center : TextAlign.start,
+        textAlign: TextAlign.center,
         keyboardType: number ? TextInputType.number : TextInputType.text,
         inputFormatters: number ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9,]'))] : null,
         style: GoogleFonts.merriweather(fontSize: 11.5),
@@ -538,10 +714,7 @@ class _EntryTabState extends State<_EntryTab> {
       final id = s['id'].toString();
       switch (c) {
         case 0:
-          return Align(
-            alignment: Alignment.centerLeft,
-            child: Text("${s['student_name']}", maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold)),
-          );
+          return Text("${s['student_name']}", maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold));
         case 1:
           return Text((s['center_place'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11));
         case 2:
@@ -887,25 +1060,32 @@ class _ResultsTabState extends State<_ResultsTab> {
               ),
             ),
           ]),
-          SingleChildScrollView(
+          // the table fills the width (centred) and scrolls sideways when it is wider
+          LayoutBuilder(builder: (context, box) => SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: DataTable(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: box.maxWidth),
+              child: DataTable(
               border: TableBorder.all(color: AppPalette.line(Colors.grey.shade300), width: 0.8),
               headingRowColor: WidgetStateProperty.all(AppPalette.bg(const Color(0xFFF3E5F5))),
               headingRowHeight: 40,
               dataRowMinHeight: 30,
               dataRowMaxHeight: 34,
               columnSpacing: 18,
-              columns: [for (int i = 0; i < headers.length; i++) DataColumn(numeric: i > 0, label: Text(headers[i], style: const TextStyle(fontWeight: FontWeight.bold)))],
+              columns: [
+                for (int i = 0; i < headers.length; i++)
+                  DataColumn(headingRowAlignment: MainAxisAlignment.center, label: Text(headers[i], textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold))),
+              ],
               rows: [
                 for (int r = 0; r < rows.length; r++)
                   DataRow(
                     color: r == 0 ? WidgetStateProperty.all(AppPalette.bg(const Color(0xFFFFF8E1))) : null,
-                    cells: [for (final v in rows[r]) DataCell(Text(v, style: TextStyle(fontWeight: r == 0 ? FontWeight.bold : FontWeight.normal)))],
+                    cells: [for (final v in rows[r]) DataCell(Center(child: Text(v, textAlign: TextAlign.center, style: TextStyle(fontWeight: r == 0 ? FontWeight.bold : FontWeight.normal))))],
                   ),
               ],
             ),
-          ),
+            ),
+          )),
           if (labels.isNotEmpty) ...[
             const SizedBox(height: 16),
             Text(chartTitle, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12.5, color: AppPalette.fg(_kPurple))),
