@@ -452,29 +452,84 @@ class _BrandHeaderState extends State<BrandHeader> with TickerProviderStateMixin
 // ==========================================
 // CINEMATIC SPLASH GATEWAY
 // ==========================================
-class CinematicSplashGateway extends StatelessWidget {
+class CinematicSplashGateway extends StatefulWidget {
   final String statusText;
   const CinematicSplashGateway({super.key, this.statusText = "Loading Master Administration..."});
 
   @override
+  State<CinematicSplashGateway> createState() => _CinematicSplashGatewayState();
+}
+
+/// Same look as the web loading page (web/index.html), so the hand-over
+/// from the browser to the app is seamless.
+class _CinematicSplashGatewayState extends State<CinematicSplashGateway> with SingleTickerProviderStateMixin {
+  late final AnimationController _breathe =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 2200))..repeat(reverse: true);
+  static const Color _ink = Color(0xFF1C1238);
+
+  @override
+  void dispose() {
+    _breathe.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final logo = [size.width * 0.56, size.height * 0.34, 360.0].reduce((a, b) => a < b ? a : b);
+    final title = (size.width * 0.11).clamp(30.0, 64.0);
+    final sub = (size.width * 0.054).clamp(17.0, 30.0);
     return Scaffold(
-      backgroundColor: AppPalette.bg(kDarkBg),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const BrandHeader(),
-            const SizedBox(height: 36),
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(color: kGold, strokeWidth: 2),
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0xFFF7F6FA), Color(0xFFEAE7EF), Color(0xFFE0DDEA),
+              Color(0xFFC8BFD6), Color(0xFFB4ABC8), Color(0xFFA291BC), Color(0xFF87769F), Color(0xFF6E5C9A),
+              Color(0xFF533E86), Color(0xFF36206F), Color(0xFF331C6C),
+            ],
+            stops: [0, .09, .19, .31, .39, .50, .56, .62, .69, .75, .81, .88, 1],
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(children: [
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  ScaleTransition(
+                    scale: Tween<double>(begin: 0.96, end: 1.04)
+                        .animate(CurvedAnimation(parent: _breathe, curve: Curves.easeInOut)),
+                    child: Image.asset('assets/brand/logo.webp', width: logo, filterQuality: FilterQuality.medium),
+                  ),
+                  SizedBox(height: (size.height * 0.05).clamp(16.0, 36.0)),
+                  Text("Welcome Back",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.merriweather(color: _ink, fontSize: title, fontWeight: FontWeight.w900, height: 1.1)),
+                  SizedBox(height: (size.height * 0.03).clamp(10.0, 22.0)),
+                  Text("Loading your experience...",
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.merriweather(color: _ink, fontSize: sub, fontWeight: FontWeight.w700)),
+                ]),
+              ),
             ),
-            const SizedBox(height: 14),
-            Text(statusText,
-                style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.white54), fontSize: 11, fontStyle: FontStyle.italic)),
-          ],
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 22,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: kGold, strokeWidth: 2)),
+                const SizedBox(height: 10),
+                Text(widget.statusText,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.merriweather(color: Colors.white70, fontSize: 11, fontStyle: FontStyle.italic)),
+              ]),
+            ),
+          ]),
         ),
       ),
     );

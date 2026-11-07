@@ -4,8 +4,8 @@ import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:excel/excel.dart' hide Border;
 import '../core/xlsx_safe.dart';
+import '../core/xlsx_fast.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 class MemberSyncTool extends StatefulWidget {
@@ -28,14 +28,28 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
   final Color _primaryPurple = const Color(0xFF4A148C);
   final Color _backgroundColor = const Color(0xFFF8FAFC);
 
-  /// Helper to safely extract and trim string cell values
-  String? _getCellValue(List<Data?> row, int index) {
-    if (index >= row.length) return null;
-    final cell = row[index];
-    if (cell == null || cell.value == null) return null;
-    final val = cell.value.toString().trim();
-    return val.isEmpty ? null : val;
-  }
+  // Progress of the step running now (0–1), shown under the message
+  double? _progress;
+
+  /// Columns in the order of the members table: used when the file has no
+  /// header row (column A = id, B = location ...).
+  static const List<String> _sqlOrder = [
+    'id', 'location', 'sub_location', 'department', 'team', 'cell_group', 'duty', 'english_name', 'korean_name',
+    'scj_id', 'book_of_life', 'dob', 'gender', 'reg_status', 'appointment', 'created_at', 'bol_dept',
+    'sub_location_id', 'dept_id', 'team_id', 'cell_id', 'nationality', 'marital_status', 'photograph_url',
+    'health_status', 'phone_numbers', 'email_address', 'physical_address', 'emergency_contact', 'family_info',
+    'relatives_in_scj', 'date_joined', 'faith_in_pp', 'occupation', 'education_level', 'special_skills',
+    'spiritual_genealogy', 'instructor_name', 'evangelist_name', 'bb_teacher_name', 'guide_name', 'introduced_by_id',
+  ];
+
+  /// Never written from a file: set by the database (is_worker comes from
+  /// duty and book_of_life from bol_dept; writing them fails).
+  static const Set<String> _readOnly = {'id', 'created_at', 'is_worker', 'book_of_life'};
+  static const List<String> _required = ['english_name', 'sub_location', 'dob'];
+  static const Set<String> _uuidCols = {'sub_location_id', 'dept_id', 'team_id', 'cell_id', 'introduced_by_id', 'official_dept_id'};
+
+  static String _headerKey(String s) =>
+      s.trim().toLowerCase().replaceAll(RegExp(r'[\s\-./]+'), '_').replaceAll(RegExp(r'[^a-z0-9_]'), '');
 
   /// Same value in the file and in the database? (dates compared by day,
   /// numbers and lists as text, extra spaces ignored)
@@ -44,19 +58,88 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       if (v == null) return '';
       if (v is List) return v.map((e) => e.toString().trim()).join(',');
       var s = v.toString().trim();
-      final d = RegExp(r'^(\d{4}-\d{2}-\d{2})([T ].*)?$').firstMatch(s);
-      if (d != null) s = d.group(1)!;
+      final d = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})([T ].*)?$').firstMatch(s);
+      if (d != null) s = '${d.group(1)}-${d.group(2)!.padLeft(2, '0')}-${d.group(3)!.padLeft(2, '0')}';
       if (RegExp(r'^-?\d+\.0+$').hasMatch(s)) s = s.substring(0, s.indexOf('.'));
       return s.replaceAll(RegExp(r'\s+'), ' ');
     }
     return norm(stored) == norm(fromFile);
   }
 
-  /// Full synchronization logic matching SQL member table order
+  /// A cell's text in the form its column needs (null = leave as it is).
+  /// Saves [rows]; when the database refuses a batch (for example a Book of
+  /// Life name that isn't in the departments list), it is split up so only
+  /// the bad rows are left out, and those are reported.
+  Future<int> _save(List<Map<String, dynamic>> rows, List<String> failed) async {
+    if (rows.isEmpty) return 0;
+    try {
+      await _supabase.from('members').upsert(rows, onConflict: 'scj_id');
+      return rows.length;
+    } catch (e) {
+      if (rows.length == 1) {
+        final msg = e is PostgrestException ? e.message : e.toString();
+        failed.add("${rows.first['scj_id']} ($msg)");
+        return 0;
+      }
+      final half = rows.length ~/ 2;
+      return await _save(rows.sublist(0, half), failed) + await _save(rows.sublist(half), failed);
+    }
+  }
+
+  static dynamic _convert(String col, String? v) {
+    if (v == null || v.isEmpty) return null;
+    if (col == 'phone_numbers') {
+      final l = v.split(RegExp(r'[,;/]')).map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+      return l.isEmpty ? null : l;
+    }
+    if (_uuidCols.contains(col)) {
+      return RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(v) ? v : null;
+    }
+    if (col == 'date_joined') {
+      return RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(v) ? v.substring(0, 10) : null;
+    }
+    return v;
+  }
+
+  Future<void> _step(String msg, [double? progress]) async {
+    if (!mounted) return;
+    setState(() {
+      _log = msg;
+      _progress = progress;
+    });
+    await Future<void>.delayed(Duration.zero); // let the screen draw
+  }
+
+  /// Reads the file (fast reader; the excel package only if that fails).
+  Future<List<List<String?>>> _readRows(List<int> bytes) async {
+    try {
+      return await readXlsxFast(bytes, onProgress: (p) {
+        if (mounted) setState(() => _progress = p);
+      });
+    } catch (e) {
+      debugPrint('Fast reader failed, using the excel package: $e');
+      await _step("Step 1: Reading Excel file (slower way)...");
+      final excel = decodeExcelSafe(bytes);
+      final table = excel.tables[excel.tables.keys.first];
+      if (table == null) return [];
+      return [
+        for (final row in table.rows) // .rows is built once here (it rebuilds the whole sheet on every call)
+          [
+            for (final cell in row)
+              () {
+                final v = cell?.value?.toString().trim();
+                return (v == null || v.isEmpty) ? null : v;
+              }(),
+          ],
+      ];
+    }
+  }
+
+  /// Full synchronization: only the columns you choose are updated.
   Future<void> _startFullSync() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['xlsx', 'xls'],
+      allowedExtensions: ['xlsx'],
       withData: true,
     );
 
@@ -64,46 +147,82 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
 
     setState(() {
       _isProcessing = true;
-      _log = "Step 1: Reading Excel file...";
       _totalInFile = null;
       _totalUpserted = null;
       _totalDropped = null;
     });
 
     try {
-      final bytes = result.files.first.bytes!;
-      final excel = decodeExcelSafe(bytes);
-      final sheetName = excel.tables.keys.first;
-      final table = excel.tables[sheetName];
+      await _step("Step 1: Reading Excel file...", 0);
+      final rows = await _readRows(result.files.first.bytes!);
+      if (rows.length <= 1) throw Exception("The uploaded spreadsheet contains no data rows.");
 
-      if (table == null || table.maxRows <= 1) {
-        throw Exception("The uploaded spreadsheet contains no data rows.");
-      }
+      // The members table's columns (from one stored row; the known list if empty)
+      final known = <String>{..._sqlOrder, 'official_dept_id', 'geo_category', 'country', 'mou_church', 'course_completion_date', 'enrollment_year'};
+      try {
+        final one = await _supabase.from('members').select().limit(1);
+        if (one.isNotEmpty) known
+          ..clear()
+          ..addAll(one.first.keys);
+      } catch (_) {}
 
-      // Detect header mappings if present in row 0
-      final headerRow = table.rows[0];
-      final Map<String, int> headerMap = {};
-      for (int c = 0; c < headerRow.length; c++) {
-        final val = _getCellValue(headerRow, c)?.toLowerCase().replaceAll(' ', '_');
-        if (val != null) {
-          headerMap[val] = c;
+      // Header row: columns are matched by name, so the file can hold any of
+      // them in any order. Without a header row the SQL order is used.
+      final header = rows.first;
+      final colIndex = <String, int>{};
+      final ignored = <String>[];
+      for (int c = 0; c < header.length; c++) {
+        final h = header[c];
+        if (h == null) continue;
+        final k = _headerKey(h);
+        if (known.contains(k) || k == 'book_of_life') {
+          colIndex.putIfAbsent(k, () => c);
+        } else {
+          ignored.add(h);
         }
       }
+      final hasHeader = colIndex.containsKey('scj_id');
+      if (!hasHeader) {
+        colIndex.clear();
+        ignored.clear();
+        for (int c = 0; c < _sqlOrder.length; c++) {
+          colIndex[_sqlOrder[c]] = c;
+        }
+      }
+      // book_of_life is worked out from bol_dept in the database: a
+      // "book_of_life" column fills bol_dept (unless the file has bol_dept too)
+      if (colIndex.containsKey('book_of_life')) {
+        final i = colIndex.remove('book_of_life')!;
+        if (known.contains('bol_dept')) colIndex.putIfAbsent('bol_dept', () => i);
+      }
+      colIndex.removeWhere((k, _) => _readOnly.contains(k));
+      final dataRows = rows.length - 1;
 
-      // Col index resolver: uses header row position if recognized, otherwise falls back to SQL column index
-      int col(String name, int defaultIndex) => headerMap[name] ?? defaultIndex;
+      // Which columns to update
+      if (!mounted) return;
+      final choice = await showDialog<({Set<String> cols, bool markDropped})>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _ColumnChoiceDialog(
+          columns: colIndex.keys.where((k) => k != 'scj_id').toList(),
+          ignored: ignored,
+          rows: dataRows,
+          hasHeader: hasHeader,
+        ),
+      );
+      if (choice == null) {
+        await _step("Sync cancelled. Nothing was changed.");
+        return;
+      }
+      final chosen = choice.cols.toList();
 
-      // Existing members (paged), so required columns can be filled in for
-      // rows that leave them blank and so we know which records already exist.
-      setState(() => _log = "Step 2: Loading existing member records...");
+      // Existing members: only the columns needed (paged)
+      final need = <String>{'scj_id', 'location', 'reg_status', ..._required, ...chosen}.where(known.contains).toList();
       final Map<String, Map<String, dynamic>> existingByScj = {};
       int offset = 0;
       while (true) {
-        final page = await _supabase
-            .from('members')
-            .select()
-            .order('id')
-            .range(offset, offset + 999);
+        await _step("Step 2: Loading existing member records... (${existingByScj.length})");
+        final page = await _supabase.from('members').select(need.join(',')).order('id').range(offset, offset + 999);
         for (final r in page) {
           final id = r['scj_id']?.toString().trim();
           if (id != null && id.isNotEmpty) existingByScj[id] = Map<String, dynamic>.from(r);
@@ -112,190 +231,139 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
         offset += 1000;
       }
 
-      final List<Map<String, dynamic>> upsertData = [];
+      // Compare the file with the database
+      final List<Map<String, dynamic>> changedRows = [];
+      final List<Map<String, dynamic>> newRows = [];
       final List<String> scjIdsInFile = [];
       final Set<String> locationsInFile = {};
       final List<String> skipped = [];
-      int unchanged = 0, changedCount = 0, newCount = 0;
+      int unchanged = 0;
+      final scjCol = colIndex['scj_id']!;
+      String? cell(List<String?> row, int? i) => (i == null || i >= row.length) ? null : row[i];
+      // the existing rows are all sent with the same columns, so they go in
+      // a few big batches (before, nearly every member was its own request)
+      final writeCols = <String>{..._required, ...chosen}.toList();
 
-      setState(() => _log = "Step 3: Parsing member records...");
-
-      for (int i = 1; i < table.maxRows; i++) {
-        final row = table.rows[i];
-
-        // scj_id is at SQL column index 9 (Column J)
-        final scjId = _getCellValue(row, col('scj_id', 9));
-        if (scjId == null) continue;
-
+      for (int i = 1; i < rows.length; i++) {
+        if (i % 500 == 0) await _step("Step 3: Checking rows... $i of $dataRows", i / rows.length);
+        final row = rows[i];
+        final scjId = cell(row, scjCol)?.trim();
+        if (scjId == null || scjId.isEmpty) continue;
         scjIdsInFile.add(scjId);
-
-        final memberMap = <String, dynamic>{
-          'scj_id': scjId,
-          'location': _getCellValue(row, col('location', 1)),
-          'sub_location': _getCellValue(row, col('sub_location', 2)),
-          'department': _getCellValue(row, col('department', 3)),
-          'team': _getCellValue(row, col('team', 4)),
-          'cell_group': _getCellValue(row, col('cell_group', 5)),
-          'duty': _getCellValue(row, col('duty', 6)),
-          'english_name': _getCellValue(row, col('english_name', 7)),
-          'korean_name': _getCellValue(row, col('korean_name', 8)),
-          'dob': _getCellValue(row, col('dob', 11)),
-          'gender': _getCellValue(row, col('gender', 12)),
-          'reg_status': _getCellValue(row, col('reg_status', 13)),
-          'appointment': _getCellValue(row, col('appointment', 14)),
-          'bol_dept': _getCellValue(row, col('bol_dept', 16)),
-          'sub_location_id': _getCellValue(row, col('sub_location_id', 17)),
-          'dept_id': _getCellValue(row, col('dept_id', 18)),
-          'team_id': _getCellValue(row, col('team_id', 19)),
-          'cell_id': _getCellValue(row, col('cell_id', 20)),
-          'nationality': _getCellValue(row, col('nationality', 21)),
-          'marital_status': _getCellValue(row, col('marital_status', 22)),
-          'photograph_url': _getCellValue(row, col('photograph_url', 23)),
-          'health_status': _getCellValue(row, col('health_status', 24)),
-          'email_address': _getCellValue(row, col('email_address', 26)),
-          'physical_address': _getCellValue(row, col('physical_address', 27)),
-          'emergency_contact': _getCellValue(row, col('emergency_contact', 28)),
-          'family_info': _getCellValue(row, col('family_info', 29)),
-          'relatives_in_scj': _getCellValue(row, col('relatives_in_scj', 30)),
-          'date_joined': _getCellValue(row, col('date_joined', 31)),
-          'faith_in_pp': _getCellValue(row, col('faith_in_pp', 32)),
-          'occupation': _getCellValue(row, col('occupation', 33)),
-          'education_level': _getCellValue(row, col('education_level', 34)),
-          'special_skills': _getCellValue(row, col('special_skills', 35)),
-          'spiritual_genealogy': _getCellValue(row, col('spiritual_genealogy', 36)),
-          'instructor_name': _getCellValue(row, col('instructor_name', 37)),
-          'evangelist_name': _getCellValue(row, col('evangelist_name', 38)),
-          'bb_teacher_name': _getCellValue(row, col('bb_teacher_name', 39)),
-          'guide_name': _getCellValue(row, col('guide_name', 40)),
-          'introduced_by_id': _getCellValue(row, col('introduced_by_id', 41)),
-        };
-
-        // book_of_life is GENERATED from bol_dept in the database and can't be
-        // written (writing it made the whole sync fail); use it to fill bol_dept.
-        final bolFromSheet = _getCellValue(row, col('book_of_life', 10));
-        if (memberMap['bol_dept'] == null && bolFromSheet != null) memberMap['bol_dept'] = bolFromSheet;
-
-        // phone_numbers is a list column (text[]): "0700..., 0780..." -> ["0700...", "0780..."]
-        final phones = _getCellValue(row, col('phone_numbers', 25));
-        if (phones != null) {
-          memberMap['phone_numbers'] = phones
-              .split(RegExp(r'[,;/]'))
-              .map((p) => p.trim())
-              .where((p) => p.isNotEmpty)
-              .toList();
-        }
-
-        // Blank cells are left out so they never wipe existing data
-        memberMap.removeWhere((key, value) => value == null);
-
-        // english_name, sub_location and dob are required by the table. For an
-        // existing member, keep the stored value when the sheet leaves it blank.
         final existing = existingByScj[scjId];
-        for (final req in const ['english_name', 'sub_location', 'dob']) {
-          if (memberMap[req] == null && existing != null && existing[req] != null) {
-            memberMap[req] = existing[req];
-          }
-        }
-        if (memberMap['english_name'] == null || memberMap['sub_location'] == null || memberMap['dob'] == null) {
-          skipped.add(scjId);
-          continue;
+
+        final fromFile = <String, dynamic>{};
+        for (final k in writeCols) {
+          final v = _convert(k, cell(row, colIndex[k]));
+          if (v != null) fromFile[k] = v;
         }
 
-        final loc = (memberMap['location'] ?? existing?['location'])?.toString();
+        final loc = (fromFile['location'] ?? existing?['location'])?.toString();
         if (loc != null && loc.isNotEmpty) locationsInFile.add(loc);
 
-        // Only what changed: an existing member whose details in the file are
-        // the same as in the database is left alone; for one that changed,
-        // only the changed columns are written (plus the required ones).
         if (existing != null) {
-          final diff = <String, dynamic>{};
-          memberMap.forEach((k, v) {
-            if (k == 'scj_id') return;
-            if (!_same(existing[k], v)) diff[k] = v;
-          });
-          if (diff.isEmpty) {
+          // only the chosen columns count as changes; blank cells keep what is stored
+          final changed = chosen.any((k) => fromFile.containsKey(k) && !_same(existing[k], fromFile[k]));
+          if (!changed) {
             unchanged++;
             continue;
           }
-          changedCount++;
-          upsertData.add({
-            'scj_id': scjId,
-            for (final req in const ['english_name', 'sub_location', 'dob']) req: memberMap[req],
-            ...diff,
-          });
+          final out = <String, dynamic>{'scj_id': scjId};
+          for (final k in writeCols) {
+            out[k] = fromFile.containsKey(k) ? fromFile[k] : existing[k];
+          }
+          if (_required.any((k) => out[k] == null)) {
+            skipped.add(scjId);
+            continue;
+          }
+          changedRows.add(out);
         } else {
-          newCount++;
-          upsertData.add(memberMap);
+          if (_required.any((k) => fromFile[k] == null)) {
+            skipped.add(scjId);
+            continue;
+          }
+          newRows.add({'scj_id': scjId, ...fromFile});
         }
       }
 
-      if (upsertData.isEmpty && unchanged == 0) {
+      if (changedRows.isEmpty && newRows.isEmpty && unchanged == 0) {
         throw Exception("No valid rows with an SCJ ID, name, sub-location and date of birth were found in the file.");
       }
 
-      // Step 4: upsert. Rows are grouped by which columns they fill, because a
-      // bulk upsert sets every column in the batch: a row without (say) a phone
-      // would otherwise have its stored phone overwritten with NULL.
-      setState(() => _log = "Step 4: Updating ${upsertData.length} records in database...");
+      // Save: changed members in batches of 500; new members grouped by the
+      // columns they fill, so blank cells take the table's default values.
+      final total = changedRows.length + newRows.length;
+      int saved = 0, done = 0;
+      final failed = <String>[];
+      for (int i = 0; i < changedRows.length; i += 500) {
+        await _step("Step 4: Updating records... $done of $total", total == 0 ? null : done / total);
+        final chunk = changedRows.sublist(i, (i + 500 > changedRows.length) ? changedRows.length : i + 500);
+        saved += await _save(chunk, failed);
+        done += chunk.length;
+      }
       final Map<String, List<Map<String, dynamic>>> byColumns = {};
-      for (final m in upsertData) {
+      for (final m in newRows) {
         final keys = m.keys.toList()..sort();
         byColumns.putIfAbsent(keys.join(','), () => []).add(m);
       }
       for (final group in byColumns.values) {
-        for (int i = 0; i < group.length; i += 100) {
-          final chunk = group.sublist(i, (i + 100 > group.length) ? group.length : i + 100);
-          await _supabase.from('members').upsert(chunk, onConflict: 'scj_id');
+        for (int i = 0; i < group.length; i += 500) {
+          await _step("Step 4: Adding new members... $done of $total", total == 0 ? null : done / total);
+          final chunk = group.sublist(i, (i + 500 > group.length) ? group.length : i + 500);
+          saved += await _save(chunk, failed);
+          done += chunk.length;
         }
       }
 
-      // Step 5: mark members missing from the file as Dropped — but only in the
-      // locations this file covers. (Before, uploading one location's sheet
-      // marked every other member of the church as Dropped.)
-      setState(() => _log = "Step 5: Checking for omitted members to mark as dropped...");
-      final Set<String> fileScjIdSet = scjIdsInFile.toSet();
-      final List<String> toDrop = [];
-      existingByScj.forEach((id, r) {
-        final loc = (r['location'] ?? '').toString();
-        final status = (r['reg_status'] ?? '').toString();
-        if (status != 'Dropped' && locationsInFile.contains(loc) && !fileScjIdSet.contains(id)) {
-          toDrop.add(id);
-        }
-      });
-
+      // Members missing from the file → Dropped, only in the locations this
+      // file covers, and only when that was ticked.
       int droppedCount = 0;
-      if (toDrop.isNotEmpty) {
-        for (int i = 0; i < toDrop.length; i += 100) {
-          final chunk = toDrop.sublist(
-            i,
-            (i + 100 > toDrop.length) ? toDrop.length : i + 100,
-          );
-          await _supabase
-              .from('members')
-              .update({'reg_status': 'Dropped'})
-              .inFilter('scj_id', chunk);
+      if (choice.markDropped) {
+        await _step("Step 5: Checking for omitted members to mark as dropped...");
+        final fileScjIdSet = scjIdsInFile.toSet();
+        final List<String> toDrop = [];
+        existingByScj.forEach((id, r) {
+          final loc = (r['location'] ?? '').toString();
+          final status = (r['reg_status'] ?? '').toString();
+          if (status != 'Dropped' && locationsInFile.contains(loc) && !fileScjIdSet.contains(id)) toDrop.add(id);
+        });
+        for (int i = 0; i < toDrop.length; i += 200) {
+          final chunk = toDrop.sublist(i, (i + 200 > toDrop.length) ? toDrop.length : i + 200);
+          await _supabase.from('members').update({'reg_status': 'Dropped'}).inFilter('scj_id', chunk);
           droppedCount += chunk.length;
         }
       }
 
+      if (failed.isNotEmpty) debugPrint("Member sync refused rows: ${failed.join('; ')}");
       if (skipped.isNotEmpty) {
         debugPrint("Member sync skipped (missing name / sub-location / dob): ${skipped.join(', ')}");
       }
 
+      if (!mounted) return;
       setState(() {
+        _progress = null;
         _totalInFile = scjIdsInFile.length;
-        _totalUpserted = upsertData.length;
+        _totalUpserted = saved;
         _totalDropped = droppedCount;
-        final summary = "$changedCount updated, $newCount new, $unchanged already up to date.";
-        _log = skipped.isEmpty
-            ? "Full sync completed successfully: $summary"
-            : "Sync completed: $summary ${skipped.length} row(s) skipped because name, sub-location or date of birth is missing: ${skipped.take(20).join(', ')}${skipped.length > 20 ? ' ...' : ''}";
+        final summary = "${changedRows.length} updated, ${newRows.length} new, $unchanged already up to date.";
+        final notes = [
+          if (skipped.isNotEmpty)
+            "${skipped.length} row(s) skipped because name, sub-location or date of birth is missing: ${skipped.take(20).join(', ')}${skipped.length > 20 ? ' ...' : ''}",
+          if (failed.isNotEmpty)
+            "${failed.length} row(s) not saved, the database refused them: ${failed.take(10).join('; ')}${failed.length > 10 ? ' ...' : ''}",
+        ];
+        _log = notes.isEmpty ? "Full sync completed successfully: $summary" : "Sync completed: $summary ${notes.join(' ')}";
       });
     } catch (e) {
-      setState(() => _log = "Error: $e");
+      if (mounted) setState(() => _log = "Error: $e");
       debugPrint("Sync Error: $e");
     } finally {
-      setState(() => _isProcessing = false);
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _progress = null;
+        });
+      }
     }
   }
 
@@ -373,7 +441,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "This operation synchronizes members using their SCJ ID as the unique key. Existing members will have their details updated, and any active members not present in the uploaded spreadsheet will be marked as Dropped.",
+                  "This operation synchronizes members using their SCJ ID as the unique key. After you pick the file you choose which columns to update; blank cells keep what is stored. Active members of the file's locations who are not in the file can be marked as Dropped (you choose).",
                   style: GoogleFonts.merriweather(
                     color: AppPalette.fg(const Color(0xFF78350F)),
                     fontSize: 14.5,
@@ -411,7 +479,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
             ),
             subtitle: Text(
               _showColumnGuide
-                  ? "Matching 42 member table columns"
+                  ? "Headers are matched by name, in any order"
                   : "Click to preview expected column structure",
               style: GoogleFonts.merriweather(
                 fontSize: 14,
@@ -435,7 +503,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Columns must match the SQL table order. Columns marked with tags are handled automatically by the system:",
+                    "Put the column names in the first row (for example scj_id, location, dob); they can be in any order and you only need the ones you update. Without a header row, the columns must follow this SQL order:",
                     style: GoogleFonts.merriweather(
                       fontSize: 14,
                       color: AppPalette.fg(Colors.grey.shade700),
@@ -484,6 +552,11 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                   _buildColumnBadge(39, "bb_teacher_name", "Uploadable"),
                   _buildColumnBadge(40, "guide_name", "Uploadable"),
                   _buildColumnBadge(41, "introduced_by_id", "Optional Foreign Key"),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Also matched by header name: country, mou_church, geo_category, course_completion_date, enrollment_year, official_dept_id. book_of_life fills bol_dept; is_worker is worked out from duty.",
+                    style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade700)),
+                  ),
                 ],
               ),
             ),
@@ -629,7 +702,10 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       child: Column(
         children: [
           if (_isProcessing) ...[
-            const CircularProgressIndicator(strokeWidth: 2.5),
+            if (_progress == null)
+              const CircularProgressIndicator(strokeWidth: 2.5)
+            else
+              LinearProgressIndicator(value: _progress, minHeight: 6, borderRadius: BorderRadius.circular(4)),
             const SizedBox(height: 10),
           ],
           Text(
@@ -665,6 +741,85 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
           fontWeight: FontWeight.w900,
         ),
       ),
+    );
+  }
+}
+
+/// After the file is read: which of its columns to update.
+class _ColumnChoiceDialog extends StatefulWidget {
+  final List<String> columns;
+  final List<String> ignored;
+  final int rows;
+  final bool hasHeader;
+  const _ColumnChoiceDialog({required this.columns, required this.ignored, required this.rows, required this.hasHeader});
+
+  @override
+  State<_ColumnChoiceDialog> createState() => _ColumnChoiceDialogState();
+}
+
+class _ColumnChoiceDialogState extends State<_ColumnChoiceDialog> {
+  late final Set<String> _sel = widget.hasHeader ? widget.columns.toSet() : {};
+  bool _markDropped = true;
+
+  @override
+  Widget build(BuildContext context) {
+    const purple = Color(0xFF4A148C);
+    return AlertDialog(
+      title: Text("Columns to update", textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(purple))),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(
+              "${widget.rows} rows found. Members are matched by scj_id. Only the ticked columns are changed; blank cells keep what is stored.",
+              style: GoogleFonts.merriweather(fontSize: 13),
+            ),
+            if (!widget.hasHeader)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text("No header row with scj_id was found, so the columns are read in the SQL order. Tick the ones to update.",
+                    style: GoogleFonts.merriweather(fontSize: 12.5, color: AppPalette.fg(Colors.orange.shade900))),
+              ),
+            const SizedBox(height: 8),
+            Row(children: [
+              TextButton(onPressed: () => setState(() => _sel.addAll(widget.columns)), child: const Text("All")),
+              TextButton(onPressed: () => setState(_sel.clear), child: const Text("None")),
+              const Spacer(),
+              Text("${_sel.length} of ${widget.columns.length}", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+            ]),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final c in widget.columns)
+                FilterChip(
+                  label: Text.rich(TextSpan(text: c), style: const TextStyle(fontSize: 12.5)),
+                  selected: _sel.contains(c),
+                  onSelected: (v) => setState(() => v ? _sel.add(c) : _sel.remove(c)),
+                ),
+            ]),
+            if (widget.ignored.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text.rich(TextSpan(text: "${tr('Not a members column, ignored')}: ${widget.ignored.join(', ')}"),
+                  style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
+            ],
+            const Divider(height: 22),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _markDropped,
+              onChanged: (v) => setState(() => _markDropped = v),
+              title: const Text("Mark members missing from this file as Dropped"),
+              subtitle: const Text("Only in the locations the file covers"),
+            ),
+          ]),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+        FilledButton.icon(
+          onPressed: _sel.isEmpty ? null : () => Navigator.pop(context, (cols: _sel, markDropped: _markDropped)),
+          icon: const Icon(Icons.sync, size: 18),
+          label: const Text("Start sync"),
+        ),
+      ],
     );
   }
 }

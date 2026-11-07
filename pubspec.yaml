@@ -62,6 +62,7 @@ flutter:
   assets:
     - assets/sounds/
     - assets/bible/   # World English Bible (public domain): Home › Bible
+    - assets/brand/   # logo for the loading screen
 
 dependency_overrides:
   intl: ^0.20.2
