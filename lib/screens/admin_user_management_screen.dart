@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'package:master_admin/core/app_sizes.dart';
 import 'package:master_admin/widgets/compact_card.dart';
+import 'package:master_admin/widgets/secondary_unit_picker.dart';
 
 /// Member Bio › User management.
 ///
@@ -60,6 +61,8 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
   }
 
   Future<void> _init() async {
+    // registrations left unfinished for more than 24 hours are deleted
+    _db.rpc('purge_stale_registrations').catchError((_) => 0);
     try {
       final r = await Future.wait<dynamic>([
         _db.rpc('account_approval_scope'),
@@ -259,7 +262,30 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     return _v(user, 'unit_category').toLowerCase().contains('church') || loc == 'church' || loc == 'church workers' || loc == 'church main';
   }
 
-  void _openChangeRoleDialog(Map<String, dynamic> user) {
+  /// Depth of a role's own unit (for a secondary role in another department):
+  /// 0 = none (location-wide roles), 1 department, 2 team, 3 cell group.
+  int _unitDepth(String? key) {
+    if (key == null) return 0;
+    final r = _appRoles.firstWhere((x) => x['role_key'] == key, orElse: () => const {});
+    final k = key.toLowerCase();
+    final sc = (r['approval_scope'] ?? '').toString().toLowerCase();
+    if (sc.startsWith('location') || sc == 'sub_location' || sc.startsWith('church') || k.startsWith('loc_') || k.startsWith('sub_loc')) return 0;
+    if (k.contains('cell') || sc == 'cell_group') return 3;
+    if (k.contains('team') || sc == 'team') return 2;
+    if (k.contains('dept') || sc == 'department') return 1;
+    return 0;
+  }
+
+  Future<void> _openChangeRoleDialog(Map<String, dynamic> user) async {
+    // the secondary role's own unit (if any)
+    String? secDept, secTeam, secCell;
+    try {
+      final p = await _db.from('profiles').select('secondary_department, secondary_team, secondary_cell_group').eq('id', user['id']).maybeSingle();
+      secDept = (p?['secondary_department'] ?? '').toString().isEmpty ? null : p!['secondary_department'].toString();
+      secTeam = (p?['secondary_team'] ?? '').toString().isEmpty ? null : p!['secondary_team'].toString();
+      secCell = (p?['secondary_cell_group'] ?? '').toString().isEmpty ? null : p!['secondary_cell_group'].toString();
+    } catch (_) {}
+    if (!mounted) return;
     final onlyLocation = _roleRights != 'admin';
     // the user's own kind of roles first: location workers see location
     // roles, church workers church / 24-department roles
@@ -391,8 +417,28 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                     for (final r in seconds)
                       DropdownMenuItem<String>(value: r['role_key'].toString(), child: Text(name(r), maxLines: 1, overflow: TextOverflow.ellipsis)),
                   ],
-                  onChanged: (v) => set(() => secondKey = (v == null || v.isEmpty) ? null : v),
+                  onChanged: (v) => set(() {
+                    secondKey = (v == null || v.isEmpty) ? null : v;
+                    secDept = secTeam = secCell = null;
+                  }),
                 ),
+                if (secondKey != null && _unitDepth(secondKey) > 0 && _v(user, 'location').isNotEmpty) ...[
+                  label("Unit of the secondary role (empty = same as the main role)"),
+                  SecondaryUnitPicker(
+                    key: ValueKey('sec|$secondKey'),
+                    location: _v(user, 'location'),
+                    subLocation: _v(user, 'sub_location'),
+                    depth: _unitDepth(secondKey),
+                    department: secDept,
+                    team: secTeam,
+                    cell: secCell,
+                    onChanged: (d, t, c) {
+                      secDept = d;
+                      secTeam = t;
+                      secCell = c;
+                    },
+                  ),
+                ],
               ]),
             ),
           ),
@@ -405,7 +451,14 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                   : () async {
                       set(() => saving = true);
                       try {
-                        await _db.rpc('change_user_role', params: {'p_user': user['id'], 'p_role': roleKey, 'p_secondary': secondKey});
+                        await _db.rpc('change_user_role', params: {
+                          'p_user': user['id'],
+                          'p_role': roleKey,
+                          'p_secondary': secondKey,
+                          'p_sec_department': secDept,
+                          'p_sec_team': secTeam,
+                          'p_sec_cell': secCell,
+                        });
                         if (ctx.mounted) Navigator.pop(ctx);
                         _load();
                         _snack("Role changed. The administrators${_userIsChurchWorker(user) ? '' : ' and the location leader and general secretary'} were notified.");
@@ -464,7 +517,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Remove unfinished registrations"),
-        content: const Text("Deletes accounts that were started more than 3 days ago but never completed (no SCJ ID or no role) and were never approved."),
+        content: const Text("Deletes accounts that were started more than 24 hours ago but never completed (no name, SCJ ID, role or unit) and were never approved. This also happens by itself every hour."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
           ElevatedButton(
@@ -477,7 +530,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     );
     if (ok != true) return;
     try {
-      final n = await _db.rpc('admin_purge_incomplete', params: {'p_days': 3});
+      final n = await _db.rpc('admin_purge_incomplete', params: {'p_days': 1});
       _load();
       _snack("$n unfinished registration(s) removed.");
     } catch (e) {

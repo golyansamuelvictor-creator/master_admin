@@ -44,7 +44,12 @@ class Terms {
 class TermsScreen extends StatefulWidget {
   /// [readOnly]: only to read them again (no Agree / Decline).
   final bool readOnly;
-  const TermsScreen({super.key, this.readOnly = false});
+  /// Shown inside the app (the sign-in check): Agree / Decline call this
+  /// instead of closing the page (version, or null = declined).
+  final void Function(int? version)? onDecision;
+  /// A line above the terms (e.g. "The terms were updated …").
+  final String? notice;
+  const TermsScreen({super.key, this.readOnly = false, this.onDecision, this.notice});
   @override
   State<TermsScreen> createState() => _TermsScreenState();
 }
@@ -134,7 +139,7 @@ class _TermsScreenState extends State<TermsScreen> {
     final t = _terms;
     final date = DateTime.tryParse((t?['effective_date'] ?? '').toString());
     return PopScope(
-      canPop: true,
+      canPop: widget.onDecision == null,
       child: Scaffold(
         backgroundColor: AppPalette.bg(const Color(0xFFF6F4FA)),
         appBar: AppBar(
@@ -153,7 +158,7 @@ class _TermsScreenState extends State<TermsScreen> {
                         Text(_error!, textAlign: TextAlign.center),
                         const SizedBox(height: 12),
                         FilledButton(onPressed: _load, child: const Text("Try again")),
-                        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Back")),
+                        TextButton(onPressed: () => widget.onDecision != null ? widget.onDecision!(null) : Navigator.pop(context), child: Text(widget.onDecision != null ? "Sign out" : "Back")),
                       ]),
                     ),
                   )
@@ -185,6 +190,21 @@ class _TermsScreenState extends State<TermsScreen> {
                                   ),
                                 ]),
                               ),
+                              if (widget.notice != null)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 10),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppPalette.bg(const Color(0xFFFFF8E1)),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppPalette.line(const Color(0xFFFFCC80))),
+                                  ),
+                                  child: Row(children: [
+                                    Icon(Icons.info_outline_rounded, color: AppPalette.fg(Colors.orange.shade900)),
+                                    const SizedBox(width: 10),
+                                    Expanded(child: Text(widget.notice!, style: GoogleFonts.merriweather(fontSize: 12.5, color: AppPalette.fg(Colors.orange.shade900)))),
+                                  ]),
+                                ),
                               const SizedBox(height: 10),
                               ..._render((t?['body'] ?? '').toString()),
                             ]),
@@ -222,15 +242,20 @@ class _TermsScreenState extends State<TermsScreen> {
                                   Expanded(
                                     child: OutlinedButton(
                                       style: OutlinedButton.styleFrom(minimumSize: const Size(0, 46)),
-                                      onPressed: () => Navigator.pop(context),
-                                      child: const Text("Decline"),
+                                      onPressed: () => widget.onDecision != null ? widget.onDecision!(null) : Navigator.pop(context),
+                                      child: Text(widget.onDecision != null ? "Decline & sign out" : "Decline"),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: FilledButton(
                                       style: FilledButton.styleFrom(minimumSize: const Size(0, 46), backgroundColor: AppPalette.solid(_kPurple)),
-                                      onPressed: _read && _ticked ? () => Navigator.pop(context, (t?['version'] as num?)?.toInt() ?? 1) : null,
+                                      onPressed: _read && _ticked
+                                          ? () {
+                                              final v = (t?['version'] as num?)?.toInt() ?? 1;
+                                              widget.onDecision != null ? widget.onDecision!(v) : Navigator.pop(context, v);
+                                            }
+                                          : null,
                                       child: const Text("I agree"),
                                     ),
                                   ),
@@ -243,5 +268,90 @@ class _TermsScreenState extends State<TermsScreen> {
                   ]),
       ),
     );
+  }
+}
+
+/// After sign-in: everyone must have accepted the current terms. Accounts
+/// made before the terms existed, and everyone after the terms are updated
+/// (a new version in app_terms), see them once; "I agree" records it,
+/// declining signs out.
+class TermsGate extends StatefulWidget {
+  final Widget child;
+  final int? acceptedVersion; // profiles.terms_version
+  const TermsGate({super.key, required this.child, this.acceptedVersion});
+  @override
+  State<TermsGate> createState() => _TermsGateState();
+}
+
+class _TermsGateState extends State<TermsGate> {
+  static int? _current; // the active version (once per app run)
+  static final Set<String> _okUsers = {};
+  bool? _needed;
+  bool _saving = false;
+
+  String get _uid => Supabase.instance.client.auth.currentUser?.id ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    if (_okUsers.contains(_uid)) {
+      setState(() => _needed = false);
+      return;
+    }
+    try {
+      await Terms.recordPending(); // accepted while creating the account
+      if (_current == null) {
+        final r = await Supabase.instance.client.from('app_terms').select('version').eq('is_active', true).order('version', ascending: false).limit(1).maybeSingle();
+        _current = (r?['version'] as num?)?.toInt() ?? 0;
+      }
+      var mine = widget.acceptedVersion ?? 0;
+      if (mine < _current!) {
+        final p = await Supabase.instance.client.from('profiles').select('terms_version').eq('id', _uid).maybeSingle();
+        mine = (p?['terms_version'] as num?)?.toInt() ?? 0;
+      }
+      final need = _current! > 0 && mine < _current!;
+      if (!need) _okUsers.add(_uid);
+      if (mounted) setState(() => _needed = need);
+    } catch (_) {
+      // offline or before the terms table: don't lock people out
+      if (mounted) setState(() => _needed = false);
+    }
+  }
+
+  Future<void> _decide(int? v) async {
+    if (v == null) {
+      await Supabase.instance.client.auth.signOut();
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await Supabase.instance.client.rpc('accept_terms', params: {'p_version': v});
+      _okUsers.add(_uid);
+      if (mounted) setState(() => _needed = false);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't save your answer. Check your connection and try again.")));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_needed == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_needed == false) return widget.child;
+    return Stack(children: [
+      TermsScreen(
+        onDecision: _decide,
+        notice: (widget.acceptedVersion ?? 0) > 0
+            ? "The Terms and Data Policy were updated. Please read them and agree to continue."
+            : "Please read the Terms and Data Policy and agree to continue using Master Admin.",
+      ),
+      if (_saving) const ColoredBox(color: Color(0x33000000), child: Center(child: CircularProgressIndicator())),
+    ]);
   }
 }

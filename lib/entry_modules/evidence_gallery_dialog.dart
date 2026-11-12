@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/evidence_service.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../core/net_retry.dart';
+import '../core/photo_shrink.dart';
 
 class EvidenceGalleryDialog extends StatefulWidget {
   final String sheetName;
@@ -100,10 +102,14 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
 
     for (var file in result.files) {
       if (file.bytes == null) continue;
+      // smaller copy first: uploads on slow connections and keeps the page responsive
+      final original = file.bytes!;
+      final bytes = await shrinkPhoto(original);
+      final shrunk = !identical(bytes, original);
 
       // 1. Has this picture been used before (any unit, any date)?
       final check = await EvidenceService.check(
-        bytes: file.bytes!,
+        bytes: bytes,
         dutyName: widget.sheetName,
         unitName: widget.unitName,
         reportDate: widget.reportDate,
@@ -115,7 +121,7 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
       }
       if (check.fingerprint != null) batchHashes.add(check.fingerprint!.hash);
 
-      final ext = (file.extension ?? 'jpg').toLowerCase();
+      final ext = shrunk ? 'jpg' : (file.extension ?? 'jpg').toLowerCase();
       final fileName = "${DateTime.now().millisecondsSinceEpoch}_$uploadedCount.$ext";
       // The report-evidence bucket only accepts files inside the uploader's own folder (<uid>/...)
       final storagePath = "${user?.id ?? 'anonymous'}/${widget.sheetName}/${widget.unitName}/$dateStr/$fileName";
@@ -123,11 +129,11 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
       final contentType = (ext == 'jpg' || ext == 'jpeg') ? 'image/jpeg' : 'image/$ext';
 
       try {
-        await supabase.storage.from(EvidenceService.bucket).uploadBinary(
+        await withRetry(() => supabase.storage.from(EvidenceService.bucket).uploadBinary(
               storagePath,
-              file.bytes!,
+              bytes,
               fileOptions: FileOptions(contentType: contentType, upsert: true),
-            );
+            ));
         final thumb = check.fingerprint?.thumbnailPng;
         bool thumbSaved = false;
         if (thumb != null) {
@@ -141,7 +147,7 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
           } catch (_) {}
         }
 
-        await supabase.from('report_evidence').insert({
+        await withRetry(() => supabase.from('report_evidence').insert({
           'duty_name': widget.sheetName, // required column (the insert failed without it)
           'uploaded_by': user?.id,
           'sheet_name': widget.sheetName,
@@ -154,7 +160,7 @@ class _EvidenceGalleryDialogState extends State<EvidenceGalleryDialog> {
           'file_hash': check.sha,
           'phash': check.fingerprint?.hash,
           'uploader_id': user?.id,
-        });
+        }), tries: 2, timeout: const Duration(seconds: 30));
 
         uploadedCount++;
         if (check.flaggedForReview) flaggedCount++;

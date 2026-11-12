@@ -320,8 +320,10 @@ class BbSummaryView extends StatefulWidget {
   final Set<String> sections; // goals, months, centers, locations, detail, checker
   /// Students' evangelism: the BB students guided by center students (23_round22.sql)
   final bool studentsOnly;
+  /// Dubai Official: 'only' / 'exclude' (null = everyone; needs 27_round26.sql)
+  final String? official;
   const BbSummaryView({super.key, required this.cfg, this.location, this.subLocation, this.center, this.month,
-      this.sections = const {'goals', 'months', 'centers', 'locations', 'detail', 'checker'}, this.studentsOnly = false});
+      this.sections = const {'goals', 'months', 'centers', 'locations', 'detail', 'checker'}, this.studentsOnly = false, this.official});
   @override
   State<BbSummaryView> createState() => _SummaryTabState();
 }
@@ -359,6 +361,7 @@ class _SummaryTabState extends State<BbSummaryView> {
         'p_sub_location': widget.subLocation,
         'p_center': widget.center,
         if (widget.studentsOnly) 'p_students': true,
+        if (widget.official != null) 'p_official': widget.official,
       });
       if (mounted) {
         setState(() {

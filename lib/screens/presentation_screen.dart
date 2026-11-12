@@ -15,6 +15,10 @@ import 'package:master_admin/core/app_palette.dart';
 import '../core/table_export.dart';
 import '../widgets/office_shell.dart';
 import '../widgets/share_file.dart';
+import '../core/security.dart';
+import 'package:file_picker/file_picker.dart';
+import '../core/office_formats.dart';
+import '../widgets/office_history.dart';
 
 /// Presentations (PowerPoint style): the original hub + ribbon layout with
 /// private decks, layouts, themes, transitions, notes, slide sorter,
@@ -22,7 +26,9 @@ import '../widgets/share_file.dart';
 /// download and print preview. The slide is centred and fits the screen.
 class PresentationScreen extends StatefulWidget {
   final String title, userEmail, userRole;
-  const PresentationScreen({super.key, required this.title, required this.userEmail, required this.userRole});
+  /// A PowerPoint file opened with "Open with" (name, bytes): opened at once.
+  final (String, Uint8List)? openFile;
+  const PresentationScreen({super.key, required this.title, required this.userEmail, required this.userRole, this.openFile});
   @override
   State<PresentationScreen> createState() => _PresentationScreenState();
 }
@@ -365,6 +371,8 @@ class _PresentationScreenState extends State<PresentationScreen> {
     super.initState();
     OfficeBrowserMenu.acquire();
     _loadDecks();
+    final f = widget.openFile;
+    if (f != null) WidgetsBinding.instance.addPostFrameCallback((_) => _importPptx(f.$2, f.$1));
   }
 
   @override
@@ -723,7 +731,10 @@ class _PresentationScreenState extends State<PresentationScreen> {
   // ------------------------------------------------------------------
   // PDF
   // ------------------------------------------------------------------
-  Future<Uint8List> _buildPdf([PdfPageFormat? format]) async {
+  Future<Uint8List> _buildPdf([PdfPageFormat? format]) => _pdfFor(_slides, _titleC.text.trim(), _th);
+
+  /// The PDF of any presentation (also from the list, without opening it).
+  Future<Uint8List> _pdfFor(List<_Slide> slides, String title, _Theme th) async {
     pw.ThemeData theme;
     try {
       theme = pw.ThemeData.withFont(
@@ -735,10 +746,9 @@ class _PresentationScreenState extends State<PresentationScreen> {
     } catch (_) {
       theme = pw.ThemeData();
     }
-    final doc = pw.Document(theme: theme, title: _titleC.text.trim());
-    final th = _th;
+    final doc = pw.Document(theme: theme, title: title);
     PdfColor pc(Color c) => PdfColor.fromInt(c.toARGB32());
-    for (final s in _slides) {
+    for (final s in slides) {
       final bg = _hex(s.bg, s.layout == 'section' ? th.accent : th.bg);
       final fg = _hex(s.fg, s.layout == 'section' ? Colors.white : th.fg);
       final accent = s.layout == 'section' ? Colors.white : th.accent;
@@ -789,6 +799,7 @@ class _PresentationScreenState extends State<PresentationScreen> {
   String get _fileName => (_titleC.text.trim().isEmpty ? 'presentation' : _titleC.text.trim()).replaceAll(RegExp(r'[^A-Za-z0-9가-힣 _-]'), '');
 
   Future<void> _exportPdf() async {
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final bytes = await _buildPdf();
       await Printing.sharePdf(bytes: bytes, filename: '$_fileName.pdf');
@@ -801,7 +812,131 @@ class _PresentationScreenState extends State<PresentationScreen> {
       fileName: '$_fileName.pdf', initial: const PdfPageFormat(_kW, _kH));
 
   /// Share the presentation (as PDF) in My Home chats or to other apps.
-  Future<void> _share() => shareAppFile(context, fileName: '$_fileName.pdf', build: () => _buildPdf());
+  Future<void> _share() => shareAppFileAs(context, _formats(_slides, _titleC.text.trim(), _th));
+
+  static String _safe(String t) => (t.trim().isEmpty ? 'presentation' : t.trim()).replaceAll(RegExp(r'[^A-Za-z0-9가-힣 _-]'), '');
+  static String _hx(Color c) => (c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
+
+  /// The slides as PowerPoint wants them (each slide's own colours).
+  static List<SlideOut> _pptxSlides(List<_Slide> slides, _Theme th) => [
+        for (final s in slides)
+          SlideOut(
+            title: s.title,
+            content: s.content,
+            layout: s.layout,
+            bg: _hx(_hex(s.bg, s.layout == 'section' ? th.accent : th.bg)),
+            fg: _hx(_hex(s.fg, s.layout == 'section' ? Colors.white : th.fg)),
+            accent: _hx(s.layout == 'section' ? Colors.white : th.accent),
+          ),
+      ];
+
+  /// The ways a presentation can leave the app: PDF or PowerPoint.
+  List<ShareFormat> _formats(List<_Slide> slides, String title, _Theme th) => [
+        ShareFormat("PDF", Icons.picture_as_pdf_outlined, '${_safe(title)}.pdf', 'application/pdf', () => _pdfFor(slides, title, th)),
+        ShareFormat("PowerPoint (.pptx)", Icons.slideshow_outlined, '${_safe(title)}.pptx',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation', () async => pptxFromSlides(_pptxSlides(slides, th), title)),
+      ];
+
+  /// From the list: the stored presentation, without opening it.
+  Future<(List<_Slide>, String, _Theme)?> _fetchDeck(String id) async {
+    try {
+      final deck = await _db.from('presentations').select('title, theme').eq('id', id).single();
+      final rows = await _db.from('presentation_slides').select().eq('presentation_id', id).order('slide_order');
+      final slides = [
+        for (final r in rows)
+          _Slide(
+            title: (r['title'] ?? '').toString(),
+            content: (r['content'] ?? '').toString(),
+            layout: _layoutNames.containsKey(r['layout']) ? r['layout'].toString() : 'title_content',
+            bg: r['bg_color']?.toString(),
+            fg: r['text_color']?.toString(),
+            notes: (r['notes'] ?? '').toString(),
+          ),
+      ];
+      return (slides, (deck['title'] ?? 'Presentation').toString(), _themeFor((deck['theme'] ?? 'classic').toString().split('|').first));
+    } catch (_) {
+      _snack("Couldn't load the presentation.");
+      return null;
+    }
+  }
+
+  Future<void> _shareFromList(Map<String, dynamic> d) async {
+    final x = await _fetchDeck(d['id'].toString());
+    if (x == null || !mounted) return;
+    await shareAppFileAs(context, _formats(x.$1, x.$2, x.$3));
+  }
+
+  Future<void> _pptxFromList(Map<String, dynamic> d) async {
+    final x = await _fetchDeck(d['id'].toString());
+    if (x == null || !mounted) return;
+    await downloadAppFile(context, _formats(x.$1, x.$2, x.$3)[1]);
+  }
+
+  /// Opens a PowerPoint file as a new presentation: each slide's title, text
+  /// (one line per paragraph) and speaker notes.
+  Future<void> _importPptx([Uint8List? bytes, String? name]) async {
+    if (bytes == null) {
+      final r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['pptx'], withData: true);
+      final f = r?.files.firstOrNull;
+      if (f?.bytes == null) return;
+      bytes = f!.bytes!;
+      name = f.name;
+    }
+    try {
+      final slides = slidesFromPptx(bytes);
+      if (slides.isEmpty) throw const FormatException("The file has no slides.");
+      if (_open) await _close();
+      final title = (name ?? 'Imported presentation').replaceAll(RegExp(r'\.pptx$', caseSensitive: false), '');
+      final deck = await _db.from('presentations').insert({'title': title, 'owner_email': widget.userEmail, 'theme': 'classic|fade'}).select('id').single();
+      final id = deck['id'].toString();
+      await _db.from('presentation_slides').insert([
+        for (int i = 0; i < slides.length; i++)
+          {
+            'presentation_id': id,
+            'slide_order': i,
+            'title': slides[i]['title'],
+            'content': slides[i]['content'],
+            'layout': slides[i]['layout'],
+            'notes': slides[i]['notes'],
+          }
+      ]);
+      await _loadDecks();
+      await _openDeck(id);
+      _snack("Opened “$title” (${slides.length} slides). Save back with File › Download PowerPoint.");
+    } catch (e) {
+      _snack("Couldn't open this PowerPoint file: ${e is FormatException ? e.message : e}");
+    }
+  }
+
+  Future<void> _history(String id, String title) => showOfficeHistory(
+        context,
+        kind: 'slides',
+        fileId: id,
+        title: title,
+        currentContent: () => (_open && _deckId == id)
+            ? {
+                'theme': '$_theme|$_transition',
+                'slides': [
+                  for (final s in _slides) {'title': s.title, 'content': s.content, 'layout': s.layout, 'bg_color': s.bg, 'text_color': s.fg, 'notes': s.notes},
+                ],
+              }
+            : null,
+        onRestore: (v) async {
+          final c = Map<String, dynamic>.from(v['content'] as Map);
+          final list = List<Map<String, dynamic>>.from(((c['slides'] ?? []) as List).map((x) => Map<String, dynamic>.from(x as Map)));
+          if (_open && _deckId == id) _saveTimer?.cancel();
+          await _db.from('presentation_slides').delete().eq('presentation_id', id);
+          if (list.isNotEmpty) {
+            await _db.from('presentation_slides').insert([
+              for (int i = 0; i < list.length; i++) {...list[i], 'presentation_id': id, 'slide_order': i},
+            ]);
+          }
+          await _db.from('presentations').update({if (c['theme'] != null) 'theme': c['theme'], 'last_modified': DateTime.now().toIso8601String()}).eq('id', id);
+          if (_open && _deckId == id) await _openDeck(id);
+          await _loadDecks();
+          _snack("Version restored.");
+        },
+      );
 
   // ------------------------------------------------------------------
   // Hub
@@ -869,6 +1004,7 @@ class _PresentationScreenState extends State<PresentationScreen> {
             OfficeHubAction("New Presentation", Icons.add_to_photos, _kOrange, () => _create(_templates.first)),
             OfficeHubAction("Open Existing", Icons.folder_shared, Colors.blue, () => _snack("Pick a presentation from the list, or search for it.")),
             OfficeHubAction("Templates", Icons.style, Colors.green, _pickTemplate),
+            OfficeHubAction("Open a PowerPoint file (.pptx)", Icons.upload_file_rounded, Colors.indigo, () => _importPptx()),
           ],
           templates: _templates,
           onTemplate: _create,
@@ -886,6 +1022,9 @@ class _PresentationScreenState extends State<PresentationScreen> {
             OfficeMenuItem("Open", icon: Icons.open_in_new, onTap: () => _openDeck(d['id'].toString())),
             OfficeMenuItem("Rename", icon: Icons.drive_file_rename_outline, onTap: () => _renameDeck(d)),
             OfficeMenuItem("Make a copy", icon: Icons.copy_rounded, onTap: () => _duplicateDeck(d)),
+            OfficeMenuItem("Share…", icon: Icons.share_rounded, onTap: () => _shareFromList(d)),
+            OfficeMenuItem("Download PowerPoint (.pptx)", icon: Icons.slideshow_outlined, onTap: () => _pptxFromList(d)),
+            OfficeMenuItem("Version history", icon: Icons.history_rounded, onTap: () => _history(d['id'].toString(), (d['title'] ?? '').toString())),
             const OfficeMenuItem.divider(),
             OfficeMenuItem("Delete", icon: Icons.delete_outline, color: Colors.red.shade700, onTap: () => _deleteDeck(d)),
           ],
@@ -961,6 +1100,8 @@ class _PresentationScreenState extends State<PresentationScreen> {
             }),
             const OfficeRibbonGap(),
             a(Icons.picture_as_pdf_outlined, "Download PDF", _exportPdf),
+            a(Icons.slideshow_outlined, "Download PowerPoint", () => downloadAppFile(context, _formats(_slides, _titleC.text.trim(), _th)[1])),
+            a(Icons.history_rounded, "Version history", _deckId == null ? null : () => _history(_deckId!, _titleC.text)),
             a(Icons.share_rounded, "Share", _share, tip: "Send in My Home or to other apps"),
             a(Icons.print_outlined, "Print", _print, tip: "Ctrl+P"),
             const OfficeRibbonGap(),

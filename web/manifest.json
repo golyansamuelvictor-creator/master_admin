@@ -1,13 +1,25 @@
 {
-    "name": "master_admin",
-    "short_name": "master_admin",
+    "name": "Master Administration",
+    "short_name": "Master Admin",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#362170",
+    "description": "Master Administration System",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "launch_handler": { "client_mode": "focus-existing" },
+    "file_handlers": [
+        {
+            "action": "./",
+            "accept": {
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+                "text/csv": [".csv"]
+            }
+        }
+    ],
     "icons": [
         {
             "src": "icons/Icon-192.png",

@@ -22,6 +22,7 @@ import '../services/chat_service.dart';
 import '../services/profile_refresh.dart';
 import '../services/app_sounds.dart';
 import '../services/call_service.dart';
+import '../services/live_service.dart';
 import '../widgets/app_menus.dart';
 import 'package:master_admin/core/app_palette.dart';
 
@@ -915,6 +916,7 @@ class _ConversationViewState extends State<_ConversationView> {
   RealtimeChannel? _channel;
   bool _recordingVoice = false;
   final Map<String, int> _pollTicks = {};
+  Map<String, dynamic>? _live; // the group's live voice / video chat now
 
   void _rebuild() {
     if (mounted) setState(() {});
@@ -928,6 +930,7 @@ class _ConversationViewState extends State<_ConversationView> {
     _onlineNow.addListener(_rebuild);
     _ChatPrefs.changed.addListener(_rebuild);
     _load();
+    if (widget.room.isGroup) _loadLive();
     _scroll.addListener(() {
       if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 200) _loadOlder();
     });
@@ -953,6 +956,13 @@ class _ConversationViewState extends State<_ConversationView> {
           table: 'chat_members',
           filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'room_id', value: widget.room.id),
           callback: (_) => _loadPeople(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'live_chats',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'chat_room_id', value: widget.room.id),
+          callback: (_) => _loadLive(),
         )
         .onBroadcast(
           event: 'typing',
@@ -983,6 +993,30 @@ class _ConversationViewState extends State<_ConversationView> {
     _scroll.dispose();
     _focus.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadLive() async {
+    if (!widget.room.isGroup) return;
+    final l = await LiveService.current(widget.room.id);
+    if (mounted) setState(() => _live = l);
+  }
+
+  Future<void> _joinLive() async {
+    final l = _live;
+    if (l == null) return;
+    await LiveService.join(context, l['id'].toString(), title: widget.room.name);
+    _loadLive();
+  }
+
+  Future<void> _openRecording(String? id) async {
+    if (id == null || id.isEmpty) return;
+    try {
+      final url = await LiveService.recordingUrl(id);
+      if (url == null || url.isEmpty) return;
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text.rich(TextSpan(text: "$e"))));
+    }
   }
 
   Future<void> _load() async {
@@ -1338,12 +1372,16 @@ class _ConversationViewState extends State<_ConversationView> {
                 IconButton(
                   tooltip: tr(r.isGroup ? "Voice chat" : "Voice call"),
                   icon: Icon(Icons.call_rounded, color: AppPalette.fg(_kPurple)),
-                  onPressed: () => CallService.call(context, r.id, video: false, roomName: r.name),
+                  onPressed: () => r.isGroup
+                      ? LiveService.openFromGroup(context, r, video: false).then((_) => _loadLive())
+                      : CallService.call(context, r.id, video: false, roomName: r.name),
                 ),
                 IconButton(
                   tooltip: tr(r.isGroup ? "Video chat" : "Video call"),
                   icon: Icon(Icons.videocam_rounded, color: AppPalette.fg(_kPurple)),
-                  onPressed: () => CallService.call(context, r.id, video: true, roomName: r.name),
+                  onPressed: () => r.isGroup
+                      ? LiveService.openFromGroup(context, r, video: true).then((_) => _loadLive())
+                      : CallService.call(context, r.id, video: true, roomName: r.name),
                 ),
               ],
               IconButton(
@@ -1362,6 +1400,7 @@ class _ConversationViewState extends State<_ConversationView> {
             ]),
           ),
         ),
+        if (_live != null) _LiveBanner(live: _live!, onJoin: _joinLive),
         // Messages
         Expanded(
           child: _loading
@@ -1480,7 +1519,14 @@ class _ConversationViewState extends State<_ConversationView> {
                 onCall: () => CallService.call(context, widget.room.id,
                     video: m.content.contains('🎥'), roomName: widget.room.name),
               ),
-            if (m.content.isNotEmpty && m.kind != 'poll' && m.kind != 'location' && m.kind != 'call')
+            if (m.kind == 'live')
+              _LiveLine(
+                text: m.content,
+                live: _live != null && _live!['id'].toString() == (m.attachmentName ?? ''),
+                onJoin: _joinLive,
+              ),
+            if (m.kind == 'live_rec') _RecordingLine(text: m.content, onPlay: () => _openRecording(m.attachmentName)),
+            if (m.content.isNotEmpty && m.kind != 'poll' && m.kind != 'location' && m.kind != 'call' && m.kind != 'live' && m.kind != 'live_rec')
               Padding(
                 padding: EdgeInsets.only(top: m.hasAttachment ? 6 : 0),
                 child: SelectableText(m.content, style: GoogleFonts.merriweather(fontSize: _ChatPrefs.textSize, height: 1.35, color: AppPalette.fg(Colors.black87))),
@@ -1948,6 +1994,111 @@ class _InviteLinksDialogState extends State<_InviteLinksDialog> {
               ),
       ),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close"))],
+    );
+  }
+}
+
+/// "Live now · Join" under a group's header while a live chat is on.
+class _LiveBanner extends StatelessWidget {
+  final Map<String, dynamic> live;
+  final VoidCallback onJoin;
+  const _LiveBanner({required this.live, required this.onJoin});
+  @override
+  Widget build(BuildContext context) {
+    final video = live['kind'] == 'video';
+    final title = (live['title'] ?? '').toString();
+    final rec = (live['recording'] ?? 'off') != 'off';
+    return Material(
+      color: AppPalette.bg(const Color(0xFFF5F3FF)),
+      child: InkWell(
+        onTap: onJoin,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
+          child: Row(children: [
+            Icon(video ? Icons.videocam_rounded : Icons.graphic_eq_rounded, color: AppPalette.fg(_kPurple), size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(video ? "Video chat" : "Voice chat", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(_kPurple))),
+                Text.rich(TextSpan(text: "${title.isEmpty ? tr('Live now') : title}${rec ? ' · ● ${tr('Recording')}' : ''}"),
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade700))),
+              ]),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: _kPurple, visualDensity: VisualDensity.compact),
+              onPressed: onJoin,
+              child: const Text("Join"),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// "🎙 Voice chat started" / "… ended · 40 min" in a group's history.
+class _LiveLine extends StatelessWidget {
+  final String text;
+  final bool live;
+  final VoidCallback onJoin;
+  const _LiveLine({required this.text, required this.live, required this.onJoin});
+  @override
+  Widget build(BuildContext context) {
+    final video = text.contains('🎥');
+    final label = text.replaceAll('🎙 ', '').replaceAll('🎥 ', '');
+    return InkWell(
+      onTap: live ? onJoin : null,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: AppPalette.bg(_kPurple.withValues(alpha: 0.12)),
+            child: Icon(video ? Icons.videocam_rounded : Icons.graphic_eq_rounded, size: 17, color: AppPalette.fg(_kPurple)),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text.rich(TextSpan(text: label), style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
+              if (live) Text("Live now · tap to join", style: TextStyle(fontSize: 11, color: AppPalette.fg(const Color(0xFF16A34A)))),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// A live chat's recording, kept in R2: tap to play or download.
+class _RecordingLine extends StatelessWidget {
+  final String text;
+  final VoidCallback onPlay;
+  const _RecordingLine({required this.text, required this.onPlay});
+  @override
+  Widget build(BuildContext context) {
+    final audio = text.contains('🎧');
+    final label = text.replaceAll('🎧 ', '').replaceAll('🎬 ', '');
+    return InkWell(
+      onTap: onPlay,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: AppPalette.bg(_kPurple),
+            child: const Icon(Icons.play_arrow_rounded, size: 22, color: Colors.white),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text.rich(TextSpan(text: label), style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87))),
+              Text(audio ? "Audio recording · tap to play" : "Video recording · tap to play", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 }

@@ -244,6 +244,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         _infoCard("Date of Birth", d['dob']),
         _infoCard("Nationality", d['nationality']),
         _infoCard("Marital Status", d['marital_status']),
+        if (d['official'] == true) _infoCard("Dubai Official", "Yes"),
         _infoCard("Physical Health", d['health_status']),
       ]),
       _buildSection("Church Alignment", Icons.account_tree_rounded, _navy, [

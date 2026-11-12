@@ -111,6 +111,25 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   Map<String, dynamic>? _roleMetadata;
   bool _dualModeIsChurch = true;
+  /// Dubai Official (members.official): counted on their own. 'exclude' =
+  /// Uganda Church / Dubai without them (the default), 'only' = Dubai Official.
+  String _official = 'exclude';
+
+  /// A department leader of the main sub-location (named like its location,
+  /// e.g. Mukono › Mukono) oversees the department in every sub-location.
+  bool get _isMainDeptLeader {
+    String n(String x) => x.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9가-힣]'), '');
+    return !_isTeamLeader && n(widget.sub).isNotEmpty && n(widget.sub) == n(widget.loc);
+  }
+
+  bool get _isDubaiLeader {
+    final l = widget.loc.toLowerCase();
+    return l.contains('dubai') || l.contains('uae');
+  }
+
+  /// Who gets the Dubai Official view: the dual-view roles (third button),
+  /// Dubai's leaders and the church-wide compilers.
+  bool get _hasOfficialView => _hasDualModeForCurrentDuty || _isDubaiLeader || _isChurchWideCompiler;
 
   String get _scope {
     final s = (_roleMetadata?['approval_scope'] ?? '').toString().trim();
@@ -151,7 +170,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
   /// Who is looking and through which scope; part of every cache key.
   String get _scopeKey => [
         widget.role, widget.loc, widget.sub, widget.dept, widget.team, widget.userUnit,
-        _dualModeIsChurch, _roleMetadata?['official_dept_id'],
+        _dualModeIsChurch, _official, _roleMetadata?['official_dept_id'],
         _sel('loc'), _sel('sub'), _sel('dept'), _sel('team'),
       ].join('|');
 
@@ -922,7 +941,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') {
             q = q.eq(locCol, widget.loc);
           }
-          if (_isSubLocationLeader || _isDeptLeader || _isTeamLeader) {
+          if (_isSubLocationLeader || (_isDeptLeader && !_isMainDeptLeader) || _isTeamLeader) {
             if (widget.sub.isNotEmpty && widget.sub != 'N/A') q = q.eq(subCol, widget.sub);
           }
           if (_isDeptLeader || _isTeamLeader) {
@@ -934,6 +953,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
           if (_isCellLeader) {
             if (widget.userUnit.isNotEmpty) q = q.eq(cellCol, widget.userUnit);
           }
+        }
+
+        // Dubai Official: on their own, or left out of everything else
+        if (!isBBTable) {
+          final col = isMembersTable ? 'official' : 'members.official';
+          q = _official == 'only' ? q.eq(col, true) : q.not(col, 'is', true);
         }
 
         // Picker selections (only the pickers visible at this level)
@@ -1035,7 +1060,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         }
       } else if (!_isChurchWideCompiler) {
         if (widget.loc.isNotEmpty && widget.loc != 'Church' && widget.loc != 'N/A') mQuery = mQuery.eq('location', widget.loc);
-        if (_isSubLocationLeader || _isDeptLeader || _isTeamLeader) {
+        if (_isSubLocationLeader || (_isDeptLeader && !_isMainDeptLeader) || _isTeamLeader) {
           if (widget.sub.isNotEmpty && widget.sub != 'N/A') mQuery = mQuery.eq('sub_location', widget.sub);
         }
         if (_isDeptLeader || _isTeamLeader) {
@@ -1048,6 +1073,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
           if (widget.userUnit.isNotEmpty) mQuery = mQuery.eq('cell_group', widget.userUnit);
         }
       }
+
+      mQuery = _official == 'only' ? mQuery.eq('official', true) : mQuery.not('official', 'is', true);
 
       if (pickers.contains('loc') && _sel('loc').isNotEmpty) {
         mQuery = _sel('loc') == CompLevel.mou ? mQuery.eq('department', CompLevel.mou) : mQuery.eq('location', _sel('loc'));
@@ -1681,7 +1708,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       }
     } else if (!_isChurchWideCompiler) {
       if (ok(widget.loc)) eq('location', widget.loc);
-      if ((_isSubLocationLeader || _isDeptLeader || _isTeamLeader) && ok(widget.sub)) eq('sub_location', widget.sub);
+      if ((_isSubLocationLeader || (_isDeptLeader && !_isMainDeptLeader) || _isTeamLeader) && ok(widget.sub)) eq('sub_location', widget.sub);
       if ((_isDeptLeader || _isTeamLeader) && ok(widget.dept)) eq('department', widget.dept);
       if (_isTeamLeader && ok(widget.team)) eq('team', widget.team);
       if (_isCellLeader && widget.userUnit.isNotEmpty) eq('cell_group', widget.userUnit);
@@ -2820,7 +2847,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
             child: Column(children: [
-              if (_hasDualModeForCurrentDuty) ...[
+              if (_hasOfficialView) ...[
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -2831,53 +2858,28 @@ class _CompilationEngineState extends State<CompilationEngine> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_getDualModeTitle(), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
+                      Text(_hasDualModeForCurrentDuty ? _getDualModeTitle() : (_isDubaiLeader ? "Dubai" : "Reports"),
+                          style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
                       const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _dualModeIsChurch = true;
-                                  _setHierarchy();
-                                });
-                                _fetchData();
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: AppPalette.bg(_dualModeIsChurch ? pPurple : Colors.white),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(_isTheologyDept ? "Across locations" : "Church Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_dualModeIsChurch ? Colors.white : Colors.black87))),
-                              ),
-                            ),
-                          ),
+                      Row(children: [
+                        if (_hasDualModeForCurrentDuty) ...[
+                          _modeBtn(_isTheologyDept ? "Across locations" : "Uganda Church", _dualModeIsChurch && _official != 'only', () {
+                            _dualModeIsChurch = true;
+                            _official = 'exclude';
+                          }),
                           const SizedBox(width: 6),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _dualModeIsChurch = false;
-                                  _setHierarchy();
-                                });
-                                _fetchData();
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: AppPalette.bg(!_dualModeIsChurch ? pPurple : Colors.white),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(_isTheologyDept ? "Church level" : "Dept Reports", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(!_dualModeIsChurch ? Colors.white : Colors.black87))),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                          _modeBtn(_isTheologyDept ? "Church level" : "Church (24 Depts)", !_dualModeIsChurch, () {
+                            _dualModeIsChurch = false;
+                            _official = 'exclude';
+                          }),
+                        ] else
+                          _modeBtn(_isDubaiLeader ? "Dubai" : "Uganda Church", _official != 'only', () => _official = 'exclude'),
+                        const SizedBox(width: 6),
+                        _modeBtn("Dubai Official", _official == 'only', () {
+                          _dualModeIsChurch = true;
+                          _official = 'only';
+                        }),
+                      ]),
                     ],
                   ),
                 ),
@@ -3242,6 +3244,29 @@ class _CompilationEngineState extends State<CompilationEngine> {
       ),
     );
   }
+
+  /// One button of the report views (Uganda Church / Church (24 Depts) /
+  /// Dubai Official …).
+  Widget _modeBtn(String label, bool on, VoidCallback pick) => Expanded(
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              pick();
+              _setHierarchy();
+            });
+            _fetchData();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: AppPalette.bg(on ? pPurple : Colors.white),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            alignment: Alignment.center,
+            child: Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(on ? Colors.white : Colors.black87))),
+          ),
+        ),
+      );
 
   Widget _bentoNavCard(String t, List<String> items, String cur, Function(String) onS) => Container(
     margin: const EdgeInsets.only(bottom: 2),

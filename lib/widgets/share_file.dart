@@ -7,6 +7,8 @@ import 'package:share_plus/share_plus.dart';
 import '../core/app_palette.dart';
 import '../core/i18n.dart';
 import '../services/chat_service.dart';
+import '../core/security.dart';
+import '../core/save_bytes.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -40,6 +42,8 @@ Future<void> shareAppFile(
   );
   if (how == null || !context.mounted) return;
   if (how == 'apps') {
+    // out of the app = a download: church secretaries only
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final bytes = await build();
       await SharePlus.instance.share(ShareParams(
@@ -146,5 +150,60 @@ class _ChatPickerState extends State<_ChatPicker> {
         ),
       ],
     );
+  }
+}
+
+/// One way to send a file: label, file name, type and how to make it.
+class ShareFormat {
+  final String label;
+  final IconData icon;
+  final String fileName;
+  final String mime;
+  final Future<Uint8List> Function() build;
+  const ShareFormat(this.label, this.icon, this.fileName, this.mime, this.build);
+}
+
+/// Asks which format (when there are several), then shares it.
+Future<void> shareAppFileAs(BuildContext context, List<ShareFormat> formats, {String? caption}) async {
+  if (formats.isEmpty) return;
+  var f = formats.first;
+  if (formats.length > 1) {
+    final pick = await showModalBottomSheet<ShareFormat>(
+      context: context,
+      backgroundColor: AppPalette.bg(Colors.white),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text("Send as", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(_kPurple))),
+            const SizedBox(height: 10),
+            for (final x in formats)
+              ListTile(
+                leading: Icon(x.icon, color: AppPalette.fg(_kPurple)),
+                title: Text(x.label, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold)),
+                subtitle: Text.rich(TextSpan(text: x.fileName), style: const TextStyle(fontSize: 12)),
+                onTap: () => Navigator.pop(ctx, x),
+              ),
+          ]),
+        ),
+      ),
+    );
+    if (pick == null) return;
+    f = pick;
+  }
+  if (!context.mounted) return;
+  await shareAppFile(context, fileName: f.fileName, build: f.build, mime: f.mime, caption: caption);
+}
+
+/// Downloads a file made in the app (church secretaries only).
+Future<void> downloadAppFile(BuildContext context, ShareFormat f) async {
+  if (!await AppSecurity.checkExport(context)) return;
+  try {
+    final bytes = await f.build();
+    await saveBytesAs(bytes, f.fileName, f.mime);
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Downloaded: ${f.fileName}")));
+  } catch (e) {
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't make the file: $e")));
   }
 }

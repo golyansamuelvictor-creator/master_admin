@@ -9,6 +9,7 @@ import 'dart:math' as math;
 import 'entry_form_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'package:master_admin/core/offering_categories.dart';
+import 'package:master_admin/core/compilation_rules.dart';
 
 class CellStatusScreen extends StatefulWidget {
   final String sheetName, cellName, initialMode, location, subLocation, dept, team;
@@ -140,10 +141,21 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
             .gte('report_date', DateFormat('yyyy-MM-dd').format(_customRange!.start))
             .lte('report_date', DateFormat('yyyy-MM-dd').format(_customRange!.end));
       } else {
-        query = query.eq('report_date', DateFormat('yyyy-MM-dd').format(now));
+        // current status: the latest session of the last 7 days (on a
+        // weekday, Sunday's service; before: today only, often empty)
+        query = query
+            .gte('report_date', DateFormat('yyyy-MM-dd').format(now.subtract(const Duration(days: 7))))
+            .lte('report_date', DateFormat('yyyy-MM-dd').format(now));
       }
 
-      final logRes = await query;
+      var logRes = await query;
+      if (_selectedFilter != "Weekly status" && _selectedFilter != "Monthly status" && _selectedFilter != "Custom period" && logRes.isNotEmpty) {
+        final daily = _getTableName().contains('evangelism') || _getTableName().contains('morning_light') || _getTableName().contains('participation');
+        if (!daily) {
+          final last = logRes.map((l) => (l['report_date'] ?? '').toString()).reduce((a, b) => a.compareTo(b) >= 0 ? a : b);
+          logRes = logRes.where((l) => (l['report_date'] ?? '').toString() == last).toList();
+        }
+      }
       if (mounted) setState(() { _logs = logRes; _isLoading = false; });
     } catch (e) { 
       debugPrint("Cell Dashboard Error: $e");
@@ -158,6 +170,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
     if (widget.sheetName.contains('Evangelism')) return 'logs_evangelism';
     if (widget.sheetName.contains('Visitations')) return 'logs_visitations';
     if (widget.sheetName.contains('Workers Education')) return 'logs_workers_education';
+    if (widget.sheetName.contains('Daily Participation')) return 'logs_workers_participation';
     if (widget.sheetName.contains('Morning Light')) return 'logs_morning_light';
     if (widget.sheetName.contains('All Saints Education')) return 'logs_all_saints_education';
     return 'logs_service_attendance_status';
@@ -220,7 +233,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
     else if (d.contains('Offering')) h = ["Period", "Saints", "Tithe", "%", "Weekly", "%", "Thanks", "%", "Const", "%", "Donat", "%"];
     else if (d.contains('Evangelism')) h = ["Period", "Saints", "Mon", "%", "Tue", "%", "Wed", "%", "Thu", "%", "Fri", "%", "Sat", "%", "Sun", "%"];
     else if (d.contains('Morning Light')) h = ["Period", "Saints", "Mon", "%", "Tue", "%", "Wed", "%", "Thu", "%", "Fri", "%"];
-    else if (d == 'All Saints Education') h = ["Period", "Saints", "Attended", "%", "In-p", "%", "Onl", "%", "M-up", "%", "Abs", "%"];
+    else if (d == 'All Saints Education' || d.contains('Workers Education') || d.contains('Daily Participation')) h = ["Period", "Saints", "Attended", "%", "In-p", "%", "Onl", "%", "M-up", "%", "Abs", "%"];
     else if (d.contains('Visitations')) h = ["Period", "Saints", "Visited", "Counselled", "Positive", "Negative"];
     else h = ["Period", "Saints", "Total", "%"];
 
@@ -246,37 +259,79 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
     });
   }
 
+  /// in-person / online / make-up / absent, from any duty's answer
+  /// ("CS Online", "ASE Make Up", "Absentee", "WE Missed" …)
+  static String _kindOf(dynamic v) {
+    final s = CompStatus.norm(v);
+    if (s.isEmpty) return '';
+    if (CompStatus.isNegative(v)) return 'abs';
+    if (s.contains('online') || s.contains('on-line') || s.contains('on line')) return 'onl';
+    if (s.contains('make')) return 'mu';
+    return 'ip';
+  }
+
   List<DataCell> _processRestoredCells(List<String> h, double cellW) {
     int tot = _totalMembers == 0 ? 1 : _totalMembers;
+    // several sessions in the period (weekly / monthly): the average per session
+    final sessions = {for (final l in _logs) (l['report_date'] ?? '').toString()}..remove('');
+    final n = sessions.length > 1 ? sessions.length : 1;
+    String fmt(num v) => v == v.roundToDouble() ? v.round().toString() : v.toStringAsFixed(1);
     List<DataCell> cells = [];
     void addC(String t, {Color? c, bool isP = false, bool isBold = false}) {
-      String text = isP ? "${tot > 0 ? (double.parse(t)/tot*100).toStringAsFixed(1) : 0}%" : t;
+      final v = double.tryParse(t) ?? 0;
+      String text = isP ? "${(v / tot * 100).toStringAsFixed(1)}%" : t;
       cells.add(DataCell(SizedBox(width: cellW, child: Center(child: Text(text, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: isP || isBold ? FontWeight.bold : FontWeight.w500, color: AppPalette.fg(c ?? Colors.black87)))))));
     }
+    void pair(num count, {Color? c}) {
+      final v = fmt(count / n);
+      addC(v, c: c);
+      addC(v, isP: true, c: c);
+    }
+    // one answer per member and session (the latest entry wins)
+    Map<String, String> kinds(String field) {
+      final out = <String, String>{};
+      for (final l in _logs) {
+        final k = _kindOf(l[field]);
+        if (k.isNotEmpty) out["${l['member_id']}|${l['report_date']}"] = k;
+      }
+      return out;
+    }
 
-    addC(_selectedFilter); addC("$tot");
+    addC(n > 1 ? "$_selectedFilter (avg of $n)" : _selectedFilter);
+    addC("$tot");
 
     String d = widget.sheetName;
     if (d == 'Service Attendance Status') {
-      int att = _logs.where((l) => l['attendance_realtime'] != 'Absentee').length;
-      int ip = _count('attendance_realtime', 'In-person'), on = _count('attendance_realtime', 'On-line');
-      addC("$att"); addC("$att", isP: true, c: pPurple); addC("$ip"); addC("$ip", isP: true); addC("$on"); addC("$on", isP: true); addC("${tot - att}", c: Colors.red); addC("${tot - att}", isP: true, c: Colors.red);
+      final k = kinds('attendance_realtime');
+      final ip = k.values.where((x) => x == 'ip').length, on = k.values.where((x) => x == 'onl').length, mu = k.values.where((x) => x == 'mu').length;
+      final att = ip + on + mu;
+      pair(att, c: pPurple);
+      pair(ip);
+      pair(on);
+      final abs = math.max(0, tot * n - att);
+      pair(abs, c: Colors.red);
       if (_isExpanded) {
-        addC("${_logs.where((l) => l['geo_category'] == 'Kampala' && l['attendance_realtime'] != 'Absentee').length}");
+        addC("${_logs.where((l) => l['geo_category'] == 'Kampala' && _kindOf(l['attendance_realtime']) != 'abs').length}");
         addC("${_logs.where((l) => l['geo_category'] == 'Kampala' && l['attendance_makeup'] != null).length}");
-        addC("${_logs.where((l) => l['geo_category'] == 'Village' && l['attendance_realtime'] != 'Absentee').length}");
-        addC("${_logs.where((l) => l['geo_category'] == 'Abroad' && l['attendance_realtime'] != 'Absentee').length}");
+        addC("${_logs.where((l) => l['geo_category'] == 'Village' && _kindOf(l['attendance_realtime']) != 'abs').length}");
+        addC("${_logs.where((l) => l['geo_category'] == 'Abroad' && _kindOf(l['attendance_realtime']) != 'abs').length}");
       }
-    } 
-    else if (d == 'All Saints Education') {
-      int ip = _count('status_detail', 'ASE In-person'), on = _count('status_detail', 'ASE Online'), mu = _count('status_detail', 'ASE Make Up'), ab = _count('status_detail', 'ASE Absence'), att = ip + on + mu;
-      addC("$att"); addC("$att", isP: true); addC("$ip"); addC("$ip", isP: true); addC("$on"); addC("$on", isP: true); addC("$mu"); addC("$mu", isP: true); addC("$ab", c: Colors.red); addC("$ab", isP: true, c: Colors.red);
+    }
+    else if (d == 'Cell Group Service' || d == 'All Saints Education' || d.contains('Workers Education') || d.contains('Daily Participation')) {
+      final k = kinds('status_detail');
+      final ip = k.values.where((x) => x == 'ip').length, on = k.values.where((x) => x == 'onl').length, mu = k.values.where((x) => x == 'mu').length;
+      final att = ip + on + mu;
+      pair(att, c: pPurple);
+      pair(ip);
+      pair(on);
+      pair(mu);
+      pair(math.max(0, tot * n - att), c: Colors.red);
     }
     else if (d.contains('Visitations')) {
       int v = _logs.where((l) => l['visitation_reason'] == _visitCategory).length;
       int couns = _logs.where((l) => ["Education", "LTA"].contains(l['visitation_reason'])).length;
-      int pos = _logs.where((l) => l['visitation_reason'] == _visitCategory && l['status_detail'] == "Positive").length;
-      int neg = _logs.where((l) => l['visitation_reason'] == _visitCategory && l['status_detail'] == "Negative").length;
+      int pos = _logs.where((l) => l['visitation_reason'] == _visitCategory && CompStatus.isPositive(l['status_detail'] ?? l['result'])).length;
+      int neg = _logs.where((l) => l['visitation_reason'] == _visitCategory && CompStatus.isNegative(l['status_detail'] ?? l['result'])).length;
       addC("$v"); addC("$couns"); addC("$pos"); addC("$neg", c: Colors.red);
     }
     else if (d.contains('Offering')) {
@@ -284,14 +339,22 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
         int count = _paidCount(k); addC("$count"); addC("$count", isP: true);
       }
     }
-    else if (d.contains('Evangelism')) {
-      for (var day in ['mon_part', 'tue_part', 'wed_part', 'thu_part', 'fri_part', 'sat_part', 'sun_part']) {
-        int count = _count(day, 'Evangelised'); addC("$count"); addC("$count", isP: true);
-      }
-    }
-    else if (d.contains('Morning Light')) {
-      for (var day in ['mon_ml', 'tue_ml', 'wed_ml', 'thu_ml', 'fri_ml']) {
-        int count = _count(day, 'ML Did'); addC("$count"); addC("$count", isP: true);
+    else if (d.contains('Evangelism') || d.contains('Morning Light')) {
+      // one row per member and day: evang_day / ml_day + the answer
+      final ml = d.contains('Morning Light');
+      final days = ml ? const ['mon', 'tue', 'wed', 'thu', 'fri'] : const ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      final weeks = {for (final l in _logs) (DateTime.tryParse((l['report_date'] ?? '').toString()) ?? DateTime(2000)).difference(DateTime(2000, 1, 3)).inDays ~/ 7}.length;
+      for (final day in days) {
+        final who = <String>{};
+        for (final l in _logs) {
+          final dd = (l[ml ? 'ml_day' : 'evang_day'] ?? '').toString().trim().toLowerCase();
+          final legacy = l['${day}_${ml ? 'ml' : 'part'}'];
+          final done = dd.isNotEmpty ? (dd.startsWith(day) && CompStatus.isPositive(l['status_detail'])) : CompStatus.isPositive(legacy);
+          if (done) who.add("${l['member_id']}|${l['report_date']}");
+        }
+        final v = fmt(who.length / (weeks > 1 ? weeks : 1));
+        addC(v);
+        addC(v, isP: true);
       }
     }
     else {

@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:excel/excel.dart';
+import 'security.dart';
 
 class ExportLogic {
   
@@ -41,6 +42,7 @@ class ExportLogic {
       ),
     );
 
+    if (!await AppSecurity.canExport()) return; // church secretaries only
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 

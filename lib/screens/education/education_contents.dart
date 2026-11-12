@@ -1024,6 +1024,8 @@ class EducationHomeCard extends StatefulWidget {
 }
 
 class _EducationHomeCardState extends State<EducationHomeCard> {
+  // kept between visits to Home, so the card shows at once and refreshes quietly
+  static Map<String, dynamic>? _cache;
   List<String> _cats = const [];
   Map<String, List<Map<String, dynamic>>> _latest = {};
   bool _show = false;
@@ -1031,31 +1033,32 @@ class _EducationHomeCardState extends State<EducationHomeCard> {
   @override
   void initState() {
     super.initState();
+    if (_cache != null) _apply(_cache!);
     _load();
   }
 
+  void _apply(Map<String, dynamic> r) {
+    final cats = r['categories'];
+    final by = <String, List<Map<String, dynamic>>>{};
+    for (final x in (r['items'] as List? ?? const [])) {
+      final m = Map<String, dynamic>.from(x as Map);
+      by.putIfAbsent(m['category'].toString(), () => []).add(m);
+    }
+    for (final v in by.values) {
+      v.sort((a, b) => b['content_date'].toString().compareTo(a['content_date'].toString()));
+    }
+    _cats = cats is List && cats.isNotEmpty ? List<String>.from(cats) : EduContents.fallback;
+    _latest = by;
+    _show = r['show'] == true;
+  }
+
+  /// One request (leader check, kinds and latest contents together).
   Future<void> _load() async {
     try {
-      final db = Supabase.instance.client;
-      final leader = (await db.rpc('is_leader')) == true;
-      if (!leader) return;
-      final cats = await EduContents.categories();
-      final r = await db.rpc('edu_latest', params: {'p_per': 4});
-      final by = <String, List<Map<String, dynamic>>>{};
-      for (final x in (r as List)) {
-        final m = Map<String, dynamic>.from(x as Map);
-        by.putIfAbsent(m['category'].toString(), () => []).add(m);
-      }
-      for (final v in by.values) {
-        v.sort((a, b) => b['content_date'].toString().compareTo(a['content_date'].toString()));
-      }
-      if (mounted) {
-        setState(() {
-          _cats = cats;
-          _latest = by;
-          _show = true;
-        });
-      }
+      final r = await Supabase.instance.client.rpc('edu_home', params: {'p_per': 4});
+      final m = Map<String, dynamic>.from(r as Map);
+      _cache = m;
+      if (mounted) setState(() => _apply(m));
     } catch (_) {}
   }
 
@@ -1096,14 +1099,11 @@ class _EducationHomeCardState extends State<EducationHomeCard> {
   Widget _tile(String c) {
     final color = EduContents.color(c);
     final items = _latest[c] ?? const <Map<String, dynamic>>[];
-    // raised tile; its newest titles keep moving up (as Quick Reminders)
+    // flat tile (the card around it is raised); its newest titles keep moving up
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.22), blurRadius: 14, spreadRadius: -3, offset: const Offset(0, 7)),
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 2, offset: const Offset(0, 1)),
-        ],
+        border: Border.all(color: AppPalette.line(color.withValues(alpha: 0.25))),
       ),
       child: Material(
         color: AppPalette.bg(Color.alphaBlend(color.withValues(alpha: 0.07), Colors.white)),

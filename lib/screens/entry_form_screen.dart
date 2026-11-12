@@ -25,6 +25,7 @@ import '../core/compilation_rules.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../widgets/app_menus.dart';
 import 'asmis_screens.dart';
+import '../core/offline.dart';
 
 class EntryFormScreen extends StatefulWidget {
   final String sheetName, cellName, location, subLocation, dept, team;
@@ -240,7 +241,57 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   // counters refresh shortly after the typing pauses.
   DateTime _lastHistory = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _refreshTimer;
+
+  // ---- Offline: unsaved entries kept on the device, form lists cached ----
+  Timer? _draftTimer;
+
+  String get _unitLabel => widget.cellName.isNotEmpty && widget.cellName != "N/A"
+      ? widget.cellName
+      : (widget.team.isNotEmpty && widget.team != "N/A" ? widget.team : (widget.dept.isNotEmpty && widget.dept != "N/A" ? widget.dept : widget.location));
+
+  String get _draftKey => _isBB
+      ? 'draft|bb|${widget.cellName}'
+      : 'draft|${_getTargetTable()}|${widget.location}|${widget.subLocation}|$_unitLabel|${DateFormat('yyyy-MM-dd').format(selectedDate)}|${_hasDayToggle ? _selectedDay : ''}';
+
+  String get _baseKey => 'formbase|${widget.sheetName}|${widget.location}|${widget.subLocation}|${widget.dept}|${widget.team}|${widget.cellName}|${widget.userRole}';
+
+  /// Every change is kept on this device (2 s after typing stops), so
+  /// nothing is lost if the connection or the app closes before saving.
+  void _scheduleDraft() {
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(seconds: 2), () {
+      final filled = <String, dynamic>{};
+      reportData.forEach((k, v) {
+        if (v.isNotEmpty) filled[k] = v;
+      });
+      LocalStore.put(_draftKey, filled.isEmpty ? null : {'at': DateTime.now().toIso8601String(), 'data': filled});
+    });
+  }
+
+  /// Puts back entries kept on this device that were not saved yet.
+  Future<void> _restoreDraft() async {
+    final d = await LocalStore.get(_draftKey);
+    if (d is! Map || d['data'] is! Map || !mounted) return;
+    int n = 0;
+    setState(() {
+      (d['data'] as Map).forEach((k, v) {
+        final id = k.toString();
+        if (!reportData.containsKey(id) || v is! Map) return;
+        reportData[id] = {...reportData[id]!, ...Map<String, dynamic>.from(v)};
+        n++;
+      });
+    });
+    if (n > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: Colors.orange.shade800,
+        content: Text("$n unsaved entr${n == 1 ? 'y was' : 'ies were'} kept on this device and put back. Tap Save to send them."),
+        duration: const Duration(seconds: 4),
+      ));
+    }
+  }
+
   void _recordHistory({bool force = false}) {
+    _scheduleDraft();
     final now = DateTime.now();
     final burst = !force && now.difference(_lastHistory) < const Duration(milliseconds: 900);
     _lastHistory = now;
@@ -386,8 +437,16 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       // at church level, whatever location their own profile is in.
       final bool is24Dept = grouping.startsWith('24-Dept') && !isCellWorker && !isTeamWorker;
       final bool isLocWorker = !is24Dept && (isLocRole || hasLocationUnits);
+      // a location's 24부서 (its church departments' members): the person they
+      // chose as cell leader enters for all of them, across the sub-locations
+      final d24 = widget.dept.replaceAll(RegExp(r'\s'), '').toLowerCase();
+      final bool is24Bu = d24 == '24부서' || d24 == '24dept' || d24 == '24depts' || d24 == '24departments';
 
-      if (isLocWorker) {
+      if (isLocWorker && is24Bu && (widget.cellName.isEmpty || widget.cellName == 'N/A')) {
+        query = query.eq('department', widget.dept);
+        if (widget.location.isNotEmpty && widget.location != 'N/A' && locLower != 'church') query = query.eq('location', widget.location);
+        if (isWorkersSheet) query = query.neq('duty', '구역원').not('duty', 'is', null).neq('duty', '');
+      } else if (isLocWorker) {
         if (isWorkersSheet) {
           if (isTeamWorker || (widget.team.isNotEmpty && widget.team != 'N/A')) {
             query = query.eq('team', widget.team);
@@ -562,6 +621,8 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
         tempOpts.putIfAbsent(opt['field_key'].toString().trim(), () => []).add(opt['option_label'].toString());
       }
 
+      // kept on this device: the form still opens without a connection
+      unawaited(LocalStore.put(_baseKey, {'members': shown, 'options': tempOpts}));
       if (mounted) {
         setState(() {
           members = shown;
@@ -575,9 +636,30 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           }
           isLoading = false;
         });
+        await _restoreDraft();
       }
     } catch (e) {
       debugPrint("Entry Initial Load Error: $e");
+      // no connection: the list saved on this device the last time
+      final base = isNetworkError(e) ? await LocalStore.get(_baseKey) : null;
+      if (base is Map && base['members'] is List && mounted) {
+        setState(() {
+          members = [for (final m in base['members'] as List) Map<String, dynamic>.from(m as Map)];
+          dynamicOptions = {
+            for (final o in Map<String, dynamic>.from((base['options'] ?? {}) as Map).entries) o.key: List<String>.from(o.value as List),
+          };
+          reportData = {for (var m in members) m['id'].toString(): {}};
+          isLoading = false;
+        });
+        await _restoreDraft();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("No connection: you can still fill in the form. Saving keeps it on this device and sends it when the connection is back."),
+            duration: Duration(seconds: 5),
+          ));
+        }
+        return;
+      }
       if (mounted) setState(() => isLoading = false);
     }
   }
@@ -619,14 +701,16 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       }
 
       try {
-        await supabase.from('bb_students').upsert(studentRows, onConflict: 'id');
+        final sent = await Outbox.submit(table: 'bb_students', rows: studentRows, onConflict: 'id', label: "BB File · ${widget.cellName}", draftKey: _draftKey);
         if (mounted) {
-          setState(() => _saveStatus = "Saved");
+          setState(() => _saveStatus = sent ? "Saved" : "Kept");
           await Future.delayed(const Duration(seconds: 1));
           if (mounted) {
             setState(() => _saveStatus = "Save");
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(backgroundColor: Colors.green[800], content: const Text("BB Students saved successfully!")),
+              sent
+                  ? SnackBar(backgroundColor: Colors.green[800], content: const Text("BB Students saved successfully!"))
+                  : _keptSnack(),
             );
           }
         }
@@ -741,63 +825,38 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
 
     try {
       debugPrint("Saving ${logRows.length} rows to ${_getTargetTable()}");
+      // the unique key each table is saved by (member + date (+ day))
+      String? onConflict;
       if (isServiceAttendance) {
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date,service_day',
-          defaultToNull: false,
-        );
+        onConflict = 'member_id,report_date,service_day';
       } else if (isAllSaintsEdu) {
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date,education_day',
-          defaultToNull: false,
-        );
-      } else if (isCellService) {
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date',
-          defaultToNull: false,
-        );
+        onConflict = 'member_id,report_date,education_day';
+      } else if (isCellService || isVisitations || widget.sheetName == 'Offering Status' || widget.sheetName == 'Offering') {
+        onConflict = 'member_id,report_date';
       } else if (_isMorningLight) {
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date,ml_day',
-          defaultToNull: false,
-        );
+        onConflict = 'member_id,report_date,ml_day';
       } else if (_isWorkersEducation) {
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date,edu_day',
-          defaultToNull: false,
-        );
+        onConflict = 'member_id,report_date,edu_day';
       } else if (_isWorkersParticipation) {
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date,part_day',
-          defaultToNull: false,
-        );
+        onConflict = 'member_id,report_date,part_day';
       } else if (_isEvangelism) {
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date,evang_day',
-          defaultToNull: false,
-        );
-      } else if (isVisitations) {
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date',
-          defaultToNull: false,
-        );
-      } else if (widget.sheetName == 'Offering Status' || widget.sheetName == 'Offering') {
-        // Needs the unique key from 02_schema_fixes.sql; without it every save added new rows
-        await supabase.from(_getTargetTable()).upsert(
-          logRows,
-          onConflict: 'member_id,report_date',
-          defaultToNull: false,
-        );
-      } else {
-        await supabase.from(_getTargetTable()).upsert(logRows, defaultToNull: false);
+        onConflict = 'member_id,report_date,evang_day';
+      }
+      // sent now, or kept on this device until the connection is back
+      final sent = await Outbox.submit(
+        table: _getTargetTable(),
+        rows: logRows,
+        onConflict: onConflict,
+        defaultToNull: false,
+        label: "${widget.sheetName} · $unitName · $dateStr${_hasDayToggle ? ' ($_selectedDay)' : ''}",
+        draftKey: _draftKey,
+      );
+      if (!sent) {
+        if (mounted) {
+          setState(() => _saveStatus = "Save");
+          ScaffoldMessenger.of(context).showSnackBar(_keptSnack());
+        }
+        return;
       }
 
       if (mounted) {
@@ -832,6 +891,12 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       }
     }
   }
+
+  SnackBar _keptSnack() => SnackBar(
+        backgroundColor: Colors.orange.shade800,
+        duration: const Duration(seconds: 5),
+        content: const Text("No connection: the report is kept on this device and will be sent automatically when the connection is back."),
+      );
 
   Future<void> _pickAnotherDate() async {
     final now = DateTime.now();

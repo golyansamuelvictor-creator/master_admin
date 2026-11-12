@@ -6,6 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../services/device_accounts.dart';
+import '../widgets/secondary_unit_picker.dart';
+import '../widgets/country_code_picker.dart';
+import '../core/country_codes.dart';
 
 /// An error whose message is safe to show to the user as-is.
 class _FriendlyException implements Exception {
@@ -76,10 +79,13 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   final List<String> accountTypeOptions = ["Worker", "Saint"];
   final List<String> unitCategoryOptions = ["Church Worker", "Location Worker"];
 
-  String? selectedAccountType = "Worker";
+  String? selectedAccountType = "Saint"; // Saint unless the person picks Worker (or their duty says so)
   String selectedUnitCategory = "Location Worker";
   String? selectedChurchRole;
-  String? selectedSecondaryRole; // optional second role in the unit (gives that role's duties too)
+  String? selectedSecondaryRole; // optional second role (gives that role's duties too)
+  // the secondary role's own unit, when it is in another department of the
+  // sub-location (a Theology worker who is also a 장년회 cell leader)
+  String? _secDept, _secTeam, _secCell;
   String? selectedLocation;
   String? selectedSubLocation;
   String? selectedDept;
@@ -121,21 +127,34 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 
   bool get _isPrefilledMember => widget.memberData != null;
 
-  /// Choices for the secondary role. Theology workers also serve in cell
-  /// groups, so Cell Leader, Assistant Cell Leader and Cell Secretary are
-  /// added to their list (from app_roles, not typed here).
+  /// Choices for the secondary role: the roles of the unit, and every other
+  /// location worker role, so a worker who serves in two departments (Theology
+  /// and 장년회, 부녀회, 청년회 …) can pick it; its unit is chosen below.
   List<String> get _secondaryRoles {
     final out = dynamicRoles.where((r) => r != selectedChurchRole).toList();
-    if (_isTheologyLocationDept && !_isChurchWorker) {
-      for (final r in _roleDataMap) {
-        final key = (r['role_key'] ?? '').toString().toLowerCase();
-        final name = (r['display_name'] ?? '').toString();
-        final grouping = (r['Grouping'] ?? r['grouping'] ?? '').toString();
-        if (r['category'] != 'Worker' || grouping.startsWith('24-Dept') || key.startsWith('church_')) continue;
-        if ((key.contains('cell') || name.toLowerCase().contains('cell')) && !out.contains(name) && name != selectedChurchRole) out.add(name);
-      }
+    if (_isChurchWorker) return out;
+    for (final r in _roleDataMap) {
+      final key = (r['role_key'] ?? '').toString().toLowerCase();
+      final name = (r['display_name'] ?? '').toString();
+      final grouping = (r['Grouping'] ?? r['grouping'] ?? '').toString();
+      if (r['category'] != 'Worker' || grouping.startsWith('24-Dept') || key.startsWith('church_') || key.startsWith('korean_') || key == 'admin') continue;
+      if (name.isNotEmpty && !out.contains(name) && name != selectedChurchRole) out.add(name);
     }
     return out;
+  }
+
+  /// How deep the secondary role's unit goes: 0 = same unit as the main role,
+  /// 1 = department, 2 = team, 3 = cell group.
+  int get _secDepth {
+    if (selectedSecondaryRole == null) return 0;
+    final r = _roleDataMap.firstWhere((x) => x['display_name'] == selectedSecondaryRole, orElse: () => const {});
+    final k = (r['role_key'] ?? '').toString().toLowerCase();
+    final sc = (r['approval_scope'] ?? '').toString().toLowerCase();
+    if (sc.startsWith('location') || sc == 'sub_location' || k.startsWith('loc_') || k.startsWith('sub_loc')) return 0;
+    if (k.contains('cell') || sc == 'cell_group') return 3;
+    if (k.contains('team') || sc == 'team') return 2;
+    if (k.contains('dept') || sc == 'department') return 1;
+    return 0;
   }
 
   /// Text shown inside the role dropdown. An empty dropdown is drawn greyed-out
@@ -265,7 +284,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   Future<void> _autoSelectMemberUnits(Map<String, dynamic> data) async {
     try {
       final duty = _str(data['duty']).toLowerCase();
-      selectedAccountType = (duty.contains('saint') || duty.contains('성도') || duty.isEmpty) ? "Saint" : "Worker";
+      selectedAccountType = (duty.contains('saint') || duty.contains('성도') || duty.contains('구역원') || duty.isEmpty) ? "Saint" : "Worker";
 
       final loc = _str(data['location']);
       final isChurchLevel = loc.toLowerCase() == 'church' || loc == '교회';
@@ -547,6 +566,10 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     }
 
     if (!dynamicRoles.contains(selectedChurchRole)) selectedChurchRole = null;
+    // Saints: their role is chosen for them (the Saint role)
+    if (selectedAccountType == "Saint" && selectedChurchRole == null && dynamicRoles.isNotEmpty) {
+      selectedChurchRole = dynamicRoles.firstWhere((r) => r.toLowerCase().contains('saint'), orElse: () => dynamicRoles.first);
+    }
     if (!_secondaryRoles.contains(selectedSecondaryRole)) selectedSecondaryRole = null;
     _isDualTeamSecretary = false;
     debugPrint("Roles: total ${_roleDataMap.length}, shown ${dynamicRoles.length} "
@@ -1029,6 +1052,9 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
        'unit_category': unitCategoryStr,
        'role': primaryRoleKey,
        'secondary_role': secondaryRoleKey,
+       'secondary_department': secondaryRoleKey == null ? null : _secDept,
+       'secondary_team': secondaryRoleKey == null ? null : _secTeam,
+       'secondary_cell_group': secondaryRoleKey == null ? null : _secCell,
        'official_dept_id': _isChurchWorker ? selectedOfficialDeptId : null,
        'sub_dept_id': _isChurchWorker ? selectedSubOfficialDeptId : null,
        'location': locStr,
@@ -1283,8 +1309,38 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                   (v) => setState(() {
                     selectedSecondaryRole = (v == null || v == "None") ? null : v;
                     if (selectedSecondaryRole != null) _isDualTeamSecretary = false;
+                    _secDept = _secTeam = _secCell = null;
                   }),
                 ),
+              if (selectedAccountType != "Saint" && !_isChurchWorker && _secDepth > 0)
+                () {
+                  final loc = selectedLocation ?? _str(widget.memberData?['location']);
+                  final sub = selectedSubLocation ?? _str(widget.memberData?['sub_location']);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text("Unit of the secondary role (leave the department as your own if it's the same)",
+                            style: GoogleFonts.merriweather(fontWeight: FontWeight.w700, fontSize: 11.5, color: AppPalette.fg(Colors.purple[900]))),
+                      ),
+                      SecondaryUnitPicker(
+                        key: ValueKey('sec|$selectedSecondaryRole'),
+                        location: loc,
+                        subLocation: sub,
+                        depth: _secDepth,
+                        department: _secDept,
+                        team: _secTeam,
+                        cell: _secCell,
+                        onChanged: (d, t, c) {
+                          _secDept = d;
+                          _secTeam = t;
+                          _secCell = c;
+                        },
+                      ),
+                    ]),
+                  );
+                }(),
 
               if (!_isChurchWorker && _isTeamLeaderRole && selectedSecondaryRole == null)
                 Container(
@@ -1368,14 +1424,12 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                   _emailController.text,
                   icon: const FaIcon(FontAwesomeIcons.google, size: 14, color: Color(0xFF4A148C)),
                 ),
-                _sideBySideField("WhatsApp Phone *", _phoneController, Icons.phone_android_outlined,
-                    type: TextInputType.phone),
+                _phoneField("WhatsApp Phone *"),
               ] else if (isEmailSignUp) ...[
                 // Not verified yet (Supabase sends the confirmation), so it stays editable
                 _sideBySideField("Email Address *", _emailController, Icons.email_outlined,
                     type: TextInputType.emailAddress),
-                _sideBySideField("WhatsApp Phone *", _phoneController, Icons.phone_android_outlined,
-                    type: TextInputType.phone),
+                _phoneField("WhatsApp Phone *"),
               ] else ...[
                 if (_phoneController.text.trim().isNotEmpty)
                   _lockedInfoRow(
@@ -1384,8 +1438,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                     icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 14, color: Color(0xFF4A148C)),
                   )
                 else
-                  _sideBySideField("WhatsApp Phone *", _phoneController, Icons.phone_android_outlined,
-                      type: TextInputType.phone),
+                  _phoneField("WhatsApp Phone *"),
                 _sideBySideField("Email Address *", _emailController, Icons.email_outlined,
                     type: TextInputType.emailAddress),
               ],
@@ -1624,6 +1677,62 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
             onChanged: items.isEmpty ? null : onCh,
           ),
         ),
+      ),
+    );
+  }
+
+  /// The phone with its country code: pick the country (all countries, with
+  /// search); the code goes in front of the number.
+  Widget _phoneField(String label) {
+    final cur = countryOfNumber(_phoneController.text.trim());
+    final iso = cur?.$1 ?? 'UG';
+    final code = cur?.$3 ?? '+256';
+    return _formRow(
+      label: _labelText(label),
+      field: SizedBox(
+        height: 32,
+        child: Row(children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () async {
+              final c = await pickCountryCode(context);
+              if (c == null) return;
+              var t = _cleanPhone(_phoneController.text.trim());
+              if (cur != null && t.startsWith(cur.$3)) {
+                t = t.substring(cur.$3.length);
+              } else if (t.startsWith('0')) {
+                t = t.substring(1);
+              }
+              setState(() => _phoneController.text = '${c.$3}$t');
+            },
+            child: Container(
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              decoration: BoxDecoration(border: Border.all(color: AppPalette.line(Colors.grey.shade400)), borderRadius: BorderRadius.circular(8)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(countryFlag(iso), style: const TextStyle(fontSize: 14)),
+                const SizedBox(width: 2),
+                Text.rich(TextSpan(text: code), style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold)),
+                const Icon(Icons.arrow_drop_down_rounded, size: 16),
+              ]),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: TextField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              textAlign: TextAlign.start,
+              style: GoogleFonts.merriweather(fontSize: 13, fontWeight: FontWeight.bold),
+              decoration: _fieldDecoration(Icon(Icons.phone_android_outlined, size: 16, color: AppPalette.fg(Colors.purple))).copyWith(hintText: "$code …"),
+              onChanged: (_) {
+                // the flag follows a code typed by hand
+                final now = countryOfNumber(_phoneController.text.trim());
+                if (now?.$1 != cur?.$1) setState(() {});
+              },
+            ),
+          ),
+        ]),
       ),
     );
   }

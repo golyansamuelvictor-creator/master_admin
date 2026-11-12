@@ -21,6 +21,8 @@ import '../core/sheet_formula.dart';
 import '../core/table_export.dart';
 import '../widgets/office_shell.dart';
 import '../widgets/share_file.dart';
+import '../core/security.dart';
+import '../widgets/office_history.dart';
 
 /// Cloud Sheets (Excel style): the original hub + ribbon layout with private
 /// workbooks, several sheets, formulas (=SUM(A1:A9) …), templates, a
@@ -28,7 +30,9 @@ import '../widgets/share_file.dart';
 /// import, Excel / PDF export and print preview. Saves automatically.
 class SpreadsheetScreen extends StatefulWidget {
   final String title, userEmail, userRole;
-  const SpreadsheetScreen({super.key, required this.title, required this.userEmail, required this.userRole});
+  /// An Excel / CSV file opened with "Open with" (name, bytes): opened at once.
+  final (String, Uint8List)? openFile;
+  const SpreadsheetScreen({super.key, required this.title, required this.userEmail, required this.userRole, this.openFile});
   @override
   State<SpreadsheetScreen> createState() => _SpreadsheetScreenState();
 }
@@ -316,6 +320,8 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     super.initState();
     OfficeBrowserMenu.acquire();
     _loadBooks();
+    final f = widget.openFile;
+    if (f != null) WidgetsBinding.instance.addPostFrameCallback((_) => _importAsNewBook(bytes: f.$2, name: f.$1));
   }
 
   @override
@@ -886,18 +892,26 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     return v.toString();
   }
 
-  Future<List<_Sheet>?> _pickImport() async {
-    final r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['xlsx', 'csv'], withData: true);
-    final f = r?.files.firstOrNull;
-    if (f == null || f.bytes == null) return null;
+  String? _importName; // the file name of the last import (the new workbook's title)
+
+  Future<List<_Sheet>?> _pickImport({Uint8List? bytes, String? name}) async {
+    if (bytes == null) {
+      final r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['xlsx', 'csv'], withData: true);
+      final f = r?.files.firstOrNull;
+      if (f == null || f.bytes == null) return null;
+      bytes = f.bytes!;
+      name = f.name;
+    }
+    final fileName = name ?? 'Imported spreadsheet';
+    _importName = fileName.replaceAll(RegExp(r'\.(xlsx|csv)$', caseSensitive: false), '');
     try {
-      if ((f.extension ?? '').toLowerCase() == 'csv') {
-        final text = utf8.decode(f.bytes!, allowMalformed: true).replaceAll('\r\n', '\n');
+      if (fileName.toLowerCase().endsWith('.csv')) {
+        final text = utf8.decode(bytes, allowMalformed: true).replaceAll('\r\n', '\n');
         final rows = const CsvToListConverter(shouldParseNumbers: false, eol: '\n').convert(text);
         final raw = [for (final row in rows) [for (final v in row) v.toString()]];
-        return [_Sheet.filled(f.name.replaceAll(RegExp(r'\.csv$', caseSensitive: false), ''), raw)];
+        return [_Sheet.filled(_importName!, raw)];
       }
-      final book = decodeExcelSafe(f.bytes!);
+      final book = decodeExcelSafe(bytes);
       final out = <_Sheet>[];
       for (final name in book.tables.keys) {
         final t = book.tables[name]!;
@@ -913,11 +927,14 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     }
   }
 
-  Future<void> _importAsNewBook() async {
-    final sheets = await _pickImport();
+  /// [bytes]/[name]: a file opened with "Open with" (desktop app).
+  Future<void> _importAsNewBook({Uint8List? bytes, String? name}) async {
+    final sheets = await _pickImport(bytes: bytes, name: name);
     if (sheets == null) return;
     try {
-      final id = await _newBook(sheets.first.name.isEmpty ? 'Imported spreadsheet' : sheets.first.name, sheets);
+      if (_open) await _close();
+      final id = await _newBook((_importName ?? '').isNotEmpty ? _importName! : (sheets.first.name.isEmpty ? 'Imported spreadsheet' : sheets.first.name), sheets);
+      await _loadBooks();
       await _openBook(id);
     } catch (e) {
       _snack("Couldn't import: ${e is PostgrestException ? e.message : e}");
@@ -934,6 +951,70 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     _markDirty();
   }
 
+  /// From the list: the stored workbook, without opening it.
+  Future<(List<_Sheet>, String)?> _fetchBook(String id) async {
+    try {
+      final wb = await _db.from('workbooks').select('title').eq('id', id).single();
+      final rows = List<Map<String, dynamic>>.from(await _db.from('spreadsheet_contents').select().eq('workbook_id', id))
+        ..sort((a, b) => ((a['sort_order'] as num?) ?? 0).compareTo((b['sort_order'] as num?) ?? 0));
+      return ([for (final r in rows) _Sheet.fromJson(null, (r['sheet_name'] ?? 'Sheet').toString(), r['grid_data'])], (wb['title'] ?? 'Spreadsheet').toString());
+    } catch (_) {
+      _snack("Couldn't load the spreadsheet.");
+      return null;
+    }
+  }
+
+  ShareFormat _xlsxFormat(List<_Sheet> sheets, String title) => ShareFormat(
+        "Excel (.xlsx)",
+        Icons.grid_on_rounded,
+        "${(title.trim().isEmpty ? 'spreadsheet' : title.trim()).replaceAll(RegExp(r'[^A-Za-z0-9가-힣 _-]'), '')}.xlsx",
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        () async {
+          final bytes = _bookFrom(sheets).encode();
+          if (bytes == null) throw "Couldn't build the file";
+          return Uint8List.fromList(bytes);
+        },
+      );
+
+  Future<void> _shareFromList(Map<String, dynamic> b) async {
+    final x = await _fetchBook(b['id'].toString());
+    if (x == null || !mounted) return;
+    await shareAppFileAs(context, [_xlsxFormat(x.$1, x.$2)]);
+  }
+
+  Future<void> _xlsxFromList(Map<String, dynamic> b) async {
+    final x = await _fetchBook(b['id'].toString());
+    if (x == null || !mounted) return;
+    await downloadAppFile(context, _xlsxFormat(x.$1, x.$2));
+  }
+
+  Future<void> _history(String id, String title) => showOfficeHistory(
+        context,
+        kind: 'sheet',
+        fileId: id,
+        title: title,
+        currentContent: () => (_open && _bookId == id)
+            ? {
+                'sheets': [for (final s in _sheets) {'sheet_name': s.name, 'grid_data': s.toJson()}],
+              }
+            : null,
+        onRestore: (v) async {
+          final c = Map<String, dynamic>.from(v['content'] as Map);
+          final list = List<Map<String, dynamic>>.from(((c['sheets'] ?? []) as List).map((x) => Map<String, dynamic>.from(x as Map)));
+          if (_open && _bookId == id) _saveTimer?.cancel();
+          await _db.from('spreadsheet_contents').delete().eq('workbook_id', id);
+          if (list.isNotEmpty) {
+            await _db.from('spreadsheet_contents').insert([
+              for (int i = 0; i < list.length; i++) {'workbook_id': id, 'sheet_name': list[i]['sheet_name'], 'grid_data': list[i]['grid_data'], 'sort_order': i},
+            ]);
+          }
+          await _db.from('workbooks').update({'last_modified': DateTime.now().toIso8601String()}).eq('id', id);
+          if (_open && _bookId == id) await _openBook(id);
+          await _loadBooks();
+          _snack("Version restored.");
+        },
+      );
+
   String get _fileBase => (_titleC.text.trim().isEmpty ? 'spreadsheet' : _titleC.text.trim()).replaceAll(RegExp(r'[^A-Za-z0-9가-힣 _-]'), '');
 
   /// Share the spreadsheet (as Excel) in My Home chats or to other apps.
@@ -948,11 +1029,14 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
         },
       );
 
-  xl.Excel _buildBook() {
+  xl.Excel _buildBook() => _bookFrom(_sheets);
+
+  /// An Excel workbook of any sheets (also from the list, without opening).
+  xl.Excel _bookFrom(List<_Sheet> sheetsIn) {
       final book = xl.Excel.createExcel();
       final def = book.getDefaultSheet() ?? 'Sheet1';
-      for (int i = 0; i < _sheets.length; i++) {
-        final s = _sheets[i];
+      for (int i = 0; i < sheetsIn.length; i++) {
+        final s = sheetsIn[i];
         final name = s.name.length > 31 ? s.name.substring(0, 31) : s.name;
         if (i == 0) book.rename(def, name);
         final sheet = book[name];
@@ -972,6 +1056,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
   }
 
   Future<void> _exportXlsx() async {
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final book = _buildBook();
       final file = "$_fileBase.xlsx";
@@ -1046,7 +1131,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
             OfficeHubAction("New Sheet", Icons.add_box, Colors.green, () => _create(_templates.first)),
             OfficeHubAction("Open Existing", Icons.folder, Colors.blue, () => _snack("Pick a spreadsheet from the list, or search for it.")),
             OfficeHubAction("Templates", Icons.dashboard_customize, Colors.orange, _pickTemplate),
-            OfficeHubAction("Import Excel / CSV", Icons.upload_file_rounded, Colors.teal, _importAsNewBook),
+            OfficeHubAction("Open an Excel / CSV file", Icons.upload_file_rounded, Colors.teal, () => _importAsNewBook()),
           ],
           templates: _templates,
           onTemplate: _create,
@@ -1064,6 +1149,9 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
             OfficeMenuItem("Open", icon: Icons.open_in_new, onTap: () => _openBook(b['id'].toString())),
             OfficeMenuItem("Rename", icon: Icons.drive_file_rename_outline, onTap: () => _renameBook(b)),
             OfficeMenuItem("Make a copy", icon: Icons.copy_rounded, onTap: () => _duplicateBook(b)),
+            OfficeMenuItem("Share…", icon: Icons.share_rounded, onTap: () => _shareFromList(b)),
+            OfficeMenuItem("Download Excel (.xlsx)", icon: Icons.grid_on_rounded, onTap: () => _xlsxFromList(b)),
+            OfficeMenuItem("Version history", icon: Icons.history_rounded, onTap: () => _history(b['id'].toString(), (b['title'] ?? '').toString())),
             const OfficeMenuItem.divider(),
             OfficeMenuItem("Delete", icon: Icons.delete_outline, color: Colors.red.shade700, onTap: () => _deleteBook(b)),
           ],
@@ -1099,6 +1187,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
             const OfficeRibbonGap(),
             a(Icons.upload_file_rounded, "Import into sheet", _importIntoSheet),
             a(Icons.grid_on_rounded, "Download Excel", _exportXlsx),
+            a(Icons.history_rounded, "Version history", _bookId == null ? null : () => _history(_bookId!, _titleC.text)),
             a(Icons.picture_as_pdf_outlined, "Download PDF", _pdf),
             a(Icons.share_rounded, "Share", _share, tip: "Send in My Home or to other apps"),
             a(Icons.print_outlined, "Print", _print, tip: "Ctrl+P"),

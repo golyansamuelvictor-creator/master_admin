@@ -10,6 +10,7 @@ import '../../core/app_palette.dart';
 import '../../core/compilation_rules.dart';
 import '../../core/i18n.dart';
 import '../../core/table_export.dart';
+import '../../core/security.dart';
 
 /// Performance Report › Tribe monthly report: 예배 출결 현황 (service
 /// attendance), the sheet the Internal Affairs Department Secretary sends to
@@ -347,6 +348,7 @@ class _TribeMonthlyReportState extends State<TribeMonthlyReport> {
 
   /// The tribe's template: same columns (A–T), headers, colours and formulas.
   Future<void> _downloadExcel() async {
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final book = xl.Excel.createExcel();
       final def = book.getDefaultSheet() ?? 'Sheet1';

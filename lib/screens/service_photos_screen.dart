@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_palette.dart';
+import '../core/security.dart';
 
 /// Service Attendance › Final service picture.
 ///
@@ -206,6 +207,7 @@ class _ServicePhotosScreenState extends State<ServicePhotosScreen> {
   }
 
   Future<void> _download(Map<String, dynamic> p) async {
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final path = p['storage_path'].toString();
       final name = (p['file_name'] ?? path.split('/').last).toString();

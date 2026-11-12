@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'profile_refresh.dart';
+import '../core/net_retry.dart';
+import '../core/photo_shrink.dart';
 
 /// One chat in the signed-in user's list (from my_chat_rooms()).
 class ChatRoom {
@@ -345,9 +347,19 @@ class ChatService {
   static Future<ChatMessage> sendFile(String roomId, Uint8List bytes, String fileName,
       {String caption = '', String? replyTo, String? kind, String? mime}) async {
     mime ??= mimeFor(fileName);
+    // photos: a smaller copy (sends on slow connections, uses less data)
+    if (mime.startsWith('image/') && mime != 'image/gif' && (kind == null || kind == 'image')) {
+      final small = await shrinkPhoto(bytes);
+      if (!identical(small, bytes)) {
+        bytes = small;
+        mime = 'image/jpeg';
+        fileName = fileName.contains('.') ? '${fileName.substring(0, fileName.lastIndexOf('.'))}.jpg' : '$fileName.jpg';
+      }
+    }
     final safe = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     final path = '$roomId/${DateTime.now().millisecondsSinceEpoch}_$safe';
-    await _db.storage.from(bucket).uploadBinary(path, bytes, fileOptions: FileOptions(contentType: mime, upsert: false));
+    final up = bytes, type = mime;
+    await withRetry(() => _db.storage.from(bucket).uploadBinary(path, up, fileOptions: FileOptions(contentType: type, upsert: true)));
     final res = await _db
         .from('chat_messages')
         .insert({

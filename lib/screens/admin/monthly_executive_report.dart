@@ -15,6 +15,7 @@ import '../../core/compilation_rules.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'tribe_monthly_report.dart';
 import '../../widgets/nice_range_picker.dart';
+import '../../core/security.dart';
 
 /// One duty in the report: this period against the period before.
 class DutyStat {
@@ -107,6 +108,12 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   late DateTime _curStart, _curEnd;
   late DateTime _prevStart, _prevEnd;
   bool _includePending = true;
+
+  /// Dubai Official (members.official), counted on their own like the
+  /// Compilation screen: 'exclude' = everyone else (default), 'only' = them.
+  String _official = 'exclude';
+  bool _officialView = false; // the area includes Dubai (or the whole church)
+  Map<String, dynamic> get _officialFilter => {'col': 'official', 'op': _official == 'only' ? 'is_true' : 'not_true'};
 
   // Accountability drilldown level
   static const Map<String, String> _levelCols = {
@@ -317,12 +324,18 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         'p_prev_to': _d(_prevEnd),
         'p_level': _levelCols[_drilldownLevel],
         'p_include_pending': _includePending,
-        'p_focus': focus,
+        'p_focus': [...focus, _officialFilter],
       });
       if (!mounted || req != _req) return;
       final j = Map<String, dynamic>.from(res as Map);
       if (first) {
         _setLevelsFromScope((j['scope'] as List?) ?? const []);
+        // the Dubai Official switch: the whole church, or an area in Dubai
+        final locs = [
+          for (final f in (j['scope'] as List?) ?? const [])
+            if (f is Map && f['col'] == 'location' && f['op'] == 'eq') f['val'].toString().toLowerCase(),
+        ];
+        _officialView = locs.isEmpty || locs.any((l) => l.contains('dubai') || l.contains('uae'));
         if (_levelCols[_drilldownLevel] != j['level']) {
           // the level was adjusted to the area: load once more at that level
           return _loadReportData();
@@ -535,7 +548,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   // ==========================================
   ExportTable _dutyTable() => ExportTable(
         title: "Performance report – $_unitKey",
-        subtitle: "$_periodText (previous: $_prevText) · ${_includePending ? 'approved and pending reports' : 'approved reports only'}",
+        subtitle: "$_periodText (previous: $_prevText) · ${_includePending ? 'approved and pending reports' : 'approved reports only'}${_official == 'only' ? ' · Dubai Official' : ''}",
         headers: const ['Duty', 'Reports', 'Done', 'Sessions', 'Rate %', 'Previous %', 'Change'],
         rows: [
           for (final d in _dutyStats)
@@ -678,6 +691,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   PdfPageFormat get _pdfFormat => _dutyStats.length > 7 ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
 
   Future<void> _downloadPdf() async {
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final bytes = await _pdf(_pdfFormat);
       await Printing.sharePdf(bytes: bytes, filename: 'Executive_report_${_d(_curStart)}.pdf');
@@ -875,6 +889,20 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           Text(_periodText, style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade700))),
           period,
           pending,
+          if (_officialView)
+            SegmentedButton<String>(
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: [
+                ButtonSegment(value: 'exclude', label: Text(_activeUnit.toLowerCase().contains('dubai') ? "Dubai" : "Church", style: const TextStyle(fontSize: 11.5))),
+                const ButtonSegment(value: 'only', label: Text("Dubai Official", style: TextStyle(fontSize: 11.5))),
+              ],
+              selected: {_official},
+              onSelectionChanged: (v) {
+                setState(() => _official = v.first);
+                _loadReportData();
+              },
+            ),
           exports,
           if (_tribeReport)
             FilledButton.tonalIcon(
@@ -1066,7 +1094,10 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
     );
   }
 
-  List<Map<String, dynamic>> get _focusJson => [for (final f in _focus) {'col': _levelCols[f.key], 'op': 'eq', 'val': f.value}];
+  List<Map<String, dynamic>> get _focusJson => [
+        for (final f in _focus) {'col': _levelCols[f.key], 'op': 'eq', 'val': f.value},
+        _officialFilter,
+      ];
 
   // ---- the period split into its parts (averages per part)
 

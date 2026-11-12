@@ -25,6 +25,9 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
   BbSettings? _cfg;
   List<String> _locations = [];
   String? _location, _center;
+  /// Dubai Official (separate, like the Compilation screen): 'exclude' or 'only'
+  String _official = 'exclude';
+  bool get _officialView => _locations.any((l) => l.toLowerCase().contains('dubai') || l.toLowerCase().contains('uae'));
   String? _error;
   // The detailed results (center × status) were removed: the BB File has them.
   final Set<String> _sections = {'goals', 'months', 'centers', 'locations', 'checker'};
@@ -111,6 +114,21 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
           Text("Goals vs current results by unit, down to the cell group, with charts.",
               textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
         ],
+        if (_officialView) ...[
+          _label("Results of"),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: 'exclude', label: Text("Church")),
+              ButtonSegment(value: 'only', label: Text("Dubai Official")),
+            ],
+            selected: {_official},
+            onSelectionChanged: (v) => _upd(() {
+              _official = v.first;
+              _rev++;
+            }),
+          ),
+        ],
         _label("Area"),
         _drop("Guide's location", _location, _locations, (v) => _location = v),
         const SizedBox(height: 10),
@@ -179,12 +197,13 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
                   if (wide) _sidebar(),
                   Expanded(
                     child: BbSummaryView(
-                      key: ValueKey('$_rev|$_location|$_center|${_sections.join(',')}'),
+                      key: ValueKey('$_rev|$_official|$_location|$_center|${_sections.join(',')}'),
                       cfg: cfg,
                       location: _location,
                       center: _center,
                       sections: Set.of(_sections),
                       studentsOnly: widget.studentsOnly,
+                      official: _officialView ? _official : null,
                     ),
                   ),
                 ]),

@@ -10,6 +10,7 @@ import '../core/compilation_rules.dart';
 import '../core/i18n.dart';
 import '../core/table_export.dart';
 import 'theology/student_duties.dart' show FrozenGrid;
+import '../core/offline.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 final _f = DateFormat('yyyy-MM-dd');
@@ -87,7 +88,25 @@ bool _churchRole(Map r) {
       g.startsWith('24-dept') || g.startsWith('church') || g == 'saint' || s == 'church' || s == 'church_department';
 }
 
-const _fieldTypes = {'yesno': 'Yes / No', 'choice': 'Choice list', 'number': 'Number / score', 'text': 'Text'};
+const _fieldTypes = {
+  'yesno': 'Yes / No',
+  'choice': 'Dropdown list',
+  'number': 'Number / score',
+  'text': 'Short text',
+  'longtext': 'Long text (situation, solution …)',
+  'date': 'Date',
+};
+/// Ready-made columns the creator can add with one tap.
+const _quickFields = [
+  ('Attended', 'yesno', <String>[]),
+  ('Mode', 'choice', ['In person', 'Online', 'Other']),
+  ('Score', 'number', <String>[]),
+  ('Situation', 'longtext', <String>[]),
+  ('Solution', 'longtext', <String>[]),
+  ('Remarks', 'text', <String>[]),
+  ('Date', 'date', <String>[]),
+];
+const _modes = {'once': 'Once', 'daily': 'Every day', 'days': 'On chosen days'};
 
 /// The days an activity meets, from its start to its end (or today).
 List<DateTime> activitySessions(Map a, {DateTime? until}) {
@@ -407,6 +426,8 @@ class _ActivityEditorState extends State<ActivityEditor> {
   late final _otherKind = TextEditingController(text: kActivityKinds.contains(_kind.text) ? '' : _kind.text);
   late final Set<String> _roles = {...List<String>.from((widget.activity?['entry_roles'] as List?) ?? const [])};
   List<Map<String, dynamic>> _appRoles = [];
+  String? _roleLevel; // cascading: the unit level, then its roles
+  String? _rolePick;
 
   @override
   void initState() {
@@ -433,21 +454,24 @@ class _ActivityEditorState extends State<ActivityEditor> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, set) => AlertDialog(
-          title: Text(i == null ? "What to record" : "Edit what is recorded"),
+          title: Text(i == null ? "New column" : "Edit column"),
           content: SizedBox(
             width: 400,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: label, decoration: InputDecoration(labelText: tr("Name (e.g. Attended, Test score, Remarks)"), border: const OutlineInputBorder())),
+              TextField(controller: label, decoration: InputDecoration(labelText: tr("Column name (e.g. Attended, Situation, Solution)"), border: const OutlineInputBorder())),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: type,
-                decoration: InputDecoration(labelText: tr("Kind of answer"), border: const OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr("Kind of column"), border: const OutlineInputBorder()),
                 items: [for (final e in _fieldTypes.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
                 onChanged: (v) => set(() => type = v ?? 'yesno'),
               ),
               if (type == 'choice') ...[
                 const SizedBox(height: 10),
-                TextField(controller: opts, decoration: InputDecoration(labelText: tr("Choices, separated by commas"), border: const OutlineInputBorder())),
+                TextField(
+                  controller: opts,
+                  decoration: InputDecoration(labelText: tr("Choices, separated by commas"), hintText: tr("e.g. Present, Late, Absent"), border: const OutlineInputBorder()),
+                ),
               ],
             ]),
           ),
@@ -693,17 +717,26 @@ class _ActivityEditorState extends State<ActivityEditor> {
             _step(1, "What it is", [
               TextField(controller: _title, decoration: deco("Title", hint: "e.g. Workers' special training 2026")),
               const SizedBox(height: 10),
-              Text("Kind of special activity", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey.shade700))),
-              const SizedBox(height: 6),
-              Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: [
-                for (final k in kActivityKinds)
-                  ChoiceChip(
-                    avatar: Icon(activityIcon(k), size: 16, color: AppPalette.fg(activityColor(k))),
-                    label: Text(k),
-                    selected: k == 'Others' ? (_kind.text.isNotEmpty && !kActivityKinds.contains(_kind.text)) || _kind.text == 'Others' : _kind.text == k,
-                    onSelected: (_) => setState(() => _kind.text = k),
-                  ),
-              ]),
+              DropdownButtonFormField<String>(
+                initialValue: _kind.text.isEmpty ? null : (kActivityKinds.contains(_kind.text) ? _kind.text : 'Others'),
+                isExpanded: true,
+                decoration: deco("Kind of special activity"),
+                items: [
+                  for (final k in kActivityKinds)
+                    DropdownMenuItem(
+                      value: k,
+                      child: Row(children: [
+                        Icon(activityIcon(k), size: 18, color: AppPalette.fg(activityColor(k))),
+                        const SizedBox(width: 8),
+                        Flexible(child: Text(k, overflow: TextOverflow.ellipsis)),
+                      ]),
+                    ),
+                ],
+                onChanged: (k) => setState(() {
+                  _kind.text = k ?? '';
+                  if (k == 'Others' && _otherKind.text.trim().isNotEmpty) _kind.text = _otherKind.text.trim();
+                }),
+              ),
               if (_kind.text == 'Others' || (_kind.text.isNotEmpty && !kActivityKinds.contains(_kind.text))) ...[
                 const SizedBox(height: 8),
                 TextField(
@@ -735,15 +768,14 @@ class _ActivityEditorState extends State<ActivityEditor> {
                 ),
               ]),
               const SizedBox(height: 10),
-              SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 'once', label: Text("Once")),
-                  ButtonSegment(value: 'daily', label: Text("Every day")),
-                  ButtonSegment(value: 'days', label: Text("Chosen days")),
-                ],
-                selected: {_mode},
-                onSelectionChanged: (v) => setState(() => _mode = v.first),
+              SizedBox(
+                width: 320,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _mode,
+                  decoration: deco("How often it meets"),
+                  items: [for (final e in _modes.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+                  onChanged: (v) => setState(() => _mode = v ?? 'once'),
+                ),
               ),
               if (_mode == 'days') ...[
                 const SizedBox(height: 8),
@@ -762,21 +794,46 @@ class _ActivityEditorState extends State<ActivityEditor> {
                   style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey.shade700))),
             ]),
             _step(3, "Who is tracked", [
-              Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: [
-                for (final e in _subjects.entries) ChoiceChip(label: Text(e.value), selected: _subj == e.key, onSelected: (_) => setState(() => _subj = e.key)),
-              ]),
+              SizedBox(
+                width: 320,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _subj,
+                  decoration: deco("People in the table"),
+                  items: [for (final e in _subjects.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+                  onChanged: (v) => setState(() => _subj = v ?? 'workers'),
+                ),
+              ),
             ]),
-            _step(4, "What is recorded for each person", [
+            _step(4, "Table columns", [
+              Text("Every table has Name, Location, Sub-location, Department, Team and Cell group. Add your own columns below.",
+                  textAlign: TextAlign.center, style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey.shade700))),
+              const SizedBox(height: 6),
               for (int i = 0; i < _fields.length; i++)
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(switch (_fields[i]['type']) { 'number' => Icons.pin_rounded, 'text' => Icons.notes_rounded, 'choice' => Icons.list_rounded, _ => Icons.check_box_rounded }, color: AppPalette.fg(_kPurple)),
+                  leading: Icon(switch (_fields[i]['type']) { 'number' => Icons.pin_rounded, 'text' => Icons.short_text_rounded, 'longtext' => Icons.notes_rounded, 'date' => Icons.event_rounded, 'choice' => Icons.arrow_drop_down_circle_rounded, _ => Icons.check_box_rounded }, color: AppPalette.fg(_kPurple)),
                   title: Text((_fields[i]['label'] ?? '').toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text("${_fieldTypes[_fields[i]['type']] ?? ''}${(_fields[i]['options'] as List?)?.isNotEmpty == true ? ': ${(_fields[i]['options'] as List).join(', ')}' : ''}"),
                   trailing: IconButton(icon: const Icon(Icons.edit_rounded, size: 18), onPressed: () => _editField(i)),
                 ),
-              TextButton.icon(onPressed: () => _editField(), icon: const Icon(Icons.add_rounded), label: const Text("Add")),
+              const SizedBox(height: 4),
+              Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: [
+                for (final q in _quickFields)
+                  if (!_fields.any((f) => (f['label'] ?? '').toString().toLowerCase() == q.$1.toLowerCase()))
+                    ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      avatar: const Icon(Icons.add_rounded, size: 16),
+                      label: Text(q.$1),
+                      onPressed: () => setState(() => _fields.add({
+                            'key': "${q.$1.toLowerCase()}_${DateTime.now().millisecondsSinceEpoch % 10000}",
+                            'label': q.$1,
+                            'type': q.$2,
+                            'options': q.$3,
+                          })),
+                    ),
+              ]),
+              TextButton.icon(onPressed: () => _editField(), icon: const Icon(Icons.add_rounded), label: const Text("Add your own column")),
             ]),
             _step(5, "Shared with", [
               if (_units.isEmpty) Text("Add the locations, departments, teams … that take part.", style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade600))),
@@ -797,22 +854,64 @@ class _ActivityEditorState extends State<ActivityEditor> {
                   textAlign: TextAlign.center, style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.blueGrey.shade700))),
               const SizedBox(height: 8),
               if (_appRoles.isEmpty) const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
-              for (final lv in const ['Location', 'Sub-location', 'Department', 'Team', 'Cell'])
-                if (_appRoles.any((r) => roleLevel(r) == lv)) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6, bottom: 4),
-                    child: Text("$lv level", textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: AppPalette.fg(_kPurple))),
+              Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 8, children: [
+                SizedBox(
+                  width: 200,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _roleLevel,
+                    decoration: deco("1. Unit level"),
+                    items: [
+                      for (final lv in const ['Location', 'Sub-location', 'Department', 'Team', 'Cell'])
+                        if (_appRoles.any((r) => roleLevel(r) == lv)) DropdownMenuItem(value: lv, child: Text(lv)),
+                    ],
+                    onChanged: (v) => setState(() {
+                      _roleLevel = v;
+                      _rolePick = null;
+                    }),
                   ),
-                  Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: [
-                    for (final r in _appRoles.where((r) => roleLevel(r) == lv))
-                      FilterChip(
-                        visualDensity: VisualDensity.compact,
-                        label: Text((r['display_name'] ?? r['role_key']).toString(), style: const TextStyle(fontSize: 11.5)),
-                        selected: _roles.contains(r['role_key']),
-                        onSelected: (v) => setState(() => v ? _roles.add(r['role_key'].toString()) : _roles.remove(r['role_key'])),
+                ),
+                SizedBox(
+                  width: 280,
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey('roles|$_roleLevel'),
+                    initialValue: _rolePick,
+                    isExpanded: true,
+                    decoration: deco("2. Role"),
+                    items: [
+                      for (final r in _appRoles.where((r) => roleLevel(r) == _roleLevel && !_roles.contains(r['role_key'])))
+                        DropdownMenuItem(value: r['role_key'].toString(), child: Text((r['display_name'] ?? r['role_key']).toString(), overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: _roleLevel == null ? null : (v) => setState(() => _rolePick = v),
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _rolePick == null
+                      ? null
+                      : () => setState(() {
+                            _roles.add(_rolePick!);
+                            _rolePick = null;
+                          }),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text("Add role"),
+                ),
+              ]),
+              const SizedBox(height: 8),
+              Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: [
+                for (final k in _roles)
+                  () {
+                    final r = _appRoles.firstWhere((x) => x['role_key'] == k, orElse: () => {'role_key': k, 'display_name': k});
+                    return InputChip(
+                      visualDensity: VisualDensity.compact,
+                      avatar: CircleAvatar(
+                        backgroundColor: AppPalette.solid(_kPurple),
+                        child: Text(roleLevel(r).substring(0, 1), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
-                  ]),
-                ],
+                      label: Text((r['display_name'] ?? k).toString(), style: const TextStyle(fontSize: 11.5)),
+                      tooltip: tr("${roleLevel(r)} level"),
+                      onDeleted: () => setState(() => _roles.remove(k)),
+                    );
+                  }(),
+              ]),
               const SizedBox(height: 6),
               Text(_roles.isEmpty ? "Only you will enter the records." : "${_roles.length} role${_roles.length == 1 ? '' : 's'} chosen",
                   textAlign: TextAlign.center, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(_kPurple))),
@@ -1017,15 +1116,34 @@ class _EnterTabState extends State<_EnterTab> {
     }
   }
 
-  void _set(String id, String k, dynamic v) => setState(() {
-        final m = _vals.putIfAbsent(id, () => {});
-        if (v == null || (v is String && v.trim().isEmpty)) {
-          m.remove(k);
-        } else {
-          m[k] = v;
-        }
-        _changes++;
-      });
+  static const _unitCols = [
+    ('location', 'Location'),
+    ('sub_location', 'Sub-location'),
+    ('department', 'Department'),
+    ('team', 'Team'),
+    ('cell_group', 'Cell group'),
+  ];
+
+  static double _fieldWidth(Map f) => switch (f['type']) {
+        'yesno' => 140.0,
+        'longtext' => 260.0,
+        'text' => 200.0,
+        'date' => 120.0,
+        _ => 130.0,
+      };
+
+  /// [quiet]: typing in a text cell only redraws when the Save button
+  /// has to change (redrawing the whole table on every key was slow).
+  void _set(String id, String k, dynamic v, {bool quiet = false}) {
+    final m = _vals.putIfAbsent(id, () => {});
+    if (v == null || (v is String && v.trim().isEmpty)) {
+      m.remove(k);
+    } else {
+      m[k] = v;
+    }
+    _changes++;
+    if (!quiet || _changes == 1) setState(() {});
+  }
 
   Future<void> _save() async {
     setState(() => _saving = true);
@@ -1052,7 +1170,23 @@ class _EnterTabState extends State<_EnterTab> {
     }
     try {
       for (int i = 0; i < up.length; i += 200) {
-        await _db.from('special_activity_records').upsert(up.sublist(i, (i + 200).clamp(0, up.length)), onConflict: 'activity_id,person_id,session_date');
+        // sent now, or kept on this device until the connection is back
+        final sent = await Outbox.submit(
+          table: 'special_activity_records',
+          rows: up.sublist(i, (i + 200).clamp(0, up.length)),
+          onConflict: 'activity_id,person_id,session_date',
+          label: "${widget.activity['title'] ?? 'Special activity'} · ${_f.format(_date)}${i > 0 ? ' (${i ~/ 200 + 1})' : ''}",
+        );
+        if (!sent) {
+          if (mounted) {
+            setState(() => _saving = false);
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              backgroundColor: Colors.orange.shade800,
+              content: const Text("No connection: the records are kept on this device and will be sent automatically when the connection is back."),
+            ));
+          }
+          return;
+        }
       }
       if (del.isNotEmpty) {
         await _db.from('special_activity_records').delete().eq('activity_id', widget.activity['id']).eq('session_date', _f.format(_date)).inFilter('person_id', del);
@@ -1112,6 +1246,17 @@ class _EnterTabState extends State<_EnterTab> {
           ],
           onChanged: (x) => _set(id, k, x),
         );
+      case 'date':
+        final d = DateTime.tryParse((v ?? '').toString());
+        return InkWell(
+          onTap: () async {
+            final x = await showDatePicker(context: context, initialDate: d ?? _date, firstDate: DateTime(2020), lastDate: DateTime(2035));
+            if (x != null) _set(id, k, _f.format(x));
+          },
+          child: Center(
+            child: Text(d == null ? "—" : DateFormat('d MMM yyyy').format(d), style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(d == null ? Colors.grey : Colors.black87))),
+          ),
+        );
       default:
         final number = f['type'] == 'number';
         final c = _ctl.putIfAbsent('$id|$k', () => TextEditingController(text: (v ?? '').toString()));
@@ -1122,7 +1267,7 @@ class _EnterTabState extends State<_EnterTab> {
           inputFormatters: number ? [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))] : null,
           style: GoogleFonts.merriweather(fontSize: 11),
           decoration: const InputDecoration(isDense: true, border: InputBorder.none, contentPadding: EdgeInsets.symmetric(vertical: 4)),
-          onChanged: (x) => _set(id, k, number ? num.tryParse(x) : x),
+          onChanged: (x) => _set(id, k, number ? num.tryParse(x) : x, quiet: true),
         );
     }
   }
@@ -1131,14 +1276,15 @@ class _EnterTabState extends State<_EnterTab> {
   Widget build(BuildContext context) {
     final fields = _fields;
     final q = _q.toLowerCase();
-    final list = _people.where((p) => q.isEmpty || "${p['name']} ${p['team']} ${p['cell_group']}".toLowerCase().contains(q)).toList();
+    final list = _people.where((p) => q.isEmpty || "${p['name']} ${p['location']} ${p['sub_location']} ${p['department']} ${p['team']} ${p['cell_group']}".toLowerCase().contains(q)).toList();
     final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final sessions = activitySessions(widget.activity, until: today);
     final cols = <(String, double)>[
       ("Name", 180.0),
-      ("Unit", 150.0),
-      for (final f in fields) ((f['label'] ?? '').toString(), f['type'] == 'yesno' ? 140.0 : (f['type'] == 'text' ? 200.0 : 130.0)),
+      for (final u in _unitCols) (u.$2, 120.0),
+      for (final f in fields) ((f['label'] ?? '').toString(), _fieldWidth(f)),
     ];
+    const nu = 5; // unit columns after the name
     return Column(children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
@@ -1202,16 +1348,16 @@ class _EnterTabState extends State<_EnterTab> {
                     textOf: (r, c) {
                       final p = list[r];
                       if (c == 0) return (p['name'] ?? '').toString();
-                      if (c == 1) return [p['team'], p['cell_group']].where((x) => (x ?? '').toString().isNotEmpty).join(' › ');
-                      return (_vals[p['id'].toString()]?[fields[c - 2]['key']] ?? '').toString();
+                      if (c <= nu) return (p[_unitCols[c - 1].$1] ?? '').toString();
+                      return (_vals[p['id'].toString()]?[fields[c - 1 - nu]['key']] ?? '').toString();
                     },
                     cell: (r, c) {
                       final p = list[r];
                       if (c == 0) return Text((p['name'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold));
-                      if (c == 1) {
-                        return Text([p['team'], p['cell_group']].where((x) => (x ?? '').toString().isNotEmpty).join(' › '), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11));
+                      if (c <= nu) {
+                        return Text((p[_unitCols[c - 1].$1] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11));
                       }
-                      return _cell(p, fields[c - 2]);
+                      return _cell(p, fields[c - 1 - nu]);
                     },
                   ),
       ),

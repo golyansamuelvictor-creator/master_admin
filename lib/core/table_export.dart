@@ -12,6 +12,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import 'app_palette.dart';
+import 'security.dart';
 
 /// A table to export: what the screen shows, as text.
 class ExportTable {
@@ -43,6 +44,7 @@ class TableExport {
 
   // ------------------------------------------------------------ Excel
   static Future<void> excel(BuildContext context, ExportTable t) async {
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final book = xl.Excel.createExcel();
       final sheetName = book.getDefaultSheet() ?? 'Sheet1';
@@ -74,6 +76,7 @@ class TableExport {
 
       put(r++, 0, t.title, bold);
       if (t.subtitle.isNotEmpty) put(r++, 0, t.subtitle);
+      put(r++, 0, 'Exported by ${AppSecurity.exportStamp}');
       r++;
       for (int c = 0; c < t.headers.length; c++) {
         put(r, c, t.headers[c], head);
@@ -123,15 +126,22 @@ class TableExport {
     final wide = t.headers.length > 8;
     final fs = t.headers.length > 14 ? 6.5 : (wide ? 7.5 : 9.0);
     doc.addPage(pw.MultiPage(
-      pageFormat: format,
-      margin: const pw.EdgeInsets.all(24),
+      pageTheme: pw.PageTheme(
+        pageFormat: format,
+        margin: const pw.EdgeInsets.all(24),
+        // who printed it, across every page (data protection)
+        buildBackground: (ctx) => pw.FullPage(
+          ignoreMargins: true,
+          child: pw.Watermark.text(AppSecurity.exportStamp, style: const pw.TextStyle(color: PdfColors.grey200, fontSize: 30)),
+        ),
+      ),
       header: (ctx) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         pw.Text(t.title, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.purple900)),
         if (t.subtitle.isNotEmpty) pw.Text(t.subtitle, style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700)),
         pw.SizedBox(height: 8),
       ]),
       footer: (ctx) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-        pw.Text('Printed ${DateFormat('d MMM yyyy, HH:mm').format(DateTime.now())}', style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600)),
+        pw.Text('Printed by ${AppSecurity.exportStamp}', style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600)),
         pw.Text('Page ${ctx.pageNumber} of ${ctx.pagesCount}', style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey600)),
       ]),
       build: (ctx) => [
@@ -155,6 +165,7 @@ class TableExport {
   static PdfPageFormat _fmtFor(ExportTable t) => t.headers.length > 8 ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
 
   static Future<void> pdf(BuildContext context, ExportTable t) async {
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final bytes = await pdfBytes(t, _fmtFor(t));
       await Printing.sharePdf(bytes: bytes, filename: '${t.safeName}.pdf'); // downloads on the web
@@ -171,8 +182,10 @@ class TableExport {
   /// Opens a print preview for any PDF: page size, portrait/landscape,
   /// Print (printer, copies, pages in the system dialog) and Download.
   static Future<void> previewBuilder(BuildContext context, String title, LayoutCallback build,
-      {String? fileName, PdfPageFormat? initial}) {
-    return Navigator.of(context).push(MaterialPageRoute(
+      {String? fileName, PdfPageFormat? initial}) async {
+    if (!await AppSecurity.checkExport(context)) return;
+    if (!context.mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
       fullscreenDialog: true,
       builder: (ctx) => Scaffold(
         appBar: AppBar(
@@ -202,6 +215,7 @@ class TableExport {
 
   // ------------------------------------------------------------ Copy
   static Future<void> copy(BuildContext context, ExportTable t) async {
+    if (!await AppSecurity.checkExport(context)) return;
     final b = StringBuffer()..writeln(t.headers.join('\t'));
     for (final r in t.fitted) {
       b.writeln(r.join('\t'));
@@ -214,6 +228,8 @@ class TableExport {
   // ------------------------------------------------------------ UI
   /// Download menu: Excel, PDF, Print preview, Copy.
   static Future<void> showMenu(BuildContext context, ExportTable Function() build) async {
+    if (!await AppSecurity.checkExport(context)) return;
+    if (!context.mounted) return;
     final t = build();
     if (t.isEmpty) {
       _toast(context, 'Nothing to export yet', error: true);

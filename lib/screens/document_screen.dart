@@ -16,13 +16,19 @@ import 'package:master_admin/core/app_palette.dart';
 import '../core/table_export.dart';
 import '../widgets/office_shell.dart';
 import '../widgets/share_file.dart';
+import '../core/security.dart';
+import 'package:file_picker/file_picker.dart';
+import '../core/office_formats.dart';
+import '../widgets/office_history.dart';
 
 /// Official Documents (Word style): the original hub + ribbon layout, with a
 /// real formatting toolbar, templates, autosave, right-click menu, shortcuts,
 /// view modes, zoom, PDF download and print preview. Documents are private.
 class DocumentScreen extends StatefulWidget {
   final String title, userEmail, userRole;
-  const DocumentScreen({super.key, required this.title, required this.userEmail, required this.userRole});
+  /// A Word file opened with "Open with" (name, bytes): opened at once.
+  final (String, Uint8List)? openFile;
+  const DocumentScreen({super.key, required this.title, required this.userEmail, required this.userRole, this.openFile});
   @override
   State<DocumentScreen> createState() => _DocumentScreenState();
 }
@@ -263,6 +269,8 @@ class _DocumentScreenState extends State<DocumentScreen> {
     super.initState();
     OfficeBrowserMenu.acquire();
     _loadDocs();
+    final f = widget.openFile;
+    if (f != null) WidgetsBinding.instance.addPostFrameCallback((_) => _importWord(f.$2, f.$1));
   }
 
   @override
@@ -433,7 +441,11 @@ class _DocumentScreenState extends State<DocumentScreen> {
   // ------------------------------------------------------------------
   // PDF (headings, bold / italic / underline, alignment, lists, quotes)
   // ------------------------------------------------------------------
-  Future<Uint8List> _buildPdf(PdfPageFormat format) async {
+  Future<Uint8List> _buildPdf(PdfPageFormat format) =>
+      _pdfFromOps(_controller.document.toDelta().toJson(), _titleC.text.trim(), format);
+
+  /// The PDF of any document (also from the list, without opening it).
+  Future<Uint8List> _pdfFromOps(List ops, String title, PdfPageFormat format) async {
     pw.ThemeData theme;
     try {
       theme = pw.ThemeData.withFont(
@@ -446,8 +458,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
     } catch (_) {
       theme = pw.ThemeData();
     }
-    final doc = pw.Document(theme: theme, title: _titleC.text.trim());
-    final ops = _controller.document.toDelta().toJson();
+    final doc = pw.Document(theme: theme, title: title);
     final lines = <(List<(String, Map)>, Map)>[];
     var current = <(String, Map)>[];
     for (final op in ops) {
@@ -537,6 +548,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
   String get _fileName => (_titleC.text.trim().isEmpty ? 'document' : _titleC.text.trim()).replaceAll(RegExp(r'[^A-Za-z0-9가-힣 _-]'), '');
 
   Future<void> _exportPdf() async {
+    if (!await AppSecurity.checkExport(context)) return;
     try {
       final bytes = await _buildPdf(PdfPageFormat.a4);
       await Printing.sharePdf(bytes: bytes, filename: '$_fileName.pdf');
@@ -548,7 +560,179 @@ class _DocumentScreenState extends State<DocumentScreen> {
   Future<void> _print() => TableExport.previewBuilder(context, _titleC.text.trim().isEmpty ? 'Document' : _titleC.text.trim(), _buildPdf, fileName: '$_fileName.pdf');
 
   /// Share the document (as PDF) in My Home chats or to other apps.
-  Future<void> _share() => shareAppFile(context, fileName: '$_fileName.pdf', build: () => _buildPdf(PdfPageFormat.a4));
+  Future<void> _share() => shareAppFileAs(context, _formats(_controller.document.toDelta().toJson(), _titleC.text.trim()));
+
+  static String _safe(String t) => (t.trim().isEmpty ? 'document' : t.trim()).replaceAll(RegExp(r'[^A-Za-z0-9가-힣 _-]'), '');
+
+  /// The ways a document can leave the app: PDF or Word.
+  List<ShareFormat> _formats(List ops, String title) => [
+        ShareFormat("PDF", Icons.picture_as_pdf_outlined, '${_safe(title)}.pdf', 'application/pdf', () => _pdfFromOps(ops, title, PdfPageFormat.a4)),
+        ShareFormat("Word (.docx)", Icons.description_outlined, '${_safe(title)}.docx',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document', () async => docxFromDelta(ops, title)),
+      ];
+
+  /// From the list: the stored document, without opening it.
+  Future<(List, String)?> _fetchOps(Map<String, dynamic> d) async {
+    try {
+      final row = await _db.from('documents').select('title, content').eq('id', d['id']).single();
+      final c = row['content'];
+      return (c is List && c.isNotEmpty ? c : [{'insert': '\n'}], (row['title'] ?? 'Document').toString());
+    } catch (_) {
+      _snack("Couldn't load the document.");
+      return null;
+    }
+  }
+
+  /// Find & replace (Ctrl+F / Ctrl+H): find next, replace, replace all;
+  /// "Match case" optional.
+  Future<void> _findReplace() async {
+    final findC = TextEditingController(), repC = TextEditingController();
+    bool matchCase = false;
+    String status = '';
+    int search(int from) {
+      final text = _controller.document.toPlainText();
+      final q = findC.text;
+      if (q.isEmpty) return -1;
+      final hay = matchCase ? text : text.toLowerCase();
+      final needle = matchCase ? q : q.toLowerCase();
+      var i = hay.indexOf(needle, from);
+      if (i < 0 && from > 0) i = hay.indexOf(needle); // wrap around
+      return i;
+    }
+
+    void select(int i) {
+      _controller.updateSelection(TextSelection(baseOffset: i, extentOffset: i + findC.text.length), ChangeSource.local);
+    }
+
+    await showDialog(
+      context: context,
+      builder: (dctx) => StatefulBuilder(
+        builder: (dctx, set) => AlertDialog(
+          title: const Text("Find & replace"),
+          content: SizedBox(
+            width: 380,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(controller: findC, autofocus: true, decoration: InputDecoration(labelText: tr("Find"), border: const OutlineInputBorder(), isDense: true)),
+              const SizedBox(height: 10),
+              TextField(controller: repC, decoration: InputDecoration(labelText: tr("Replace with"), border: const OutlineInputBorder(), isDense: true)),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: matchCase,
+                onChanged: (v) => set(() => matchCase = v ?? false),
+                title: const Text("Match case"),
+              ),
+              if (status.isNotEmpty) Text.rich(TextSpan(text: status), style: const TextStyle(fontSize: 12)),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dctx), child: const Text("Close")),
+            TextButton(
+              onPressed: () {
+                final sel = _controller.selection;
+                final i = search(sel.isCollapsed ? sel.baseOffset : sel.end);
+                set(() => status = i < 0 ? tr("Not found") : '');
+                if (i >= 0) select(i);
+              },
+              child: const Text("Find next"),
+            ),
+            TextButton(
+              onPressed: _controller.readOnly
+                  ? null
+                  : () {
+                      final sel = _controller.selection;
+                      final picked = sel.isCollapsed ? '' : _controller.document.toPlainText().substring(sel.start, sel.end);
+                      final same = matchCase ? picked == findC.text : picked.toLowerCase() == findC.text.toLowerCase();
+                      if (findC.text.isNotEmpty && same) {
+                        _controller.replaceText(sel.start, sel.end - sel.start, repC.text, TextSelection.collapsed(offset: sel.start + repC.text.length));
+                      }
+                      final i = search(_controller.selection.baseOffset);
+                      set(() => status = i < 0 ? tr("No more matches") : '');
+                      if (i >= 0) select(i);
+                    },
+              child: const Text("Replace"),
+            ),
+            FilledButton(
+              onPressed: _controller.readOnly
+                  ? null
+                  : () {
+                      if (findC.text.isEmpty) return;
+                      int n = 0, from = 0;
+                      while (true) {
+                        final text = _controller.document.toPlainText();
+                        final hay = matchCase ? text : text.toLowerCase();
+                        final i = hay.indexOf(matchCase ? findC.text : findC.text.toLowerCase(), from);
+                        if (i < 0) break;
+                        _controller.replaceText(i, findC.text.length, repC.text, null);
+                        from = i + repC.text.length;
+                        n++;
+                        if (n > 5000) break;
+                      }
+                      set(() => status = "${tr('Replaced')}: $n");
+                    },
+              child: const Text("Replace all"),
+            ),
+          ],
+        ),
+      ),
+    );
+    findC.dispose();
+    repC.dispose();
+  }
+
+  Future<void> _history(String id, String title) => showOfficeHistory(
+        context,
+        kind: 'doc',
+        fileId: id,
+        title: title,
+        currentContent: () => (_open && _docId == id) ? _controller.document.toDelta().toJson() : null,
+        onRestore: (v) async {
+          if (_open && _docId == id) {
+            _saveTimer?.cancel();
+            _saveState = 'saved';
+          }
+          await _db.from('documents').update({'content': v['content'], 'last_modified': DateTime.now().toIso8601String()}).eq('id', id);
+          if (_open && _docId == id) await _openDoc(id);
+          await _loadDocs();
+          _snack("Version restored.");
+        },
+      );
+
+  Future<void> _shareFromList(Map<String, dynamic> d) async {
+    final x = await _fetchOps(d);
+    if (x == null || !mounted) return;
+    await shareAppFileAs(context, _formats(x.$1, x.$2));
+  }
+
+  Future<void> _wordFromList(Map<String, dynamic> d) async {
+    final x = await _fetchOps(d);
+    if (x == null || !mounted) return;
+    await downloadAppFile(context, _formats(x.$1, x.$2)[1]);
+  }
+
+  /// Opens a Word file (from the phone / computer, or "Open with") as a new
+  /// document: text, headings, lists, bold / italic / underline / colour,
+  /// alignment, quotes; tables become lines.
+  Future<void> _importWord([Uint8List? bytes, String? name]) async {
+    if (bytes == null) {
+      final r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['docx'], withData: true);
+      final f = r?.files.firstOrNull;
+      if (f?.bytes == null) return;
+      bytes = f!.bytes!;
+      name = f.name;
+    }
+    try {
+      final ops = deltaFromDocx(bytes);
+      final title = (name ?? 'Imported document').replaceAll(RegExp(r'\.docx$', caseSensitive: false), '');
+      final words = Document.fromJson(ops).toPlainText().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+      final row = await _db.from('documents').insert({'title': title, 'owner_email': widget.userEmail, 'content': ops, 'word_count': words}).select('id').single();
+      await _loadDocs();
+      await _openDoc(row['id'].toString());
+      _snack("Opened “$title”. Save back to Word with File › Download Word.");
+    } catch (e) {
+      _snack("Couldn't open this Word file: ${e is FormatException ? e.message : e}");
+    }
+  }
 
   // ------------------------------------------------------------------
   // Editing commands (ribbon, right-click menu, shortcuts)
@@ -740,6 +924,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
             OfficeHubAction("New Document", Icons.add, Colors.blue, () => _create(_templates.first)),
             OfficeHubAction("Open Existing", Icons.folder, Colors.orange, () => _snack("Pick a document from “My documents”, or search for it.")),
             OfficeHubAction("Templates", Icons.auto_stories, Colors.green, _pickTemplate),
+            OfficeHubAction("Open a Word file (.docx)", Icons.upload_file_rounded, Colors.indigo, () => _importWord()),
           ],
           templates: _templates,
           onTemplate: _create,
@@ -757,6 +942,9 @@ class _DocumentScreenState extends State<DocumentScreen> {
             OfficeMenuItem("Open", icon: Icons.open_in_new, onTap: () => _openDoc(d['id'].toString())),
             OfficeMenuItem("Rename", icon: Icons.drive_file_rename_outline, onTap: () => _rename(d)),
             OfficeMenuItem("Make a copy", icon: Icons.copy_rounded, onTap: () => _duplicate(d)),
+            OfficeMenuItem("Share…", icon: Icons.share_rounded, onTap: () => _shareFromList(d)),
+            OfficeMenuItem("Download Word (.docx)", icon: Icons.description_outlined, onTap: () => _wordFromList(d)),
+            OfficeMenuItem("Version history", icon: Icons.history_rounded, onTap: () => _history(d['id'].toString(), (d['title'] ?? '').toString())),
             const OfficeMenuItem.divider(),
             OfficeMenuItem("Delete", icon: Icons.delete_outline, color: Colors.red.shade700, onTap: () => _delete(d)),
           ],
@@ -792,6 +980,8 @@ class _DocumentScreenState extends State<DocumentScreen> {
             a(Icons.copy_rounded, "Make a copy", _docId == null ? null : () => _duplicate({'id': _docId})),
             const OfficeRibbonGap(),
             a(Icons.picture_as_pdf_outlined, "Download PDF", _exportPdf),
+            a(Icons.description_outlined, "Download Word", () => downloadAppFile(context, _formats(_controller.document.toDelta().toJson(), _titleC.text.trim())[1])),
+            a(Icons.history_rounded, "Version history", _docId == null ? null : () => _history(_docId!, _titleC.text)),
             a(Icons.share_rounded, "Share", _share, tip: "Send in My Home or to other apps"),
             a(Icons.print_outlined, "Print", _print, tip: "Ctrl+P"),
             const OfficeRibbonGap(),
@@ -837,6 +1027,7 @@ class _DocumentScreenState extends State<DocumentScreen> {
             OfficeMenuAction<String>(Icons.border_outer, "Margins: ${_margins[0].toUpperCase()}${_margins.substring(1)}", const [('narrow', 'Narrow'), ('normal', 'Normal'), ('wide', 'Wide')], (v) => setState(() => _margins = v), accent: _kPurple),
           ]),
       OfficeRibbonTab("Review", () => [
+            a(Icons.find_replace_rounded, "Find & replace", _findReplace, tip: "Ctrl+F / Ctrl+H"),
             a(Icons.numbers, "Word count", _wordCount),
             a(Icons.format_clear, "Clear formatting", ro ? null : _clearFormatting, tip: "Ctrl+\\"),
             a(Icons.search, "Look up", () => _web('https://www.google.com/search?q=')),
@@ -869,6 +1060,8 @@ class _DocumentScreenState extends State<DocumentScreen> {
         bindings: officeKeys({
           LogicalKeyboardKey.keyS: _save,
           LogicalKeyboardKey.keyP: _print,
+          LogicalKeyboardKey.keyF: _findReplace,
+          LogicalKeyboardKey.keyH: _findReplace,
           LogicalKeyboardKey.keyK: _link,
           LogicalKeyboardKey.keyE: () => _align(Attribute.centerAlignment),
           LogicalKeyboardKey.keyR: () => _align(Attribute.rightAlignment),

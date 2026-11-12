@@ -17,6 +17,8 @@ import '../services/profile_refresh.dart';
 import 'add_account_screen.dart';
 import 'terms_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../widgets/country_code_picker.dart';
+import '../core/country_codes.dart';
 
 /// Result of checking a signed-in user's profile.
 enum _Approval { approved, pending, needsVerification, rejected, error }
@@ -1312,19 +1314,20 @@ class _AuthScreenState extends State<AuthScreen> {
               border: Border.all(color: AppPalette.line(Colors.grey.shade400)),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: DropdownButton<Map<String, dynamic>>(
-              value: _selectedCountry,
-              underline: const SizedBox(),
-              items: _countries
-                  .map((c) => DropdownMenuItem<Map<String, dynamic>>(
-                        value: c,
-                        child: Text("${c['flag']} ${c['code']}",
-                            style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
-                      ))
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) setState(() => _selectedCountry = v);
+            // every country, with a search box (the church's main ones first)
+            child: InkWell(
+              onTap: () async {
+                final c = await pickCountryCode(context);
+                if (c != null) setState(() => _selectedCountry = {'name': c.$2, 'code': c.$3, 'flag': countryFlag(c.$1)});
               },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text.rich(TextSpan(text: "${_selectedCountry['flag']} ${_selectedCountry['code']}"),
+                      style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const Icon(Icons.arrow_drop_down_rounded, size: 18),
+                ]),
+              ),
             ),
           ),
           const SizedBox(width: 8),

@@ -119,6 +119,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
         userDept = data['department'] ?? ""; 
         userTeam = data['team'] ?? ""; 
         userCell = data['cell_group'] ?? ""; 
+        _secUnit = (
+          (data['secondary_department'] ?? '').toString().trim(),
+          (data['secondary_team'] ?? '').toString().trim(),
+          (data['secondary_cell_group'] ?? '').toString().trim(),
+        );
 
         // Extract scj_id from profiles
         final String userScjId = (data['scj_id'] ?? data['scj_number'] ?? "").toString().trim();
@@ -180,10 +185,29 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
+  /// The secondary role's own unit (department, team, cell), when it sits in
+  /// another department than the main role (Theology + 장년회 cell leader, or
+  /// the 24부서 cell leader). Empty strings = same unit as the main role.
+  (String, String, String) _secUnit = ('', '', '');
+  (String, String, String)? _ownUnit; // the main role's, kept while switched
+
+  /// (department, team, cell) to use for [role].
+  (String, String, String) _unitFor(String? role) {
+    final own = _ownUnit ?? (userDept, userTeam, userCell);
+    if (role == null || role.isEmpty || role != _ownSecondary || _secUnit.$1.isEmpty) return own;
+    return _secUnit;
+  }
+
   Future<void> _setRoleMode(String mode) async {
     if (_ownPrimary == null || _ownSecondary == null) return;
     setState(() {
       _roleMode = mode;
+      // the secondary role works in its own unit
+      _ownUnit ??= (userDept, userTeam, userCell);
+      final u = mode == 'secondary' ? _unitFor(_ownSecondary) : _ownUnit!;
+      userDept = u.$1;
+      userTeam = u.$2;
+      userCell = u.$3;
       _simulatedRole = mode == 'secondary' ? _ownSecondary : _ownPrimary;
       _secondaryRole = mode == 'both' ? _ownSecondary : null;
       _isLoading = true;
@@ -785,6 +809,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   /// The role that grants [duty]: the primary role, or the secondary role
   /// when only that one lists it (e.g. a cell leader who is also team secretary).
+  static bool _is24Bu(String d) {
+    final n = d.replaceAll(RegExp(r'\s'), '').toLowerCase();
+    return n == '24부서' || n == '24dept' || n == '24depts' || n == '24departments';
+  }
+
   String _roleForDuty(String duty) {
     final primary = _simulatedRole ?? '';
     final sec = _secondaryRole ?? '';
@@ -886,15 +915,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
   
   void _goToCorrectDashboard(String duty) { 
     final String role = _roleForDuty(duty);
+    final u = _unitFor(role);
     if (role.toLowerCase().contains('cell')) {
       Navigator.push(context, MaterialPageRoute(
         builder: (c) => CellStatusScreen(
           sheetName: duty, 
-          cellName: userCell, 
+          cellName: u.$3, 
           location: userLoc, 
           subLocation: userSub, 
-          dept: userDept, 
-          team: userTeam, 
+          dept: u.$1, 
+          team: u.$2, 
           initialMode: "dashboard"
         )
       )); 
@@ -906,8 +936,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
           selectedDuty: duty, 
           loc: userLoc, 
           sub: userSub, 
-          dept: userDept, 
-          team: userTeam
+          dept: u.$1, 
+          team: u.$2
         )
       )); 
     }
@@ -915,15 +945,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   Future<void> _nav(String duty, String mode, {DateTime? selectedDate}) async { 
     DateTime dateToUse = selectedDate ?? DateTime.now();
+    final u = _unitFor(_roleForDuty(duty));
 
     await Navigator.push(context, MaterialPageRoute(
       builder: (c) => EntryFormScreen(
         sheetName: duty, 
-        cellName: userCell, 
+        cellName: u.$3, 
         location: userLoc, 
         subLocation: userSub, 
-        dept: userDept, 
-        team: userTeam,
+        dept: u.$1, 
+        team: u.$2,
         userRole: _roleForDuty(duty),
         initialMode: mode,
         selectedDate: dateToUse,
@@ -937,20 +968,24 @@ class _ReportsScreenState extends State<ReportsScreen> {
   /// "Church Admin") gave the same, wrong list for everyone.
   Future<void> _openAbsentees(String duty, String title, String? role) async {
     final r = (role ?? _simulatedRole ?? '').toLowerCase();
+    final u = _unitFor(role ?? _simulatedRole);
     String? group;
     Map<String, String> scope;
     final loc = {'location': userLoc};
     final sub = {...loc, 'sub_location': userSub};
-    final dept = {...sub, 'department': userDept};
-    final team = {...dept, 'team': userTeam};
+    final dept = {...sub, 'department': u.$1};
+    final team = {...dept, 'team': u.$2};
     final byKey = GroupScope.detect(grouping: '', role: r);
     if (r == 'admin' || r.startsWith('church_') || r.startsWith('korean_worker_')) {
       scope = {};
     } else if (byKey != null) {
       group = byKey;
       scope = {};
+    } else if (r.contains('cell') && _is24Bu(u.$1)) {
+      // the 24부서 cell leader: the location's 24부서 members
+      scope = {...loc, 'department': u.$1};
     } else if (r.contains('cell')) {
-      scope = {...team, 'cell_group': userCell};
+      scope = {...team, 'cell_group': u.$3};
     } else if (r.contains('team')) {
       scope = team;
     } else if (r.startsWith('dept_')) {

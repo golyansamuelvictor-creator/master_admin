@@ -25,6 +25,8 @@ import 'widgets/media_mini_player.dart';
 import 'widgets/app_lock_settings.dart';
 import 'widgets/two_step.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'core/security.dart';
+import 'core/offline.dart';
 
 // ==========================================
 // SHARED CONSTANTS
@@ -78,9 +80,17 @@ void main() async {
         unawaited(Supabase.instance.client.rpc('set_acting_role', params: {'p_role': null}).then((_) {}, onError: (_) {}));
         // the Terms and Conditions accepted before the account was created
         unawaited(Terms.recordPending());
+        // watermark (SCJ ID + date), download / print permission, web guards
+        unawaited(AppSecurity.start());
+        // reports kept on this device while offline: send them
+        OutboxBadge.navigatorKey = appNavigatorKey;
+        unawaited(Outbox.start());
       }
     }
-    if (st.event == AuthChangeEvent.signedOut) CallService.stop();
+    if (st.event == AuthChangeEvent.signedOut) {
+      CallService.stop();
+      AppSecurity.stop();
+    }
   });
 
   try {
@@ -209,13 +219,15 @@ class MasterAdminApp extends StatelessWidget {
               // Right-to-left languages (Arabic, Hebrew ...) mirror the screens
               child: Directionality(
                 textDirection: I18n.isRtl ? TextDirection.rtl : TextDirection.ltr,
-                child: _AppShell(
+                child: SecurityWatermark(
+                  child: _AppShell(
                   child: DemoMode.active
                       ? Column(children: [
                           DemoBanner(onExit: () => DemoMode.exit(liveUrl: kLiveSupabaseUrl, liveKey: kLiveSupabaseKey)),
                           Expanded(child: child ?? const SizedBox.shrink()),
                         ])
                       : (child ?? const SizedBox.shrink()),
+                  ),
                 ),
               ),
             );
@@ -945,7 +957,12 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
               if (mounted) setState(() {});
             });
           }
-          return HomeScreen(key: ValueKey(_session?.user.id ?? 'active_user'));
+          // the current Terms & Data Policy must be accepted (old accounts too)
+          return TermsGate(
+            key: ValueKey('terms|${_session?.user.id}'),
+            acceptedVersion: (_profile?['terms_version'] as num?)?.toInt(),
+            child: HomeScreen(key: ValueKey(_session?.user.id ?? 'active_user')),
+          );
         }
 
         // 2. Has valid SCJ ID key, but awaiting admin approval or rejected -> Pending Screen

@@ -31,6 +31,7 @@ import 'package:master_admin/core/app_sizes.dart';
 import 'education/education_contents.dart';
 import 'bible/bible_screen.dart';
 import 'special_activities_screen.dart';
+import '../core/launch_files.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -105,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // The clock only shows hours and minutes, so only rebuild when the minute changes
     // (before, the whole screen rebuilt every second).
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (t.tick % 2 == 0) _openLaunchFiles();
       final m = DateTime.now().minute;
       if (mounted && m != _lastMinute) {
         _lastMinute = m;
@@ -498,6 +500,31 @@ class _HomeScreenState extends State<HomeScreen> {
   // The dashboard (side menu) opens screens; Back from them returns to the
   // dashboard it was opened from, not straight to the home page.
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  bool _launching = false;
+
+  /// Files opened with "Open with › Master Admin" (desktop app): Word in
+  /// Docs, PowerPoint in Slides, Excel / CSV in Sheets.
+  Future<void> _openLaunchFiles() async {
+    if (_launching || !mounted) return;
+    _launching = true;
+    try {
+      for (final f in await takeLaunchFiles()) {
+        if (!mounted) return;
+        final n = f.$1.toLowerCase();
+        final Widget? page = n.endsWith('.docx')
+            ? DocumentScreen(title: "Docs", userEmail: email, userRole: selectedRole, openFile: f)
+            : n.endsWith('.pptx')
+                ? PresentationScreen(title: "Presentation", userEmail: email, userRole: selectedRole, openFile: f)
+                : (n.endsWith('.xlsx') || n.endsWith('.csv'))
+                    ? SpreadsheetScreen(title: "Sheets", userEmail: email, userRole: selectedRole, openFile: f)
+                    : null;
+        if (page != null) await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+      }
+    } finally {
+      _launching = false;
+    }
+  }
 
   void handleNavigation(String v) {
     Widget? page;

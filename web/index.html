@@ -1,47 +1,98 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="$FLUTTER_BASE_HREF">
-
+  <base href="/">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
-
-  <!-- iOS meta tags & icons -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Master Administration System">
+  <meta name="theme-color" content="#362170">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="master_admin">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Master Admin">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>master_admin</title>
+  <title>Master Administration</title>
   <link rel="manifest" href="manifest.json">
-  <script src="https://github.com/corbado/flutter-passkeys/releases/download/2.4.0/bundle.js"></script>
+
+  <!-- Loading screen: shows the moment the app opens, until Flutter draws its first screen -->
+  <link rel="preload" href="splash/logo.webp" as="image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; height: 100%; background: #ffffff; }
+    #ma-splash {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; box-sizing: border-box; text-align: center;
+      background: linear-gradient(180deg,
+        #ffffff 0%, #ffffff 9%, #f7f6fa 19%, #eae7ef 31%, #e0ddea 39%,
+        #c8bfd6 50%, #b4abc8 56%, #a291bc 62%, #87769f 69%, #6e5c9a 75%,
+        #533e86 81%, #36206f 88%, #331c6c 100%);
+      font-family: 'Merriweather', Georgia, 'Times New Roman', serif;
+      transition: opacity .45s ease;
+    }
+    #ma-splash.gone { opacity: 0; pointer-events: none; }
+    #ma-splash img {
+      width: min(56vw, 34vh, 360px); height: auto;
+      animation: ma-breathe 2.2s ease-in-out infinite alternate;
+      filter: drop-shadow(0 10px 22px rgba(54, 32, 111, .18));
+    }
+    #ma-splash h1 {
+      margin: min(5vh, 36px) 0 0; color: #1c1238; font-weight: 900; letter-spacing: -.5px;
+      font-size: clamp(30px, 11vw, 64px); line-height: 1.1;
+    }
+    #ma-splash p {
+      margin: min(3vh, 22px) 0 0; color: #1c1238; font-weight: 700;
+      font-size: clamp(17px, 5.4vw, 30px);
+    }
+    #ma-splash .dots::after { content: ''; animation: ma-dots 1.4s steps(4) infinite; }
+    @keyframes ma-breathe { from { transform: scale(.96); } to { transform: scale(1.04); } }
+    @keyframes ma-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+    @media (prefers-reduced-motion: reduce) { #ma-splash img, #ma-splash .dots::after { animation: none; } }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <div id="ma-splash" aria-live="polite">
+    <img src="splash/logo.webp" alt="Master Admin">
+    <h1>Welcome Back</h1>
+    <p>Loading your experience<span class="dots"></span></p>
+  </div>
+  <script>
+    // Hide the loading screen once Flutter has drawn its first frame.
+    window.addEventListener('flutter-first-frame', function () {
+      var s = document.getElementById('ma-splash');
+      if (!s) return;
+      s.classList.add('gone');
+      setTimeout(function () { s.remove(); }, 500);
+    });
+  </script>
+  <!-- Passkeys (corbado). Loaded after the loading screen so it can't hold it back; still before Flutter starts. -->
+  <script src="https://github.com/corbado/flutter-passkeys/releases/download/2.4.0/bundle.js"></script>
+  <script>
+    // "Open with › Master Admin" (desktop app): Word, PowerPoint and Excel
+    // files are kept here until the app picks them up (core/launch_files_web.dart)
+    window.__maOpenFiles = [];
+    if ('launchQueue' in window) {
+      window.launchQueue.setConsumer(async function (params) {
+        for (const h of (params.files || [])) {
+          try {
+            const f = await h.getFile();
+            window.__maOpenFiles.push({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) });
+          } catch (e) {}
+        }
+        window.dispatchEvent(new Event('ma-open-files'));
+      });
+    }
+    // data saving and offline opening (web/ma_sw.js)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('ma_sw.js').catch(function () {});
+      });
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

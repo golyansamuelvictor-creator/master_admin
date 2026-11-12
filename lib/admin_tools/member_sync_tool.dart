@@ -95,6 +95,12 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
     if (_uuidCols.contains(col)) {
       return RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(v) ? v : null;
     }
+    if (col == 'official') {
+      final l = v.toLowerCase();
+      if (['yes', 'y', 'true', '1', 'official'].contains(l)) return true;
+      if (['no', 'n', 'false', '0', '-'].contains(l)) return false;
+      return null;
+    }
     if (col == 'date_joined') {
       return RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(v) ? v.substring(0, 10) : null;
     }
@@ -158,7 +164,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       if (rows.length <= 1) throw Exception("The uploaded spreadsheet contains no data rows.");
 
       // The members table's columns (from one stored row; the known list if empty)
-      final known = <String>{..._sqlOrder, 'official_dept_id', 'geo_category', 'country', 'mou_church', 'course_completion_date', 'enrollment_year'};
+      final known = <String>{..._sqlOrder, 'official_dept_id', 'geo_category', 'country', 'mou_church', 'course_completion_date', 'enrollment_year', 'official'};
       try {
         final one = await _supabase.from('members').select().limit(1);
         if (one.isNotEmpty) known
@@ -554,7 +560,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                   _buildColumnBadge(41, "introduced_by_id", "Optional Foreign Key"),
                   const SizedBox(height: 8),
                   Text(
-                    "Also matched by header name: country, mou_church, geo_category, course_completion_date, enrollment_year, official_dept_id. book_of_life fills bol_dept; is_worker is worked out from duty.",
+                    "Also matched by header name: country, mou_church, geo_category, course_completion_date, enrollment_year, official_dept_id, official (Yes / No: Dubai Official). book_of_life fills bol_dept; is_worker is worked out from duty.",
                     style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade700)),
                   ),
                 ],
