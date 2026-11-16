@@ -4,14 +4,15 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
+  connectivity_plus
   file_selector_windows
   flutter_webrtc
   geolocator_windows
-  passkeys_windows
+  livekit_client
   printing
   record_windows
-  share_plus
   url_launcher_windows
+  share_plus
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

@@ -16,7 +16,8 @@ const Color _kPurple = Color(0xFF4A148C);
 final _f = DateFormat('yyyy-MM-dd');
 String _err(Object e) => e is PostgrestException ? e.message : e.toString();
 
-const _subjects = {'workers': 'Workers', 'saints': 'Saints', 'all': 'All members', 'students': 'Center students'};
+const _subjects = {'workers': 'Workers', 'saints': 'Saints', 'all': 'All members', 'students': 'Center students', 'specific': 'Specific members'};
+const _pools = {'workers': 'Workers', 'saints': 'Saints', 'all': 'Workers and saints'};
 const _entryModes = {
   'creator': 'Only me (the creator)',
   'unit_leaders': "The units' leaders",
@@ -421,6 +422,9 @@ class _ActivityEditorState extends State<ActivityEditor> {
   late String _mode = ((widget.activity?['schedule'] as Map?)?['mode'] ?? 'once').toString();
   late final Set<int> _days = {...(((widget.activity?['schedule'] as Map?)?['days'] as List?) ?? const []).map((e) => (e as num).toInt())};
   late String _subj = (widget.activity?['subjects'] ?? 'workers').toString();
+  // "Specific members": from Workers / Saints / both, picked from the units
+  late String _pool = (widget.activity?['member_pool'] ?? 'workers').toString();
+  late final Set<String> _memberIds = {...List<String>.from(((widget.activity?['member_ids'] as List?) ?? const []).map((e) => e.toString()))};
   late final String _entry = (widget.activity?['entry_mode'] ?? 'creator').toString();
   // who enters: these roles in the shared units (the creator always can)
   late final _otherKind = TextEditingController(text: kActivityKinds.contains(_kind.text) ? '' : _kind.text);
@@ -616,11 +620,97 @@ class _ActivityEditorState extends State<ActivityEditor> {
     if (res != null && !_units.any((u) => u['label'] == res['label'] && u['level'] == res['level'])) setState(() => _units.add(res));
   }
 
+  /// "Specific members": everyone of the chosen units (Workers / Saints /
+  /// both); tick the ones to track.
+  Future<void> _pickMembers() async {
+    List<Map<String, dynamic>> people = [];
+    String? err;
+    try {
+      final units = [
+        for (final u in _units)
+          {for (final k in ['level', 'location', 'sub_location', 'department', 'team', 'cell_group', 'official_dept_id']) k: u[k]?.toString()},
+      ];
+      final r = await _db.rpc('sa_pick_members', params: {'p_units': units, 'p_pool': _pool});
+      people = List<Map<String, dynamic>>.from((r as List).map((e) => Map<String, dynamic>.from(e as Map)));
+    } catch (e) {
+      err = "Couldn't load the members (run 28_round27.sql): ${_err(e)}";
+    }
+    if (!mounted) return;
+    final picked = {..._memberIds};
+    String q = '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
+        final shown = people.where((p) => q.isEmpty || "${p['name']} ${p['department']} ${p['team']} ${p['cell_group']}".toLowerCase().contains(q.toLowerCase())).toList();
+        final allShown = shown.isNotEmpty && shown.every((p) => picked.contains(p['id'].toString()));
+        return AlertDialog(
+          title: Text.rich(TextSpan(text: "${tr('Choose members')} (${picked.length})")),
+          content: SizedBox(
+            width: 520,
+            height: 480,
+            child: err != null
+                ? Center(child: Text.rich(TextSpan(text: err), textAlign: TextAlign.center))
+                : Column(children: [
+                    TextField(
+                      decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Find a name, department, team, cell"), border: const OutlineInputBorder(), isDense: true),
+                      onChanged: (v) => set(() => q = v),
+                    ),
+                    CheckboxListTile(
+                      dense: true,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: allShown,
+                      title: Text.rich(TextSpan(text: "${tr('Select all')} (${shown.length})"), style: const TextStyle(fontWeight: FontWeight.bold)),
+                      onChanged: (v) => set(() {
+                        for (final p in shown) {
+                          v == true ? picked.add(p['id'].toString()) : picked.remove(p['id'].toString());
+                        }
+                      }),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: shown.isEmpty
+                          ? const Center(child: Text("No members in these units."))
+                          : ListView.builder(
+                              itemCount: shown.length,
+                              itemBuilder: (_, i) {
+                                final p = shown[i];
+                                final id = p['id'].toString();
+                                final unit = [p['department'], p['team'], p['cell_group']].where((x) => (x ?? '').toString().isNotEmpty).join(' · ');
+                                return CheckboxListTile(
+                                  dense: true,
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                  value: picked.contains(id),
+                                  title: Text.rich(TextSpan(text: (p['name'] ?? '').toString())),
+                                  subtitle: Text.rich(TextSpan(text: "${p['is_worker'] == true ? tr('Worker') : tr('Saint')}${unit.isEmpty ? '' : ' · $unit'}"), style: const TextStyle(fontSize: 11)),
+                                  onChanged: (v) => set(() => v == true ? picked.add(id) : picked.remove(id)),
+                                );
+                              },
+                            ),
+                    ),
+                  ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+            FilledButton(onPressed: err != null ? null : () => Navigator.pop(ctx, true), child: const Text("Done")),
+          ],
+        );
+      }),
+    );
+    if (ok == true) {
+      setState(() {
+        _memberIds
+          ..clear()
+          ..addAll(picked);
+      });
+    }
+  }
+
   Future<void> _save() async {
     if (_title.text.trim().isEmpty) return setState(() => _note = "Give the activity a title.");
     if (_fields.isEmpty) return setState(() => _note = "Add at least one thing to record.");
     if (_units.isEmpty) return setState(() => _note = "Share it with at least one unit.");
     if (_mode == 'days' && _days.isEmpty) return setState(() => _note = "Choose the days it meets.");
+    if (_subj == 'specific' && _memberIds.isEmpty) return setState(() => _note = "Choose the members to track (step 3).");
     setState(() {
       _saving = true;
       _note = null;
@@ -639,6 +729,8 @@ class _ActivityEditorState extends State<ActivityEditor> {
         'end_date': _end == null ? null : _f.format(_end!),
         'schedule': {'mode': _mode, if (_mode == 'days') 'days': (_days.toList()..sort())},
         'subjects': _subj,
+        if (_subj == 'specific') 'member_ids': _memberIds.toList(),
+        if (_subj == 'specific') 'member_pool': _pool,
         'fields': _fields,
         'entry_mode': _roles.isEmpty ? 'creator' : _entry,
         'entry_roles': _roles.toList()..sort(),
@@ -803,6 +895,28 @@ class _ActivityEditorState extends State<ActivityEditor> {
                   onChanged: (v) => setState(() => _subj = v ?? 'workers'),
                 ),
               ),
+              if (_subj == 'specific') ...[
+                const SizedBox(height: 10),
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: [for (final e in _pools.entries) ButtonSegment(value: e.key, label: Text(e.value))],
+                  selected: {_pool},
+                  onSelectionChanged: (v) => setState(() => _pool = v.first),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _units.isEmpty
+                      ? "Add the units first (step 5 › Shared with), then choose the members from them."
+                      : "${_memberIds.length} member${_memberIds.length == 1 ? '' : 's'} chosen",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: AppPalette.fg(_units.isEmpty ? Colors.orange.shade900 : Colors.blueGrey.shade700)),
+                ),
+                TextButton.icon(
+                  onPressed: _units.isEmpty ? null : _pickMembers,
+                  icon: const Icon(Icons.how_to_reg_rounded),
+                  label: const Text("Choose members"),
+                ),
+              ],
             ]),
             _step(4, "Table columns", [
               Text("Every table has Name, Location, Sub-location, Department, Team and Cell group. Add your own columns below.",

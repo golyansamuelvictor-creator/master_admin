@@ -51,8 +51,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
   bool _isLoading = true;
   bool _hasRedirected = false; 
   String userLoc = ""; String userSub = ""; String userDept = ""; String userTeam = ""; String userCell = "";
-  int _flaggedCount = 0;
-  String _latestCorrectionNote = "";
 
   List<String> _dynamicDuties = [];
   List<String> _primaryRoleDuties = [];
@@ -149,7 +147,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
         await _fetchRolePermissions(_simulatedRole!); 
         await _fetchDutyConfig(); 
         await _fetchAvailableRoles();
-        _checkForFlaggedReports();
 
         if (!_hasRedirected) {
           _hasRedirected = true;
@@ -374,14 +371,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } catch (e) { debugPrint("Permission Error: $e"); }
   }
 
-  Future<void> _checkForFlaggedReports() async {
-    if (_simulatedRole == null || !_simulatedRole!.contains('cell') || userCell.isEmpty) return;
-    try {
-      final res = await _supabase.from('logs_service_attendance_status').select('correction_note').eq('unit_name', userCell).eq('flagged_for_correction', true).limit(1);
-      if (res.isNotEmpty && mounted) setState(() { _flaggedCount = res.length; _latestCorrectionNote = res[0]['correction_note'] ?? "Check your reports."; });
-    } catch (e) { debugPrint("Flag Check Error: $e"); }
-  }
-
   bool _viewsStudents = false;
   bool _isTheology = false;
 
@@ -584,7 +573,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             )
           )
         ),
-        if (_flaggedCount > 0) _buildCorrectionNotification(hPadding),
+        // flagged / returned reports: Notification Center › My reports
         const SizedBox(height: 10),
         Expanded(
           child: GridView.builder(
@@ -1391,19 +1380,4 @@ class _ReportsScreenState extends State<ReportsScreen> {
       );
     });
   }
-
-  Widget _buildCorrectionNotification(double hPad) => Container(
-    margin: EdgeInsets.fromLTRB(hPad, 15, hPad, 0), 
-    padding: const EdgeInsets.all(18), 
-    decoration: BoxDecoration(color: AppPalette.bg(Colors.red[50]), borderRadius: BorderRadius.circular(15), border: Border.all(color: AppPalette.line(Colors.red.withValues(alpha: 0.3)))), 
-    child: Row(children: [
-      Icon(Icons.report_gmailerrorred_rounded, color: AppPalette.fg(Colors.red), size: 30), 
-      const SizedBox(width: 15), 
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text("Report flagged", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.red), fontSize: 13)), 
-        const SizedBox(height: 2), 
-        Text(_latestCorrectionNote, style: GoogleFonts.merriweather(fontSize: 14, color: AppPalette.fg(Colors.black87)))
-      ]))
-    ])
-  );
 }

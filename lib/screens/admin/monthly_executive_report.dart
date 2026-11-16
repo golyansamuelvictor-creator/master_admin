@@ -338,7 +338,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         _officialView = locs.isEmpty || locs.any((l) => l.contains('dubai') || l.contains('uae'));
         if (_levelCols[_drilldownLevel] != j['level']) {
           // the level was adjusted to the area: load once more at that level
-          return _loadReportData();
+          return await _loadReportData();
         }
       }
 

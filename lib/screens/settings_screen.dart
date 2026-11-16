@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart' hide Text;
+import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -233,7 +233,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _tile(IconData icon, Color color, String title, String subtitle, VoidCallback onTap, {bool big = false, bool danger = false}) {
+  Widget _tile(IconData icon, Color color, String title, String subtitle, VoidCallback onTap, {bool danger = false}) {
     return CompactCard(
       leading: CircleAvatar(radius: 17, backgroundColor: AppPalette.bg(color.withValues(alpha: 0.12)), child: Icon(icon, size: 19, color: AppPalette.fg(color))),
       title: title,

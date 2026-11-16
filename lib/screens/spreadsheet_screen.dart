@@ -7,6 +7,7 @@ import 'package:excel/excel.dart' as xl;
 import '../core/xlsx_safe.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kPrimaryMouseButton;
 import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
@@ -39,6 +40,18 @@ class SpreadsheetScreen extends StatefulWidget {
 
 const Color _kPurple = Color(0xFF4A148C);
 const Color _kGreen = Color(0xFF1B5E20);
+
+/// A grid shortcut that runs one of the screen's actions (copy / cut /
+/// clear the selection).
+class _GridAction extends PlutoGridShortcutAction {
+  final VoidCallback run;
+  const _GridAction(this.run);
+  @override
+  void execute({required PlutoKeyManagerEvent keyEvent, required PlutoGridStateManager stateManager}) {
+    if (stateManager.isEditing == true) return; // typing in a cell: normal keys
+    run();
+  }
+}
 
 class _Sheet {
   String? id; // spreadsheet_contents.id
@@ -780,9 +793,188 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
   // ------------------------------------------------------------------
   // Clipboard (right-click menu; Ctrl+C / Ctrl+V on selected cells also work in the grid)
   // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // Selection like Excel: drag with the mouse over cells, click a column
+  // letter (whole column) or a row number (whole row), click "#" (all);
+  // Shift + click extends. Copy, cut and clear work on the selection.
+  // (Phones: long-press a cell, then drag.)
+  // ------------------------------------------------------------------
+  Offset? _dragFrom;
+  (int, int)? _dragCell; // (row, grid column)
+  bool _dragSel = false;
+  // column / row header clicks: applied after the grid's own tap (which
+  // would otherwise move the cursor and clear the selection)
+  VoidCallback? _pendingSel;
+
+  /// The grid column at a screen x (frozen columns first, then the
+  /// scrolled ones); null = outside.
+  int? _colAt(double dx) {
+    final sm = _sm;
+    final o = sm?.gridGlobalOffset;
+    if (sm == null || o == null) return null;
+    final idx = sm.columnIndexesByShowFrozen;
+    double x = o.dx + PlutoGridSettings.gridPadding + PlutoGridSettings.gridBorderWidth;
+    double frozenW = 0;
+    for (final i in idx) {
+      if (sm.refColumns[i].frozen.isStart) frozenW += sm.refColumns[i].width;
+    }
+    if (dx < x) return null;
+    if (dx < x + frozenW) {
+      for (int k = 0; k < idx.length; k++) {
+        final col = sm.refColumns[idx[k]];
+        if (!col.frozen.isStart) break;
+        x += col.width;
+        if (dx < x) return k;
+      }
+      return null;
+    }
+    double pos = dx - x - frozenW + (sm.scroll.horizontal?.offset ?? 0);
+    for (int k = 0; k < idx.length; k++) {
+      final col = sm.refColumns[idx[k]];
+      if (col.frozen.isStart) continue;
+      pos -= col.width;
+      if (pos < 0) return k;
+    }
+    return null;
+  }
+
+  /// Number of data columns (after "#").
+  int get _gridCols => (_sm?.refColumns.length ?? 1) - 1;
+
+  void _selectRange(int r1, int c1, int r2, int c2) {
+    final sm = _sm;
+    if (sm == null || sm.refRows.isEmpty) return;
+    r1 = r1.clamp(0, sm.refRows.length - 1);
+    r2 = r2.clamp(0, sm.refRows.length - 1);
+    c1 = c1.clamp(1, _gridCols);
+    c2 = c2.clamp(1, _gridCols);
+    final row = sm.refRows[r1];
+    final cell = row.cells[sm.refColumns[sm.columnIndexesByShowFrozen[c1]].field];
+    if (sm.currentCell?.key != cell?.key) sm.setCurrentCell(cell, r1, notify: false);
+    sm.clearCurrentSelecting(notify: false);
+    sm.setCurrentSelectingPosition(cellPosition: PlutoGridCellPosition(rowIdx: r2, columnIdx: c2));
+    sm.setKeepFocus(true);
+  }
+
+  void _gridPointerDown(PointerDownEvent e) {
+    final sm = _sm;
+    _dragFrom = null;
+    _dragCell = null;
+    _pendingSel = null;
+    if (sm == null || e.kind != PointerDeviceKind.mouse || e.buttons != kPrimaryMouseButton) return;
+    final c = _colAt(e.position.dx);
+    if (c == null) return;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    final body = sm.bodyTopOffset;
+    final headTop = body - sm.columnFilterHeight - sm.columnHeight;
+    final cur = sm.currentCellPosition;
+    final last = sm.refRows.length - 1;
+    if (e.position.dy >= headTop && e.position.dy < body - sm.columnFilterHeight) {
+      // column letters: not on the resize edge
+      final right = _colAt(e.position.dx + 6);
+      if (right != c && c != 0) return;
+      if (c == 0) {
+        _pendingSel = () => _selectRange(0, 1, last, _gridCols); // "#": everything
+      } else if (shift && cur?.columnIdx != null && cur!.columnIdx! > 0) {
+        final from = cur.columnIdx!;
+        _pendingSel = () => _selectRange(0, from, last, c);
+      } else {
+        _pendingSel = () => _selectRange(0, c, last, c);
+      }
+      return;
+    }
+    if (e.position.dy < body) return;
+    final r = sm.getRowIdxByOffset(e.position.dy);
+    if (r == null) return;
+    if (c == 0) {
+      // row numbers
+      if (shift && cur?.rowIdx != null) {
+        final from = cur!.rowIdx!;
+        _pendingSel = () => _selectRange(from, 1, r, _gridCols);
+      } else {
+        _pendingSel = () => _selectRange(r, 1, r, _gridCols);
+      }
+      return;
+    }
+    _dragFrom = e.position;
+    _dragCell = (r, c);
+  }
+
+  void _gridPointerMove(PointerMoveEvent e) {
+    final sm = _sm;
+    final from = _dragFrom, start = _dragCell;
+    if (sm == null || from == null || start == null || (e.buttons & kPrimaryMouseButton) == 0) return;
+    if (!_dragSel) {
+      if ((e.position - from).distance < 6) return;
+      _dragSel = true;
+      final cell = sm.refRows[start.$1].cells[sm.refColumns[sm.columnIndexesByShowFrozen[start.$2]].field];
+      if (sm.isEditing) sm.setEditing(false, notify: false);
+      sm.setCurrentCell(cell, start.$1, notify: false);
+      sm.setSelecting(true);
+    }
+    sm.setCurrentSelectingPositionWithOffset(e.position);
+    sm.eventManager?.addEvent(PlutoGridScrollUpdateEvent(offset: e.position));
+  }
+
+  void _gridPointerUp(PointerEvent e) {
+    final sm = _sm;
+    final pending = _pendingSel;
+    _pendingSel = null;
+    if (pending != null && e is PointerUpEvent) Future(pending);
+    if (_dragSel && sm != null) {
+      sm.setSelecting(false);
+      PlutoGridScrollUpdateEvent.stopScroll(sm, PlutoGridScrollUpdateDirection.all);
+      sm.setKeepFocus(true);
+    }
+    _dragSel = false;
+    _dragFrom = null;
+    _dragCell = null;
+  }
+
+  /// The selected cells as (row, sheet column); just the current cell when
+  /// nothing is selected.
+  List<(int, int)> get _selectedCells {
+    final list = _sm?.currentSelectingPositionList ?? const [];
+    final out = <(int, int)>[];
+    for (final p in list) {
+      final f = p.field ?? '';
+      final c = f.startsWith('c') ? int.tryParse(f.substring(1)) : null;
+      if (c != null && p.rowIdx != null) out.add((p.rowIdx!, c));
+    }
+    return out.isEmpty ? [(_curRow, _curCol)] : out;
+  }
+
+  /// Tab / new-line text of the selection, the way Excel copies it.
+  String _selectionText() {
+    final cells = _selectedCells;
+    if (cells.length == 1) return _sheet.at(cells.first.$1, cells.first.$2);
+    final rows = <int, Map<int, String>>{};
+    int minC = 1 << 30, maxC = -1;
+    for (final (r, c) in cells) {
+      (rows[r] ??= {})[c] = _shown(r, c).toString();
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    }
+    final keys = rows.keys.toList()..sort();
+    return [for (final r in keys) [for (int c = minC; c <= maxC; c++) rows[r]![c] ?? ''].join('\t')].join('\n');
+  }
+
+  void _clearSelection() {
+    final cells = _selectedCells;
+    if (cells.length == 1) {
+      _setRaw(cells.first.$1, cells.first.$2, '');
+      return;
+    }
+    for (final (r, c) in cells) {
+      if (r < _sheet.rows && c < _sheet.cols) _sheet.raw[r][c] = '';
+    }
+    _rebuildGrid();
+    _markDirty();
+  }
+
   Future<void> _copyCell({bool cut = false}) async {
-    await Clipboard.setData(ClipboardData(text: _sheet.at(_curRow, _curCol)));
-    if (cut) _setRaw(_curRow, _curCol, '');
+    await Clipboard.setData(ClipboardData(text: _selectionText()));
+    if (cut) _clearSelection();
   }
 
   /// Pastes text; tab / new-line separated text (from Excel or Sheets) fills several cells.
@@ -869,7 +1061,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
       OfficeMenuItem("Insert column right", icon: Icons.east_rounded, onTap: () => _insertCol(right: true)),
       OfficeMenuItem("Delete row", icon: Icons.playlist_remove_rounded, onTap: _deleteRow),
       OfficeMenuItem("Delete column", icon: Icons.backspace_outlined, onTap: _deleteCol),
-      OfficeMenuItem("Clear contents", icon: Icons.layers_clear, shortcut: "Delete", onTap: () => _setRaw(_curRow, _curCol, '')),
+      OfficeMenuItem("Clear contents", icon: Icons.layers_clear, shortcut: "Delete", onTap: _clearSelection),
       const OfficeMenuItem.divider(),
       OfficeMenuItem(_sm?.showColumnFilter == true ? "Hide filter" : "Filter", icon: Icons.filter_alt_outlined, shortcut: "Ctrl+Shift+L", onTap: _toggleFilter),
       OfficeMenuItem("Sort A → Z", icon: Icons.sort_by_alpha, onTap: () => _sort(ascending: true, hasHeader: true)),
@@ -1374,6 +1566,11 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                     Expanded(
                       child: OfficeRightClick(
                         onMenu: _rightClick,
+                        child: Listener(
+                        onPointerDown: _gridPointerDown,
+                        onPointerMove: _gridPointerMove,
+                        onPointerUp: _gridPointerUp,
+                        onPointerCancel: _gridPointerUp,
                         child: PlutoGrid(
                           key: ValueKey('grid-$_active-$_gridVersion'),
                           columns: [
@@ -1423,6 +1620,16 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                           onChanged: _onGridChanged,
                           configuration: PlutoGridConfiguration(
                             enableMoveDownAfterSelecting: true,
+                            shortcut: PlutoGridShortcut(actions: {
+                              ...PlutoGridShortcut.defaultActions,
+                              // copy / cut / delete the whole selection
+                              LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyC): _GridAction(() => _copyCell()),
+                              LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyC): _GridAction(() => _copyCell()),
+                              LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyX): _GridAction(() => _copyCell(cut: true)),
+                              LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyX): _GridAction(() => _copyCell(cut: true)),
+                              LogicalKeySet(LogicalKeyboardKey.delete): _GridAction(_clearSelection),
+                              LogicalKeySet(LogicalKeyboardKey.backspace): _GridAction(_clearSelection),
+                            }),
                             scrollbar: const PlutoGridScrollbarConfig(isAlwaysShown: true, scrollbarThickness: 10),
                             style: AppPalette.isDark
                                 ? PlutoGridStyleConfig.dark(
@@ -1440,6 +1647,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                                     columnTextStyle: GoogleFonts.merriweather(fontSize: 10 * _zoom.clamp(0.9, 2.0).toDouble(), fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)),
                                   ),
                           ),
+                        ),
                         ),
                       ),
                     ),

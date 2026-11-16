@@ -1,6 +1,6 @@
 // ignore_for_file: depend_on_referenced_packages, use_build_context_synchronously, unused_element, curly_braces_in_flow_control_structures
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart' hide Text;
+import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';

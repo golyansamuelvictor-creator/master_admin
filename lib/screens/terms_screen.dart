@@ -105,7 +105,18 @@ class _TermsScreenState extends State<TermsScreen> {
     }
   }
 
-  /// "## " headings, "- " points, "# " title; other lines are paragraphs.
+  /// "**Bold:** rest" → the bold part, then the rest.
+  Widget _rich(String l, TextStyle style) {
+    final m = RegExp(r'^\*\*(.+?)\*\*\s*(.*)$').firstMatch(l);
+    if (m == null) return Text.rich(TextSpan(text: l.replaceAll('**', '')), style: style);
+    return Text.rich(TextSpan(children: [
+      TextSpan(text: m.group(1), style: const TextStyle(fontWeight: FontWeight.w900)),
+      TextSpan(text: " ${m.group(2)!.replaceAll('**', '')}"),
+    ]), style: style);
+  }
+
+  /// "## " headings, "- " points ("**Bold:** …" allowed), "> " notice boxes,
+  /// "# " title; other lines are paragraphs.
   List<Widget> _render(String body) {
     final out = <Widget>[];
     for (final raw in body.split('\n')) {
@@ -124,11 +135,22 @@ class _TermsScreenState extends State<TermsScreen> {
           padding: const EdgeInsets.only(left: 6, bottom: 5),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Padding(padding: const EdgeInsets.only(top: 7, right: 9), child: Container(width: 5, height: 5, decoration: BoxDecoration(color: AppPalette.solid(_kPurple), shape: BoxShape.circle))),
-            Expanded(child: Text(l.substring(2), style: GoogleFonts.merriweather(fontSize: 13, height: 1.55))),
+            Expanded(child: _rich(l.substring(2), GoogleFonts.merriweather(fontSize: 13, height: 1.55))),
           ]),
         ));
+      } else if (l.startsWith('> ')) {
+        out.add(Container(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppPalette.bg(const Color(0xFFFFF8E1)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border(left: BorderSide(color: AppPalette.solid(const Color(0xFFF59E0B)), width: 4)),
+          ),
+          child: _rich(l.substring(2), GoogleFonts.merriweather(fontSize: 13, height: 1.55)),
+        ));
       } else {
-        out.add(Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(l, style: GoogleFonts.merriweather(fontSize: 13, height: 1.55))));
+        out.add(Padding(padding: const EdgeInsets.only(bottom: 4), child: _rich(l, GoogleFonts.merriweather(fontSize: 13, height: 1.55))));
       }
     }
     return out;

@@ -1,12 +1,13 @@
 // ignore_for_file: camel_case_types, curly_braces_in_flow_control_structures, unused_element, dead_null_aware_expression, unused_import
 import 'dart:math' as math;
-import 'package:flutter/material.dart' hide Text;
+import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
-import 'package:master_admin/core/app_palette.dart';
+import 'package:master_admin/core/app_palette.dart';
+
 import '../widgets/h_scroll.dart';
 
 class VisitationsModule extends StatefulWidget {

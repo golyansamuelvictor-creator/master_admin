@@ -222,7 +222,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     try {
       if (action == 'delete') await _supabase.from('personal_events').delete().eq('id', e['id']);
       if (action == 'done' || action == 'undone') await _supabase.from('personal_events').update({'done': action == 'done'}).eq('id', e['id']);
-      if (action == 'edit') return _addPersonal(e);
+      if (action == 'edit') return await _addPersonal(e);
       if (action != null) _fetchEvents();
     } catch (_) {}
   }

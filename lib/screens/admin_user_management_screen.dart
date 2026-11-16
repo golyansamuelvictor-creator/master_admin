@@ -289,7 +289,14 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     final onlyLocation = _roleRights != 'admin';
     // the user's own kind of roles first: location workers see location
     // roles, church workers church / 24-department roles
-    String kind = (!onlyLocation && _userIsChurchWorker(user)) ? 'church' : 'location';
+    // account category: Saint / Location Worker / Church Worker
+    final uc = _v(user, 'unit_category');
+    final String category0 = _userIsChurchWorker(user)
+        ? 'Church Worker'
+        : (uc == 'Saint' || _v(user, 'account_type') == 'Saint' ? 'Saint' : 'Location Worker');
+    String category = onlyLocation && category0 == 'Church Worker' ? 'Location Worker' : category0;
+    String? newLocation; // leaving "Church Worker": the person's location
+    String kind = category == 'Church Worker' ? 'church' : 'location';
     String level = 'all';
     String? deptId; // church roles: one of the 24 departments
     String? roleKey = user['role']?.toString();
@@ -306,7 +313,10 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(builder: (ctx, set) {
-        bool inKind(Map r) => kind == 'church' ? _isChurchRole(r) && (r['role_key'] != 'admin' || !onlyLocation) : !_isChurchRole(r);
+        bool isSaintRole(Map r) => (r['category'] ?? '').toString() == 'Saint';
+        bool inKind(Map r) => kind == 'church'
+            ? _isChurchRole(r) && (r['role_key'] != 'admin' || !onlyLocation)
+            : !_isChurchRole(r) && (category == 'Saint' ? isSaintRole(r) : !isSaintRole(r));
         final roles = _appRoles.where((r) {
           if (r['role_key'] == null) return false;
           if (onlyLocation && _isChurchRole(r)) return false;
@@ -327,7 +337,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
         InputDecoration deco([String? hint]) => InputDecoration(border: const OutlineInputBorder(), isDense: true, hintText: hint, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10));
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text("Change role: ${_name(user)}", maxLines: 2, overflow: TextOverflow.ellipsis,
+          title: Text("Category & role: ${_name(user)}", maxLines: 2, overflow: TextOverflow.ellipsis,
               style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16, color: AppPalette.fg(pPurple))),
           content: SizedBox(
             width: 480,
@@ -341,20 +351,47 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                     child: Text("As Location Secretary you can give only the roles of the location levels, to people of your location.",
                         style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.orange.shade900))),
                   ),
-                if (!onlyLocation) ...[
-                  label("1. Kind of worker"),
-                  SegmentedButton<String>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: 'location', label: Text("Location workers")),
-                      ButtonSegment(value: 'church', label: Text("Church & 24 departments")),
+                label("Account category"),
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: [
+                    const ButtonSegment(value: 'Saint', label: Text("Saint")),
+                    const ButtonSegment(value: 'Location Worker', label: Text("Location Worker")),
+                    if (!onlyLocation) const ButtonSegment(value: 'Church Worker', label: Text("Church Worker")),
+                  ],
+                  selected: {category},
+                  onSelectionChanged: (v) => set(() {
+                    category = v.first;
+                    kind = category == 'Church Worker' ? 'church' : 'location';
+                    level = 'all';
+                    deptId = null;
+                    // the old role belongs to the old category: choose again
+                    if (category != category0) roleKey = null;
+                    if (category == category0) roleKey = user['role']?.toString();
+                  }),
+                ),
+                if (category != category0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      category == 'Church Worker'
+                          ? "The account moves to Church (24 departments); choose the new role below."
+                          : "The account becomes a $category; choose the new role below.",
+                      style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.orange.shade900)),
+                    ),
+                  ),
+                if (category0 == 'Church Worker' && category != 'Church Worker') ...[
+                  label("Location"),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: newLocation,
+                    decoration: deco("Choose the location"),
+                    items: [
+                      for (final o in _facets['location'] ?? const <Map<String, dynamic>>[])
+                        if ((o['value'] ?? '').toString().isNotEmpty && (o['value'] ?? '').toString().toLowerCase() != 'church')
+                          DropdownMenuItem(value: o['value'].toString(), child: Text((o['label'] ?? o['value']).toString(), maxLines: 1, overflow: TextOverflow.ellipsis)),
                     ],
-                    selected: {kind},
-                    onSelectionChanged: (v) => set(() {
-                      kind = v.first;
-                      level = 'all';
-                      deptId = null;
-                    }),
+                    onChanged: (v) => set(() => newLocation = v),
                   ),
                 ],
                 if (kind == 'church') ...[
@@ -446,11 +483,18 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(pPurple), foregroundColor: Colors.white),
-              onPressed: roleKey == null || saving
+              onPressed: roleKey == null || saving || (category0 == 'Church Worker' && category != 'Church Worker' && newLocation == null)
                   ? null
                   : () async {
                       set(() => saving = true);
                       try {
+                        if (category != category0) {
+                          await _db.rpc('set_account_category', params: {
+                            'p_user': user['id'],
+                            'p_category': category,
+                            'p_location': newLocation,
+                          });
+                        }
                         await _db.rpc('change_user_role', params: {
                           'p_user': user['id'],
                           'p_role': roleKey,
@@ -467,7 +511,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                         _snack("Couldn't change the role: ${e is PostgrestException ? e.message : e}", error: true);
                       }
                     },
-              child: const Text("Save role"),
+              child: Text(category != category0 ? "Save category & role" : "Save role"),
             ),
           ],
         );
@@ -619,7 +663,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
               _openChangeRoleDialog(r);
             },
             icon: const Icon(Icons.manage_accounts_rounded, size: 18),
-            label: const Text("Change role")),
+            label: const Text("Category & role")),
       if (_isAdmin && full) ...[
         OutlinedButton.icon(
             style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700),

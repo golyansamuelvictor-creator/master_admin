@@ -493,6 +493,7 @@ class _BibleScreenState extends State<BibleScreen> {
       // picked verses: copy / listen; otherwise previous / next chapter
       bottomNavigationBar: SafeArea(
         child: Container(
+          constraints: const BoxConstraints(maxHeight: 72),
           padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
           decoration: BoxDecoration(
             color: AppPalette.bg(Colors.white),
@@ -517,7 +518,9 @@ class _BibleScreenState extends State<BibleScreen> {
                 ])
               : Row(children: [
                   OutlinedButton.icon(onPressed: () => _step(-1), icon: const Icon(Icons.chevron_left_rounded), label: const Text("Previous")),
-                  Expanded(child: Center(child: Text("Tap verses to copy or listen", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))))),
+                  // (a plain Center here grew to the whole screen height: the
+                  // bottom bar then covered the Bible text)
+                  Expanded(child: Text("Tap verses to copy or listen", textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600)))),
                   OutlinedButton.icon(
                     onPressed: () => _step(1),
                     icon: const Icon(Icons.chevron_right_rounded),
