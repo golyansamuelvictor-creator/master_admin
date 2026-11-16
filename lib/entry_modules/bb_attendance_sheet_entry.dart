@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:flutter/gestures.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -241,7 +241,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                   hintText: tr("Search student..."),
                   prefixIcon: const Icon(Icons.search, size: 16),
                   isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 ),
                 onChanged: (q) => setState(() => _searchQuery = q),
@@ -255,7 +255,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                       isDense: true,
                       decoration: InputDecoration(
                         labelText: tr("Center"),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       ),
                       items: _centers.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5)))).toList(),
@@ -283,7 +283,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                         hintText: tr("Search student..."),
                         prefixIcon: const Icon(Icons.search, size: 16),
                         isDense: true,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       ),
                       onChanged: (q) => setState(() => _searchQuery = q),
@@ -297,7 +297,7 @@ class _BbAttendanceSheetState extends State<BbAttendanceSheet> {
                       isDense: true,
                       decoration: InputDecoration(
                         labelText: tr("Center"),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       ),
                       items: _centers.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)))).toList(),

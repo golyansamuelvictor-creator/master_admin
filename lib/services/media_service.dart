@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// A Media Hub category (edited in the app; stored in media_categories).

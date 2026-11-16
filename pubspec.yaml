@@ -52,6 +52,7 @@ dependencies:
   http: ^1.2.2              # Settings › Devices (approximate place)
   flutter_webrtc: '>=0.12.0 <2.0.0'  # My Home voice / video calls and video chats
   livekit_client: ^2.6.0    # My Home live voice / video chats (Telegram-style, LiveKit server)
+  material_ui: ^1.11.0
 
 dev_dependencies:
   flutter_test:

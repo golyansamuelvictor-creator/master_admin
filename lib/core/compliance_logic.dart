@@ -1,7 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 class ComplianceLogic {
   static final _supabase = Supabase.instance.client;

@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 
 import '../core/app_palette.dart';
@@ -102,7 +102,7 @@ class CountryCodeButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppPalette.bg(Colors.white),
           border: Border.all(color: AppPalette.line(Colors.grey.shade400)),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(10), boxShadow: AppPalette.cardShadow
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text(countryFlag(iso), style: const TextStyle(fontSize: 16)),

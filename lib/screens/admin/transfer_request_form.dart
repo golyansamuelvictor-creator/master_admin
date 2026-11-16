@@ -1,6 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 import 'package:file_picker/file_picker.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -8,6 +8,7 @@ import '../../core/app_palette.dart';
 import '../../core/app_sizes.dart';
 import '../../core/i18n.dart';
 import 'approval_inbox.dart';
+import '../../core/friendly_error.dart';
 
 enum TransferMode { individual, bulk }
 
@@ -78,7 +79,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load your members (run 13_round12.sql): ${e is PostgrestException ? e.message : e}";
+          _error = "Couldn't load your members${friendlyTail(e)}";
         });
       }
     }
@@ -180,7 +181,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
         child: DropdownButtonFormField<String>(
           initialValue: items.contains(value) ? value : null,
           isExpanded: true,
-          decoration: InputDecoration(labelText: tr(optional ? "$label (optional)" : label), isDense: true, border: const OutlineInputBorder()),
+          decoration: InputDecoration(labelText: tr(optional ? "$label (optional)" : label), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
           items: [
             if (optional) const DropdownMenuItem<String>(value: null, child: Text("—")),
             for (final i in items) DropdownMenuItem(value: i, child: Text(i, overflow: TextOverflow.ellipsis)),
@@ -246,7 +247,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                     Icons.person_search_rounded,
                     Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                       TextField(
-                        decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search name or SCJ ID"), isDense: true, border: const OutlineInputBorder()),
+                        decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search name or SCJ ID"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                         onChanged: (v) => setState(() => _search = v),
                       ),
                       if (_mode == TransferMode.bulk)
@@ -345,7 +346,7 @@ class _TransferRequestFormState extends State<TransferRequestForm> {
                         OutlinedButton.icon(onPressed: _pickPhotos, icon: const Icon(Icons.add_a_photo_rounded), label: Text(_photos.isEmpty ? "Add photo of the member(s)" : "Add more")),
                       ]),
                       const SizedBox(height: 12),
-                      TextField(controller: _reason, maxLines: 3, decoration: InputDecoration(labelText: tr("Reason for the transfer"), border: const OutlineInputBorder(), alignLabelWithHint: true)),
+                      TextField(controller: _reason, maxLines: 3, decoration: InputDecoration(labelText: tr("Reason for the transfer"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), alignLabelWithHint: true)),
                     ]),
                   ),
                   Center(

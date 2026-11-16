@@ -1,7 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:async';
 
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -103,7 +103,7 @@ class _MediaHubScreenState extends State<MediaHubScreen> {
       if (!mounted || quiet) return;
       setState(() {
         _loading = false;
-        _error = "Couldn't load the Media Hub. If this keeps happening, ask the admin to run 06_round6.sql.";
+        _error = "Couldn't load the Media Hub. Check your internet connection and refresh.";
       });
     }
   }
@@ -322,7 +322,7 @@ class _MediaHubScreenState extends State<MediaHubScreen> {
               const SizedBox(height: 4),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
-                decoration: BoxDecoration(color: AppPalette.bg(Colors.white.withValues(alpha: 0.75)), borderRadius: BorderRadius.circular(20)),
+                decoration: BoxDecoration(color: AppPalette.bg(Colors.white.withValues(alpha: 0.75)), borderRadius: BorderRadius.circular(20), boxShadow: AppPalette.cardShadow),
                 child: Text(
                   "$count item${count == 1 ? '' : 's'}"
                   "${c == null || c.mediaKind == 'both' ? '' : (c.mediaKind == 'audio' ? ' · audio' : ' · video')}",

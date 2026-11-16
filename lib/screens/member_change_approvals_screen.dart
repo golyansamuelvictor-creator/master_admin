@@ -1,11 +1,12 @@
 // ignore_for_file: use_build_context_synchronously
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/app_palette.dart';
 import '../core/i18n.dart';
+import '../core/friendly_error.dart';
 
 /// Member Bio › Member profile › Approve member profile changes.
 ///
@@ -45,7 +46,7 @@ class _MemberChangeApprovalsScreenState extends State<MemberChangeApprovalsScree
         _error = null;
       });
     } catch (e) {
-      if (mounted) setState(() => _error = "Couldn't load the changes (run 15_round14.sql): ${e is PostgrestException ? e.message : e}");
+      if (mounted) setState(() => _error = "Couldn't load the changes${friendlyTail(e)}");
     }
   }
 
@@ -57,7 +58,7 @@ class _MemberChangeApprovalsScreenState extends State<MemberChangeApprovalsScree
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text("Reason for rejecting"),
-          content: TextField(controller: c, autofocus: true, maxLines: 3, decoration: InputDecoration(hintText: tr("e.g. the phone number is wrong"), border: const OutlineInputBorder())),
+          content: TextField(controller: c, autofocus: true, maxLines: 3, decoration: InputDecoration(hintText: tr("e.g. the phone number is wrong"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
             ElevatedButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text("Reject")),
@@ -248,7 +249,7 @@ class _MemberChangeApprovalsScreenState extends State<MemberChangeApprovalsScree
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 820),
                       child: TextField(
-                        decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search member, unit or cell leader"), isDense: true, border: const OutlineInputBorder()),
+                        decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search member, unit or cell leader"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                         onChanged: (v) => setState(() => _q = v),
                       ),
                     ),

@@ -2,7 +2,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -17,6 +17,7 @@ import '../services/notice_permissions.dart';
 import '../services/media_playback.dart' show appNavigatorKey;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../core/security.dart';
 
 /// Surveys & forms (Tally / Google Forms style): build a form with many
 /// question types, sections and "show only if" logic, publish it to the
@@ -439,7 +440,7 @@ class _FormsHubState extends State<FormsHub> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load forms. Ask the admin to run 08_round7.sql and 09_round8.sql.";
+          _error = "Couldn't load forms. Check your internet connection and refresh.";
         });
       }
     }
@@ -1168,7 +1169,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
   Widget _editor(int i) {
     final q = _qs[i];
     final isSection = q.type == 'section';
-    InputDecoration deco(String hint) => InputDecoration(hintText: hint, isDense: true, filled: true, fillColor: AppPalette.bg(const Color(0xFFF8FAFC)), border: const UnderlineInputBorder());
+    InputDecoration deco(String hint) => InputDecoration(hintText: hint, isDense: true, filled: true, fillColor: AppPalette.bg(const Color(0xFFF8FAFC)), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))));
     final earlier = [for (int j = 0; j < i; j++) if (_qs[j].type == 'yes_no' || _isChoice(_qs[j].type)) _qs[j]];
     final cond = q.settings['show_if'] is Map ? Map<String, dynamic>.from(q.settings['show_if'] as Map) : null;
     final condQ = cond == null ? null : earlier.where((x) => x.key == cond['key']).firstOrNull;
@@ -1234,7 +1235,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
                 child: TextFormField(
                   key: ValueKey('opt-${q.key}-$k-${q.options.length}'),
                   initialValue: q.options[k],
-                  decoration: const InputDecoration(isDense: true, border: UnderlineInputBorder()),
+                  decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                   onChanged: (v) {
                     q.options[k] = v;
                     _dirty();
@@ -1281,7 +1282,7 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text("Paste options"),
-                  content: SizedBox(width: 380, child: TextField(controller: c, maxLines: 10, decoration: InputDecoration(hintText: tr("One option per line"), border: OutlineInputBorder()))),
+                  content: SizedBox(width: 380, child: TextField(controller: c, maxLines: 10, decoration: InputDecoration(hintText: tr("One option per line"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))))),
                   actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")), ElevatedButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text("Use"))],
                 ),
               );
@@ -2283,7 +2284,7 @@ class _FormResponsesViewState extends State<FormResponsesView> {
         onSelectionChanged: (s) => setState(() => _mode = s.first),
       ),
       IconButton(tooltip: tr("Refresh"), onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
-      IconButton(tooltip: tr("Download Excel / PDF / Print"), onPressed: _subs.isEmpty ? null : () => TableExport.showMenu(context, _table), icon: const Icon(Icons.download_rounded)),
+      ExportOnly(child: IconButton(tooltip: tr("Download Excel / PDF / Print"), onPressed: _subs.isEmpty ? null : () => TableExport.showMenu(context, _table), icon: const Icon(Icons.download_rounded))),
     ]);
     Widget body;
     if (_subs.isEmpty) {

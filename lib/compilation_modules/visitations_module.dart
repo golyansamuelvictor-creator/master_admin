@@ -1,6 +1,6 @@
 // ignore_for_file: camel_case_types, curly_braces_in_flow_control_structures, unused_element, dead_null_aware_expression, unused_import
 import 'dart:math' as math;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/compilation_rules.dart';
@@ -9,6 +9,7 @@ import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 import '../widgets/h_scroll.dart';
+import '../widgets/zoom_box.dart';
 
 class VisitationsModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -258,7 +259,7 @@ class _VisitationsModuleState extends State<VisitationsModule> {
 
   Widget _buildCategoryPillBar() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-    decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppPalette.line(Colors.black), width: 1.0)),
+    decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), boxShadow: AppPalette.cardShadow),
     child: Row(children: [
       Text("Category: ", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
       Expanded(
@@ -649,13 +650,13 @@ class _VisitationsModuleState extends State<VisitationsModule> {
           onPressed: () => Navigator.push(context, MaterialPageRoute(
             builder: (c) => Scaffold(
               appBar: AppBar(title: Text(title, style: GoogleFonts.merriweather())),
-              body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(8), child: content)),
+              body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(8), child: ZoomBox(child: content))),
             ),
           )),
         ),
       ),
       Divider(height: 1, color: AppPalette.bg(Colors.black26)),
-      content,
+      ZoomBox(child: content),
     ]),
   );
 }

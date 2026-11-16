@@ -1,5 +1,5 @@
 import 'package:file_picker/file_picker.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,6 +8,7 @@ import '../../core/app_palette.dart';
 import '../../core/i18n.dart';
 import 'center_students_tab.dart' show graduateStudent;
 import 'student_duties.dart' show StudentsConfig;
+import '../../core/friendly_error.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -45,7 +46,7 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load the students (run 23_round22.sql): ${e is PostgrestException ? e.message : e}";
+          _error = "Couldn't load the students${friendlyTail(e)}";
         });
       }
     }
@@ -82,7 +83,7 @@ class _StudentDirectoryScreenState extends State<StudentDirectoryScreen> {
               width: 240,
               height: 36,
               child: TextField(
-                decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search name, center, contact"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder()),
+                decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search name, center, contact"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 onChanged: (v) => setState(() => _q = v),
               ),
             ),
@@ -241,7 +242,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       await _load();
       _snack("Passport photo saved", ok: true);
     } catch (e) {
-      _snack("Couldn't save the photo (run 23_round22.sql): ${e is StorageException ? e.message : (e is PostgrestException ? e.message : e)}");
+      _snack("Couldn't save the photo${friendlyTail(e)}");
     }
     if (mounted) setState(() => _busy = false);
   }
@@ -257,7 +258,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text(back ? "Use this when the student was promoted by mistake." : "The student moves to the $to level.", style: const TextStyle(fontSize: 12.5)),
             const SizedBox(height: 10),
-            TextField(controller: reason, maxLines: 2, decoration: InputDecoration(labelText: tr(back ? "Reason (needed)" : "Note (optional)"), border: const OutlineInputBorder())),
+            TextField(controller: reason, maxLines: 2, decoration: InputDecoration(labelText: tr(back ? "Reason (needed)" : "Note (optional)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
           ]),
         ),
         actions: [
@@ -287,9 +288,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         content: SizedBox(
           width: 380,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: k, decoration: InputDecoration(labelText: tr("Detail (e.g. Next of kin, Baptism date)"), border: const OutlineInputBorder())),
+            TextField(controller: k, decoration: InputDecoration(labelText: tr("Detail (e.g. Next of kin, Baptism date)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
             const SizedBox(height: 10),
-            TextField(controller: v, maxLines: 3, decoration: InputDecoration(labelText: tr("Value"), border: const OutlineInputBorder())),
+            TextField(controller: v, maxLines: 3, decoration: InputDecoration(labelText: tr("Value"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
           ]),
         ),
         actions: [
@@ -410,7 +411,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                         if ((t ?? '').toString().isNotEmpty)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20)),
+                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20), boxShadow: AppPalette.cardShadow),
                             child: Text(t.toString(), style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.bold)),
                           ),
                     ]),

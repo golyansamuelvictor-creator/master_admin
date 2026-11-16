@@ -1,6 +1,6 @@
 // ignore_for_file: depend_on_referenced_packages, use_build_context_synchronously, unused_element, curly_braces_in_flow_control_structures
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -417,6 +417,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _popItem(Icons.brightness_auto_outlined, "System Theme${themeNotifier.value == ThemeMode.system ? '  ✓' : ''}", 'system'),
                   _popItem(Icons.light_mode_outlined, "Light Theme${themeNotifier.value == ThemeMode.light ? '  ✓' : ''}", 'light'),
                   _popItem(Icons.dark_mode_outlined, "Dark Theme${themeNotifier.value == ThemeMode.dark ? '  ✓' : ''}", 'dark'),
+                  const PopupMenuDivider(height: 8),
+                  _popItem(Icons.palette_outlined, "Church colours only${AppPalette.brandOnly ? '  ✓' : ''}", 'brand'),
                 ],
               ),
             ),
@@ -511,6 +513,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _showSwitchAccountDialog(context);
     } else if (action == 'add_account') {
       _showAddAccountDialog(context);
+    } else if (action == 'brand') {
+      final on = !AppPalette.brandOnly;
+      setBrandColors(context, on);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(on ? "Church colours: Purple, Dark Blue and Red" : "All colours shown"),
+      ));
     } else if (action == 'system' || action == 'light' || action == 'dark') {
       // Applied app-wide and remembered on this device
       final mode = action == 'system' ? ThemeMode.system : (action == 'dark' ? ThemeMode.dark : ThemeMode.light);

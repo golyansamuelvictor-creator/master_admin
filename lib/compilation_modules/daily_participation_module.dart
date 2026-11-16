@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, unused_element, dead_null_aware_expression, unused_import
 import 'dart:math';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -11,6 +11,8 @@ import 'package:intl/intl.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 import '../widgets/h_scroll.dart';
+import '../core/chart_kit.dart';
+import '../widgets/zoom_box.dart';
 
 class DailyParticipationModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -734,15 +736,12 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
                   axisNameSize: 22,
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 32,
+                    reservedSize: 46,
                     interval: 1.0,
                     getTitlesWidget: (v, m) {
                       int idx = v.toInt();
                       if (idx < 0 || idx >= periodLabels.length || v != idx.toDouble()) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(periodLabels[idx], textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold)),
-                      );
+                      return axisLabel(periodLabels[idx], m, count: periodLabels.length, style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold));
                     },
                   ),
                 ),
@@ -814,13 +813,13 @@ class _DailyParticipationModuleState extends State<DailyParticipationModule> {
           onPressed: () => Navigator.push(context, MaterialPageRoute(
             builder: (c) => Scaffold(
               appBar: AppBar(title: Text(title, style: GoogleFonts.merriweather())),
-              body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(8), child: content)),
+              body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(8), child: ZoomBox(child: content))),
             ),
           )),
         ),
       ),
       Divider(height: 1, color: AppPalette.bg(Colors.black26)),
-      content,
+      ZoomBox(child: content),
     ]),
   );
 }

@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, unused_element, dead_null_aware_expression, unused_import
 import 'dart:math';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -11,6 +11,8 @@ import 'package:intl/intl.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 import '../widgets/h_scroll.dart';
+import '../core/chart_kit.dart';
+import '../widgets/zoom_box.dart';
 
 class MorningLightModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -123,6 +125,55 @@ class _MorningLightModuleState extends State<MorningLightModule> {
 
   // "ML Didn't" used to match contains('did') and count as done
   bool _isDidML(dynamic val) => CompStatus.isPositive(val);
+
+  /// How a member joined Morning Light: In-person / Online / Absentee.
+  /// Older answers are mapped (e.g. "ML Did", "Present" → In-person).
+  static String? mlMethod(dynamic val) {
+    final s = CompStatus.norm(val);
+    if (s.isEmpty) return null;
+    if (CompStatus.isNegative(val)) return 'Absentee';
+    if (s.contains('online') || s.contains('zoom') || s.contains('virtual') || s.contains('youtube')) return 'Online';
+    return 'In-person';
+  }
+
+  /// Every Morning Light answer in the period (each day counts once).
+  Widget _buildMethodBreakdown(List<dynamic> logs) {
+    final counts = <String, int>{'In-person': 0, 'Online': 0, 'Absentee': 0};
+    for (final l in logs) {
+      if (l is! Map) continue;
+      final day = (l['ml_day'] ?? '').toString().trim();
+      final vals = day.isNotEmpty ? [l['status_detail']] : [l['mon_ml'], l['tue_ml'], l['thu_ml'], l['fri_ml'], if ((l['status_detail'] ?? '').toString().isNotEmpty) l['status_detail']];
+      for (final v in vals) {
+        final m = mlMethod(v);
+        if (m != null) counts[m] = counts[m]! + 1;
+      }
+    }
+    final total = counts.values.fold<int>(0, (a, b) => a + b);
+    if (total == 0) {
+      return Padding(padding: const EdgeInsets.all(16), child: Text("No Morning Light answers in this period.", style: TextStyle(color: AppPalette.fg(Colors.grey.shade600))));
+    }
+    const colors = {'In-person': Color(0xFF4A148C), 'Online': Color(0xFF1E3A8A), 'Absentee': Color(0xFFB91C1C)};
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+      child: Column(children: [
+        for (final e in counts.entries)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Row(children: [
+              SizedBox(width: 90, child: Text(e.key, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold))),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(value: e.value / total, minHeight: 14, backgroundColor: AppPalette.bg(const Color(0xFFF1F5F9)), color: colors[e.key]),
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(width: 90, child: Text("${e.value} (${(e.value * 100 / total).toStringAsFixed(0)}%)", textAlign: TextAlign.right, style: GoogleFonts.merriweather(fontSize: 11.5))),
+            ]),
+          ),
+      ]),
+    );
+  }
 
   bool _isDayDone(dynamic log, String dayCode, String legacyField) {
     final mlDay = (log['ml_day'] ?? '').toString().trim().toLowerCase();
@@ -241,6 +292,8 @@ class _MorningLightModuleState extends State<MorningLightModule> {
         _section(_sessions > 1 ? "Morning light participation summary (average of $_sessions weeks)" : "Morning light participation summary", _buildExcelGrid(totS), context),
         const SizedBox(height: 8),
         _section("Historical trend over time", _buildTrendChart(blockData), context),
+        const SizedBox(height: 8),
+        _section("How they joined: In-person · Online · Absentee", _buildMethodBreakdown(widget.logs), context),
       ] else ...[
         _section(_sessions > 1 ? "Morning light participation summary (average of $_sessions weeks)" : "Morning light participation summary", _buildExcelGrid(totS), context),
         const SizedBox(height: 8),
@@ -249,6 +302,8 @@ class _MorningLightModuleState extends State<MorningLightModule> {
           _buildChartSection(totS, blockData, activeChartData),
           context,
         ),
+        const SizedBox(height: 8),
+        _section("How they joined: In-person · Online · Absentee", _buildMethodBreakdown(widget.logs), context),
       ],
     ]);
   }
@@ -745,15 +800,12 @@ class _MorningLightModuleState extends State<MorningLightModule> {
                   axisNameSize: 22,
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 32,
+                    reservedSize: 46,
                     interval: 1.0,
                     getTitlesWidget: (v, m) {
                       int idx = v.toInt();
                       if (idx < 0 || idx >= periodLabels.length || v != idx.toDouble()) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(periodLabels[idx], textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold)),
-                      );
+                      return axisLabel(periodLabels[idx], m, count: periodLabels.length, style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold));
                     },
                   ),
                 ),
@@ -825,13 +877,13 @@ class _MorningLightModuleState extends State<MorningLightModule> {
           onPressed: () => Navigator.push(context, MaterialPageRoute(
             builder: (c) => Scaffold(
               appBar: AppBar(title: Text(title, style: GoogleFonts.merriweather())),
-              body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(8), child: content)),
+              body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(8), child: ZoomBox(child: content))),
             ),
           )),
         ),
       ),
       Divider(height: 1, color: AppPalette.bg(Colors.black26)),
-      content,
+      ZoomBox(child: content),
     ]),
   );
 }

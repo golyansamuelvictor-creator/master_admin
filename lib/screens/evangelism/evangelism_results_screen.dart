@@ -1,10 +1,11 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/app_palette.dart';
 import '../../core/i18n.dart';
 import 'bb_workspace_screen.dart';
+import '../../core/friendly_error.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -65,7 +66,7 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _error = "Couldn't load the results (run 12_round11.sql and 13_round12.sql): ${e is PostgrestException ? e.message : e}");
+      if (mounted) setState(() => _error = "Couldn't load the results${friendlyTail(e)}");
     }
   }
 
@@ -77,7 +78,7 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
   Widget _drop(String hint, String? value, List<String> items, void Function(String?) set) => DropdownButtonFormField<String>(
         initialValue: items.contains(value) ? value : null,
         isExpanded: true,
-        decoration: InputDecoration(labelText: tr(hint), isDense: true, border: const OutlineInputBorder()),
+        decoration: InputDecoration(labelText: tr(hint), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
         items: [
           DropdownMenuItem<String>(value: null, child: Text("All")),
           for (final i in items) DropdownMenuItem(value: i, child: Text(i, overflow: TextOverflow.ellipsis)),
@@ -119,7 +120,8 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
           SegmentedButton<String>(
             showSelectedIcon: false,
             segments: const [
-              ButtonSegment(value: 'exclude', label: Text("Church")),
+              ButtonSegment(value: 'all', label: Text("Total")),
+              ButtonSegment(value: 'exclude', label: Text("Without Official")),
               ButtonSegment(value: 'only', label: Text("Dubai Official")),
             ],
             selected: {_official},
@@ -203,7 +205,7 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
                       center: _center,
                       sections: Set.of(_sections),
                       studentsOnly: widget.studentsOnly,
-                      official: _officialView ? _official : null,
+                      official: _officialView && _official != 'all' ? _official : null,
                     ),
                   ),
                 ]),

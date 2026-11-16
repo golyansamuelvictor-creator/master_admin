@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'package:file_picker/file_picker.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -233,7 +233,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _tile(IconData icon, Color color, String title, String subtitle, VoidCallback onTap, {bool danger = false}) {
+  Widget _tile(IconData icon, Color color, String title, String subtitle, VoidCallback onTap, {bool big = false, bool danger = false}) {
     return CompactCard(
       leading: CircleAvatar(radius: 17, backgroundColor: AppPalette.bg(color.withValues(alpha: 0.12)), child: Icon(icon, size: 19, color: AppPalette.fg(color))),
       title: title,
@@ -352,7 +352,7 @@ class _ProfilePanelState extends State<_ProfilePanel> {
     if (_loading) return const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator()));
     final avatar = myAvatarUrl.value.isNotEmpty ? myAvatarUrl.value : (_p['avatar_url'] ?? '').toString();
     InputDecoration deco(String l, {String? h, bool at = false}) =>
-        InputDecoration(labelText: l, hintText: h, prefixText: at ? '@' : null, isDense: true, border: const OutlineInputBorder());
+        InputDecoration(labelText: l, hintText: h, prefixText: at ? '@' : null, isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))));
     Widget info(String l, dynamic v) => ListTile(
           dense: true,
           title: Text(l, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
@@ -471,7 +471,7 @@ class _PasswordPanelState extends State<_PasswordPanel> {
     InputDecoration deco(String l) => InputDecoration(
           labelText: l,
           isDense: true,
-          border: const OutlineInputBorder(),
+          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
           suffixIcon: IconButton(icon: Icon(_show ? Icons.visibility_off : Icons.visibility, size: 18), onPressed: () => setState(() => _show = !_show)),
         );
     return Padding(
@@ -704,7 +704,7 @@ class _SoundsPanelState extends State<_SoundsPanel> {
     try {
       await AppSounds.save(v);
     } catch (e) {
-      if (mounted) _snack(context, "Couldn't save (ask the admin to run 09_round8.sql)", error: true);
+      if (mounted) _snack(context, "Couldn't save", error: true);
     }
     if (mounted) setState(() {});
   }
@@ -793,7 +793,7 @@ class _NotificationTypesPanelState extends State<_NotificationTypesPanel> {
     try {
       await AppSounds.save({k: v});
     } catch (_) {
-      if (mounted) _snack(context, "Couldn't save (ask the admin to run 09_round8.sql)", error: true);
+      if (mounted) _snack(context, "Couldn't save", error: true);
     }
     if (mounted) setState(() {});
   }
@@ -866,7 +866,7 @@ class _PrivacyRulesPanelState extends State<_PrivacyRulesPanel> {
         ..remove('updated_at');
       await ChatService.savePrivacy(values);
     } catch (_) {
-      if (mounted) _snack(context, "Couldn't save (ask the admin to run 08_round7.sql)", error: true);
+      if (mounted) _snack(context, "Couldn't save", error: true);
     }
   }
 

@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -113,7 +113,7 @@ class _ChatPickerState extends State<_ChatPicker> {
         height: 440,
         child: Column(children: [
           TextField(
-            decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search chats"), isDense: true, border: const OutlineInputBorder()),
+            decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search chats"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
             onChanged: (v) => setState(() => _q = v),
           ),
           const SizedBox(height: 6),

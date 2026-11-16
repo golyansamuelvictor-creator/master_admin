@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 
 import '../core/app_palette.dart';
@@ -39,6 +39,8 @@ class CompactCard extends StatelessWidget {
     return SizedBox(
       height: height ?? (hasSub ? AppSizes.listCard : AppSizes.card),
       child: Material(
+        elevation: AppPalette.cardElevation,
+        shadowColor: AppPalette.cardShadowColor,
         color: AppPalette.bg(background ?? (selected ? const Color(0xFFF1E8FB) : Colors.white)),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),

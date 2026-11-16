@@ -11,6 +11,8 @@ import '../core/i18n.dart';
 import '../core/table_export.dart';
 import 'theology/student_duties.dart' show FrozenGrid;
 import '../core/offline.dart';
+import '../core/friendly_error.dart';
+import '../core/security.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 final _f = DateFormat('yyyy-MM-dd');
@@ -170,7 +172,7 @@ class _SpecialActivitiesScreenState extends State<SpecialActivitiesScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = "Couldn't load (run 23_round22.sql): ${_err(e)}";
+        _error = "Couldn't load${friendlyTail(e)}";
       });
     }
   }
@@ -236,7 +238,7 @@ class _SpecialActivitiesScreenState extends State<SpecialActivitiesScreen> {
                     top: 8,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: active ? 0.95 : 0.6), borderRadius: BorderRadius.circular(12)),
+                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: active ? 0.95 : 0.6), borderRadius: BorderRadius.circular(12), boxShadow: AppPalette.cardShadow),
                       child: Text(active ? "Active" : "Closed", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: active ? Colors.green.shade800 : Colors.grey.shade700)),
                     ),
                   ),
@@ -352,7 +354,7 @@ class _SpecialActivitiesScreenState extends State<SpecialActivitiesScreen> {
                       child: Container(
                         height: 38,
                         padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(20)),
+                        decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(20), boxShadow: AppPalette.cardShadow),
                         child: Row(children: [
                           Icon(Icons.search_rounded, size: 18, color: AppPalette.fg(_kPurple)),
                           const SizedBox(width: 6),
@@ -462,11 +464,11 @@ class _ActivityEditorState extends State<ActivityEditor> {
           content: SizedBox(
             width: 400,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: label, decoration: InputDecoration(labelText: tr("Column name (e.g. Attended, Situation, Solution)"), border: const OutlineInputBorder())),
+              TextField(controller: label, decoration: InputDecoration(labelText: tr("Column name (e.g. Attended, Situation, Solution)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: type,
-                decoration: InputDecoration(labelText: tr("Kind of column"), border: const OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr("Kind of column"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 items: [for (final e in _fieldTypes.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
                 onChanged: (v) => set(() => type = v ?? 'yesno'),
               ),
@@ -474,7 +476,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
                 const SizedBox(height: 10),
                 TextField(
                   controller: opts,
-                  decoration: InputDecoration(labelText: tr("Choices, separated by commas"), hintText: tr("e.g. Present, Late, Absent"), border: const OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: tr("Choices, separated by commas"), hintText: tr("e.g. Present, Late, Absent"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 ),
               ],
             ]),
@@ -558,7 +560,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               DropdownButtonFormField<String>(
                 initialValue: level,
-                decoration: InputDecoration(labelText: tr("Level"), border: const OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr("Level"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 items: [for (final e in _levels.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
                 onChanged: (v) => set(() {
                   level = v ?? 'location';
@@ -572,7 +574,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
                 DropdownButtonFormField<String>(
                   initialValue: dept?['id']?.toString(),
                   isExpanded: true,
-                  decoration: InputDecoration(labelText: tr("Department"), border: const OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: tr("Department"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                   items: [for (final d in depts) DropdownMenuItem(value: d['id'].toString(), child: Text(name(d), overflow: TextOverflow.ellipsis))],
                   onChanged: (v) => set(() => dept = depts.firstWhere((d) => d['id'].toString() == v)),
                 )
@@ -584,7 +586,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
                       key: ValueKey('p$k|${picks.take(k).join('|')}'),
                       initialValue: (opts[k] ?? const []).contains(picks[k]) ? picks[k] : null,
                       isExpanded: true,
-                      decoration: InputDecoration(labelText: tr(_levels[cols[k]]!), border: const OutlineInputBorder(), isDense: true),
+                      decoration: InputDecoration(labelText: tr(_levels[cols[k]]!), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                       items: [for (final o in opts[k] ?? const <String>[]) DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis))],
                       onChanged: k > 0 && picks[k - 1] == null
                           ? null
@@ -633,7 +635,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
       final r = await _db.rpc('sa_pick_members', params: {'p_units': units, 'p_pool': _pool});
       people = List<Map<String, dynamic>>.from((r as List).map((e) => Map<String, dynamic>.from(e as Map)));
     } catch (e) {
-      err = "Couldn't load the members (run 28_round27.sql): ${_err(e)}";
+      err = "Couldn't load the members${friendlyTail(e)}";
     }
     if (!mounted) return;
     final picked = {..._memberIds};
@@ -652,7 +654,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
                 ? Center(child: Text.rich(TextSpan(text: err), textAlign: TextAlign.center))
                 : Column(children: [
                     TextField(
-                      decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Find a name, department, team, cell"), border: const OutlineInputBorder(), isDense: true),
+                      decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Find a name, department, team, cell"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                       onChanged: (v) => set(() => q = v),
                     ),
                     CheckboxListTile(
@@ -759,7 +761,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
       if (mounted) {
         setState(() {
           _saving = false;
-          _note = "Couldn't save (run 23_round22.sql): ${_err(e)}";
+          _note = "Couldn't save${friendlyTail(e)}";
         });
       }
     }
@@ -786,7 +788,7 @@ class _ActivityEditorState extends State<ActivityEditor> {
 
   @override
   Widget build(BuildContext context) {
-    InputDecoration deco(String l, {String? hint}) => InputDecoration(labelText: tr(l), hintText: hint == null ? null : tr(hint), border: const OutlineInputBorder(), isDense: true, alignLabelWithHint: true);
+    InputDecoration deco(String l, {String? hint}) => InputDecoration(labelText: tr(l), hintText: hint == null ? null : tr(hint), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true, alignLabelWithHint: true);
     return Scaffold(
       backgroundColor: AppPalette.bg(const Color(0xFFF6F4FA)),
       appBar: AppBar(
@@ -1437,7 +1439,7 @@ class _EnterTabState extends State<_EnterTab> {
             width: 200,
             height: 34,
             child: TextField(
-              decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search name"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder()),
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search name"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
               onChanged: (v) => setState(() => _q = v),
             ),
           ),
@@ -1587,11 +1589,11 @@ class _ProgressTabState extends State<_ProgressTab> {
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 40), children: [
         Row(children: [
           Expanded(child: Text("Units compared", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 14, color: AppPalette.fg(_kPurple)))),
-          IconButton(
+          ExportOnly(child: IconButton(
             tooltip: tr('Excel / PDF / Print'),
             icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)),
             onPressed: () => TableExport.showMenu(context, () => ExportTable(title: (widget.activity['title'] ?? 'Special activity').toString(), subtitle: "Progress by unit", headers: headers, rows: rows)),
-          ),
+          )),
         ]),
         // filters on every column, columns can be hidden
         SizedBox(

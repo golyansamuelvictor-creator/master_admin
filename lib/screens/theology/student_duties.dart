@@ -1,5 +1,5 @@
 import 'package:fl_chart/fl_chart.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -12,6 +12,8 @@ import '../../core/table_export.dart';
 import '../../widgets/h_scroll.dart';
 import '../../widgets/nice_range_picker.dart';
 import 'center_students_tab.dart';
+import '../../core/friendly_error.dart';
+import '../../core/security.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 final _f = DateFormat('yyyy-MM-dd');
@@ -301,7 +303,7 @@ class _FrozenGridState extends State<FrozenGrid> {
             width: 340,
             height: 380,
             child: Column(children: [
-              TextField(decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search"), isDense: true, border: const OutlineInputBorder()), onChanged: (v) => set(() => q = v)),
+              TextField(decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))), onChanged: (v) => set(() => q = v)),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 TextButton(onPressed: () => set(() => chosen.addAll(shown)), child: const Text("All")),
                 TextButton(onPressed: () => set(() => chosen.removeAll(shown)), child: const Text("None")),
@@ -585,7 +587,7 @@ class _EntryTabState extends State<_EntryTab> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't load (run 22_round21.sql): ${e is PostgrestException ? e.message : e}")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't load${friendlyTail(e)}")));
     }
   }
 
@@ -780,7 +782,7 @@ class _EntryTabState extends State<_EntryTab> {
               width: 190,
               height: 34,
               child: TextField(
-                decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search student"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder()),
+                decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search student"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 onChanged: (v) => setState(() => _q = v),
               ),
             ),
@@ -908,7 +910,7 @@ class _ResultsTabState extends State<_ResultsTab> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = "Couldn't load (run 22_round21.sql): ${e is PostgrestException ? e.message : e}";
+        _error = "Couldn't load${friendlyTail(e)}";
       });
     }
   }
@@ -1051,14 +1053,14 @@ class _ResultsTabState extends State<_ResultsTab> {
               child: Text("${widget.duty} · ${DateFormat('d MMM yyyy').format(_range.start)} – ${DateFormat('d MMM yyyy').format(_range.end)}",
                   style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(_kPurple))),
             ),
-            IconButton(
+            ExportOnly(child: IconButton(
               tooltip: tr('Excel / PDF / Print'),
               icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)),
               onPressed: () => TableExport.showMenu(
                 context,
                 () => ExportTable(title: widget.duty, subtitle: "${DateFormat('d MMM yyyy').format(_range.start)} – ${DateFormat('d MMM yyyy').format(_range.end)} · by ${_by.toLowerCase()}", headers: headers, rows: rows),
               ),
-            ),
+            )),
           ]),
           // the table fills the width (centred) and scrolls sideways when it is wider
           LayoutBuilder(builder: (context, box) => SingleChildScrollView(

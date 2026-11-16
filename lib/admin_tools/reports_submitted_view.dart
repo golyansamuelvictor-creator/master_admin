@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/app_palette.dart';
 import '../core/compilation_rules.dart';
 import '../core/i18n.dart';
+import '../core/friendly_error.dart';
 
 /// Approval Cockpit › Reports submitted.
 ///
@@ -89,7 +90,7 @@ class _ReportsSubmittedViewState extends State<ReportsSubmittedView> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load (run 18_round17.sql): ${e is PostgrestException ? e.message : e}";
+          _error = "Couldn't load${friendlyTail(e)}";
         });
       }
     }

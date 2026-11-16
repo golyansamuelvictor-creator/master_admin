@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -225,7 +225,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5), boxShadow: AppPalette.cardShadow
       ),
       child: Column(
         children: [
@@ -378,7 +378,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
           border: Border.all(
             color: AppPalette.line(_isProcessing ? Colors.grey.shade300 : _primaryPurple.withValues(alpha: 0.4)),
             width: 1.5,
-          ),
+          ), boxShadow: AppPalette.cardShadow
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -426,7 +426,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5), boxShadow: AppPalette.cardShadow
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -535,7 +535,7 @@ class _MilestoneUploadScreenState extends State<MilestoneUploadScreen> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5), boxShadow: AppPalette.cardShadow
       ),
       child: Column(
         children: [

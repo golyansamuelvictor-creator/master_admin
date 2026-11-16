@@ -45,6 +45,9 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     'sub_location': ['location', 'sub_location'],
     'department': ['location', 'sub_location', 'department'],
     'team': ['location', 'sub_location', 'department', 'team'],
+    // a location's own 24-department (and its teams): location + department id
+    'location_department': ['location'],
+    'location_team': ['location', 'team'],
   };
 
   bool _isLoading = true;
@@ -227,9 +230,10 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
 
     final prof = await _supabase
         .from('profiles')
-        .select('role, location, sub_location, department, team')
+        .select('role, location, sub_location, department, team, official_dept_id')
         .eq('id', user.id)
         .maybeSingle();
+    _deptId = prof?['official_dept_id']?.toString();
 
     final roleKey = (prof?['role'] ?? widget.role).toString().toLowerCase();
     _unit = {
@@ -313,6 +317,8 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
     for (final c in _scopeColumns[scp]!) {
       if (c != 'sub_location' && _unit[c]!.isEmpty) missing = c;
     }
+    if (scp == 'church_department' && (_deptId ?? '').isNotEmpty) missing = null;
+    if ((scp == 'location_department' || scp == 'location_team') && (_deptId ?? '').isEmpty) missing = '24-department';
     if (missing != null) {
       _scopeMessage = "Your profile has no $missing set, so reports can't be matched to your unit. "
           "Please contact Church Administration.";
@@ -328,9 +334,66 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
   /// Dual-mode roles: own department at church level only.
   bool _deptOnly = false;
 
+  /// 24-department reviewers: their own department (members.official_dept_id),
+  /// not every department of the same name in all locations.
+  String? _deptId;
+  bool get _byDeptId => const {'church_department', 'location_department', 'location_team'}.contains(_scope) && (_deptId ?? '').isNotEmpty;
+
+  /// The unit columns compared besides the department id.
+  List<String> get _unitCols => _byDeptId && _scope == 'church_department' ? const <String>[] : _scopeColumns[_scope] ?? const <String>[];
+
+  // ---- filters (Location › Sub-location › Department › Team › Cell)
+  final Map<String, String?> _filters = {'f_location': null, 'f_sub_location': null, 'f_department': null, 'f_team': null, 'f_cell': null};
+  static const _filterLabels = {'f_location': 'Location', 'f_sub_location': 'Sub-location', 'f_department': 'Department', 'f_team': 'Team', 'f_cell': 'Cell'};
+
+  bool _passes(Map<String, dynamic> b, {String? except}) {
+    for (final e in _filters.entries) {
+      if (e.key == except || e.value == null) continue;
+      if ((b[e.key] ?? '').toString() != e.value) return false;
+    }
+    return true;
+  }
+
+  List<Map<String, dynamic>> _filtered(List<Map<String, dynamic>> l) => _filters.values.every((v) => v == null) ? l : l.where((b) => _passes(b)).toList();
+
+  Widget _filterBar() {
+    final all = [..._pendingBatches, ..._approvedBatches];
+    final boxes = <Widget>[];
+    for (final k in _filters.keys) {
+      // the choices that fit the other filters
+      final opts = {for (final b in all) if (_passes(b, except: k)) (b[k] ?? '').toString()}..remove('');
+      if (opts.length < 2 && _filters[k] == null) continue;
+      final list = opts.toList()..sort();
+      boxes.add(SizedBox(
+        width: 170,
+        child: DropdownButtonFormField<String?>(
+          isExpanded: true,
+          initialValue: _filters[k],
+          decoration: InputDecoration(labelText: tr(_filterLabels[k]!), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text("All")),
+            for (final o in list) DropdownMenuItem<String?>(value: o, child: Text.rich(TextSpan(text: o), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          ],
+          onChanged: (v) => setState(() => _filters[k] = v),
+        ),
+      ));
+    }
+    if (boxes.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 2),
+      child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        Icon(Icons.filter_alt_rounded, size: 18, color: AppPalette.fg(_accent)),
+        ...boxes,
+        if (_filters.values.any((v) => v != null))
+          TextButton(onPressed: () => setState(() => _filters.updateAll((k, v) => null)), child: const Text("Clear")),
+      ]),
+    );
+  }
+
   /// Final guard on every row: is this member inside the reviewer's units?
   bool _inScope(Map<String, dynamic> m) {
-    for (final c in _scopeColumns[_scope] ?? const <String>[]) {
+    if (_byDeptId && (m['official_dept_id'] ?? '').toString() != _deptId) return false;
+    for (final c in _unitCols) {
       if (_clean(m[c]) != _unit[c]) return false;
     }
     if (widget.dualTitle != null && _deptOnly) {
@@ -383,9 +446,44 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
       case 'location':
         return !church && _clean(m['location']).isNotEmpty;
       case 'church_department':
-        return _clean(m['department']).isNotEmpty;
+        return _clean(m['official_dept_id']).isNotEmpty || _clean(m['department']).isNotEmpty;
+      case 'location_department':
+        return !church && _clean(m['official_dept_id']).isNotEmpty;
+      case 'location_team':
+        return !church && _clean(m['official_dept_id']).isNotEmpty && _clean(m['team']).isNotEmpty;
       default:
         return true; // 'church'
+    }
+  }
+
+  String _routeKey(Map<String, dynamic> m) =>
+      [m['location'], m['sub_location'], m['department'], m['team'], m['official_dept_id']].map(_clean).join('|');
+
+  /// Per report unit: the levels that have an approver (server). Empty map
+  /// when the server function isn't there yet (then every level counts).
+  Future<Map<String, Set<int>>> _routeHolders(Map<String, List<Map<String, dynamic>>> grouped) async {
+    final units = <String, Map<String, dynamic>>{};
+    for (final b in grouped.values) {
+      final m = b.first['members'] is Map ? Map<String, dynamic>.from(b.first['members'] as Map) : <String, dynamic>{};
+      final k = _routeKey(m);
+      units[k] ??= {
+        'k': k,
+        'location': m['location'],
+        'sub_location': m['sub_location'],
+        'department': m['department'],
+        'team': m['team'],
+        'official_dept_id': m['official_dept_id']?.toString(),
+      };
+    }
+    if (units.isEmpty) return {};
+    try {
+      final r = await _supabase.rpc('approval_levels_for', params: {'p_units': units.values.toList()});
+      final out = <String, Set<int>>{};
+      (r as Map).forEach((k, v) => out[k.toString()] = {for (final x in (v as List)) (x as num).toInt()});
+      return out;
+    } catch (e) {
+      debugPrint("Approval routes: $e");
+      return {};
     }
   }
 
@@ -425,12 +523,13 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
 
       // Narrow the query on the server (case-insensitive), then re-check every row below.
       var query = _supabase.from(tableName).select('*, members!inner(*)');
-      for (final c in _scopeColumns[_scope] ?? const <String>[]) {
+      if (_byDeptId) query = query.eq('members.official_dept_id', _deptId!);
+      for (final c in _unitCols) {
         if (c == 'sub_location') continue; // compared after loading (blank / "N/A" are the same)
         query = query.ilike('members.$c', _escapeLike(_unit[c]!));
       }
 
-      final res = await query.order('created_at', ascending: false).limit(500);
+      final res = await query.order('created_at', ascending: false).limit(2500);
       final List<dynamic> logs = res as List<dynamic>;
 
       // Group individual member logs into report batches: date + cell + its full unit path
@@ -456,13 +555,19 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
 
       final List<Map<String, dynamic>> pending = [];
       final List<Map<String, dynamic>> approved = [];
+      final holders = await _routeHolders(grouped);
 
       grouped.forEach((key, batchLogs) {
         final first = batchLogs.first;
         final m0 = first['members'] is Map ? Map<String, dynamic>.from(first['members'] as Map) : <String, dynamic>{};
 
-        // This report only passes through the levels that exist for its unit path.
-        final chain = _chainFor(m0);
+        // This report only passes through the levels that exist for its unit
+        // path AND have someone to approve there (empty levels are skipped,
+        // so a report never waits for a level nobody holds).
+        var chain = _chainFor(m0);
+        final h = holders[_routeKey(m0)];
+        if (h != null) chain = chain.where((lv) => lv == _level || h.contains(lv)).toList();
+        if (chain.isEmpty) return;
         if (!chain.contains(_level)) return; // this reviewer isn't on this report's route
         final int idx = chain.indexOf(_level);
         final int lastLevel = chain.last;
@@ -504,6 +609,11 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
           'report_date': first['report_date'],
           'unit_name': unitName,
           'unit_context': unitPath,
+          'f_location': (m0['location'] ?? '').toString().trim(),
+          'f_sub_location': (m0['sub_location'] ?? '').toString().trim(),
+          'f_department': (m0['department'] ?? '').toString().trim(),
+          'f_team': (m0['team'] ?? '').toString().trim(),
+          'f_cell': unitName.trim(),
           'state': state,
           'level': level,
           'is_last': _level == lastLevel,
@@ -765,7 +875,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         children: [
                           const Icon(Icons.pending_actions_rounded, size: 17),
                           const SizedBox(width: 8),
-                          Flexible(child: Text("Pending Reports (${_pendingBatches.length})")),
+                          Flexible(child: Text.rich(TextSpan(text: "${tr('Pending Reports')} (${_filtered(_pendingBatches).length})"))),
                         ],
                       ),
                     ),
@@ -775,7 +885,7 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         children: [
                           const Icon(Icons.verified_outlined, size: 17),
                           const SizedBox(width: 8),
-                          Flexible(child: Text("Approved Reports (${_approvedBatches.length})")),
+                          Flexible(child: Text.rich(TextSpan(text: "${tr('Approved Reports')} (${_filtered(_approvedBatches).length})"))),
                         ],
                       ),
                     ),
@@ -793,12 +903,13 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
                         children: [
                           if (widget.dualTitle != null) _dualBar(),
                           _buildScopeBanner(),
+                          _filterBar(),
                           Expanded(
                             child: TabBarView(
                               children: [
                                 ReportsSubmittedView(table: _getTableName()),
-                                _buildReportsList(_pendingBatches, isPendingTab: true),
-                                _buildReportsList(_approvedBatches, isPendingTab: false),
+                                _buildReportsList(_filtered(_pendingBatches), isPendingTab: true),
+                                _buildReportsList(_filtered(_approvedBatches), isPendingTab: false),
                               ],
                             ),
                           ),

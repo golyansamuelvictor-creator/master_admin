@@ -1,5 +1,5 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -32,6 +32,7 @@ import 'education/education_contents.dart';
 import 'bible/bible_screen.dart';
 import 'special_activities_screen.dart';
 import '../core/launch_files.dart';
+import '../widgets/note_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -1414,7 +1415,7 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700)),
             ),
             const SizedBox(height: 10),
-            Text((p['body'] ?? '').toString().isEmpty ? "No details written yet." : p['body'].toString(), style: const TextStyle(fontSize: 14, height: 1.4)),
+            if ((p['body'] ?? '').toString().isEmpty) const Text("No details written yet.") else NoteBody(text: p['body'].toString()),
           ]),
         ),
         actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Close"))],

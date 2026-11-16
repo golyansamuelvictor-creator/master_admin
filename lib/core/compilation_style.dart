@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 /// One look for every compilation summary table (all modules + Ranking):
 /// the header row and the "General total" row get their own fills, and

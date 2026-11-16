@@ -1,5 +1,5 @@
 // ignore_for_file: use_build_context_synchronously
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,6 +10,7 @@ import '../../core/table_export.dart';
 import '../../widgets/h_scroll.dart';
 import 'bb_workspace_screen.dart' show BbSettings;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/security.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -641,7 +642,7 @@ class _BbSheetState extends State<BbSheet> {
           SizedBox(
             width: 200,
             height: 34,
-            child: TextField(decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search name, guide, teacher"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder()), onChanged: (v) => setState(() => _q = v)),
+            child: TextField(decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search name, guide, teacher"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))), onChanged: (v) => setState(() => _q = v)),
           ),
           const SizedBox(width: 6),
           Text("${list.length}", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.w900, color: AppPalette.fg(_kPurple))),
@@ -694,7 +695,7 @@ class _BbSheetState extends State<BbSheet> {
               },
             ),
           ],
-          IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)), onPressed: () => TableExport.showMenu(context, () => _export(rest, list))),
+          ExportOnly(child: IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)), onPressed: () => TableExport.showMenu(context, () => _export(rest, list)))),
           if (!widget.fullScreen)
             IconButton(
               tooltip: tr('Fullscreen View'),

@@ -429,7 +429,7 @@ class CompStatus {
   static bool isNegative(dynamic v) {
     final s = norm(v);
     if (s.isEmpty) return false;
-    if (s == 'no' || s == 'n' || s == '0' || s == 'false' || s == 'none' || s == 'x') return true;
+    if (s == 'no' || s == 'n' || s == '0' || s == 'false' || s == 'none' || s == 'x' || s == 'nothing') return true;
     const markers = ['absent', 'absence', 'didn', 'did not', 'didnt', 'not ', 'missed', 'failed', 'unpaid', 'no show'];
     return markers.any(s.contains);
   }

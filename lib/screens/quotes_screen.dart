@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -85,7 +85,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
                     controller: textC,
                     minLines: 3,
                     maxLines: 7,
-                    decoration: InputDecoration(labelText: tr("Quote"), border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: tr("Quote"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                   ),
                   const SizedBox(height: 12),
                   Text("Colour", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -117,7 +117,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
                     child: TextField(
                       controller: orderC,
                       keyboardType: TextInputType.number,
-                      decoration: InputDecoration(labelText: tr("Order"), border: OutlineInputBorder()),
+                      decoration: InputDecoration(labelText: tr("Order"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                     ),
                   ),
                   if (error != null) ...[

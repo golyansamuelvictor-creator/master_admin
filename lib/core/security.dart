@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -27,6 +27,10 @@ class AppSecurity {
   static String _scjId = '';
   static String? _name;
 
+  /// Live: may this account download / print? Buttons for it are hidden
+  /// for everyone else (ExportOnly).
+  static final ValueNotifier<bool> exportAllowed = ValueNotifier(false);
+
   /// The SCJ ID and date shown in the watermark ('' before sign-in).
   static final ValueNotifier<String> watermark = ValueNotifier('');
 
@@ -52,6 +56,7 @@ class AppSecurity {
   static void stop() {
     _forUser = null;
     _canExport = null;
+    exportAllowed.value = false;
     _scjId = '';
     watermark.value = '';
   }
@@ -72,6 +77,7 @@ class AppSecurity {
     } catch (_) {
       _canExport = false;
     }
+    exportAllowed.value = _canExport!;
     return _canExport!;
   }
 
@@ -144,4 +150,16 @@ class _MarkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MarkPainter old) => old.text != text || old.dark != dark;
+}
+
+/// Shows its child (a Print / Download / Export button) only to accounts
+/// allowed to download and print; nothing for everyone else.
+class ExportOnly extends StatelessWidget {
+  final Widget child;
+  const ExportOnly({super.key, required this.child});
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+        valueListenable: AppSecurity.exportAllowed,
+        builder: (c, ok, w) => ok ? child : const SizedBox.shrink(),
+      );
 }

@@ -2,7 +2,7 @@
 import 'package:excel/excel.dart' as xl;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -273,7 +273,7 @@ class TableExport {
       );
 
   /// Print + Download buttons for a module toolbar.
-  static Widget buttons(BuildContext context, ExportTable Function() build) => Row(mainAxisSize: MainAxisSize.min, children: [
+  static Widget buttons(BuildContext context, ExportTable Function() build) => ExportOnly(child: Row(mainAxisSize: MainAxisSize.min, children: [
         IconButton(
           tooltip: tr('Print preview (Ctrl+P)'),
           onPressed: () {
@@ -291,7 +291,7 @@ class TableExport {
           onPressed: () => showMenu(context, build),
           icon: Icon(Icons.download_rounded, color: AppPalette.fg(Colors.green.shade700), size: 19),
         ),
-      ]);
+      ]));
 
   static void _toast(BuildContext context, String msg, {bool error = false}) {
     if (!context.mounted) return;

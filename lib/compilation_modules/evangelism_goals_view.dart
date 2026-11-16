@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,6 +11,7 @@ import '../core/compilation_rules.dart';
 import '../core/compilation_style.dart';
 import '../core/i18n.dart';
 import '../core/table_export.dart';
+import '../core/friendly_error.dart';
 
 /// Section frame of the compilation module (title, export, full screen).
 typedef GoalsSection = Widget Function(String title, Widget content, {VoidCallback? onExport});
@@ -217,7 +218,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't compile the results (run 14_round13.sql): ${e is PostgrestException ? e.message : e}";
+          _error = "Couldn't compile the results${friendlyTail(e)}";
         });
       }
     }

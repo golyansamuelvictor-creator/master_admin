@@ -1,7 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +13,7 @@ import 'package:master_admin/core/app_palette.dart';
 import 'package:flutter/services.dart';
 import '../../widgets/app_menus.dart';
 import '../../widgets/h_scroll.dart';
+import '../../core/friendly_error.dart';
 
 /// Universal Intervention: the members who missed a duty in the period
 /// (absentees), or, for Counseling and Visitations, "Those who need
@@ -943,7 +944,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                   prefixIcon: const Icon(Icons.search, size: 15),
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onChanged: (q) {
                   _searchQuery = q;
@@ -1087,7 +1088,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                           child: _isLoading
                               ? const Center(child: CircularProgressIndicator())
                               : _loadError != null
-                                  ? Center(child: Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't load the list (run 20_round19.sql): $_loadError", textAlign: TextAlign.center)))
+                                  ? Center(child: Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't load the list${friendlyTail(_loadError)}", textAlign: TextAlign.center)))
                                   : rows.isEmpty
                                       ? Center(child: Text(_isVisit ? "Nobody needs counseling or visitation in this period." : "No intervention records found for this period."))
                                       : ListView.builder(
@@ -1408,12 +1409,12 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
             children: [
               DropdownButtonFormField<String>(
                 initialValue: selectedOutcome,
-                decoration: InputDecoration(labelText: tr("Outcome"), border: const OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr("Outcome"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 items: ['Recovered', 'Sick', 'Working', 'Travelled', 'Unresolved'].map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 13)))).toList(),
                 onChanged: (v) => setST(() => selectedOutcome = v!),
               ),
               const SizedBox(height: 12),
-              TextField(controller: noteCtrl, decoration: InputDecoration(hintText: tr("Notes..."), border: const OutlineInputBorder()), maxLines: 2),
+              TextField(controller: noteCtrl, decoration: InputDecoration(hintText: tr("Notes..."), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))), maxLines: 2),
             ],
           ),
           actions: [
@@ -1465,7 +1466,7 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
-                    decoration: InputDecoration(hintText: tr("Search..."), isDense: true, prefixIcon: const Icon(Icons.search, size: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(6))),
+                    decoration: InputDecoration(hintText: tr("Search..."), isDense: true, prefixIcon: const Icon(Icons.search, size: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
                     onChanged: (v) => setDialogState(() => q = v),
                   ),
                   CheckboxListTile(

@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -56,7 +56,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
       }
     } catch (e) {
       debugPrint("Accountability tasks: $e");
-      _error = "Couldn't load the accountability tasks. Ask the administrator to run 17_round16.sql.";
+      _error = "Couldn't load the accountability tasks. Check your internet connection and refresh.";
     }
     // leader tasks assigned to me (kept from the earlier version)
     try {
@@ -77,7 +77,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text("Mark as done"),
-          content: TextField(controller: c, maxLines: 3, decoration: InputDecoration(labelText: tr("What was done (optional)"), border: const OutlineInputBorder())),
+          content: TextField(controller: c, maxLines: 3, decoration: InputDecoration(labelText: tr("What was done (optional)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
             ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Done")),
@@ -399,18 +399,18 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                   controller: titles,
                   minLines: 2,
                   maxLines: 6,
-                  decoration: InputDecoration(labelText: tr("Task(s) — one per line"), hintText: tr("Each line becomes its own task"), border: const OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: tr("Task(s) — one per line"), hintText: tr("Each line becomes its own task"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 ),
                 const SizedBox(height: 10),
-                TextField(controller: desc, maxLines: 3, decoration: InputDecoration(labelText: tr("Details (optional)"), border: const OutlineInputBorder())),
+                TextField(controller: desc, maxLines: 3, decoration: InputDecoration(labelText: tr("Details (optional)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
                 const SizedBox(height: 10),
-                TextField(controller: duty, decoration: InputDecoration(labelText: tr("Duty (optional)"), hintText: tr("e.g. Service Attendance Status"), border: const OutlineInputBorder(), isDense: true)),
+                TextField(controller: duty, decoration: InputDecoration(labelText: tr("Duty (optional)"), hintText: tr("e.g. Service Attendance Status"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
                 const SizedBox(height: 12),
                 Text("For which roles? (none picked = everyone)", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 12.5)),
                 const SizedBox(height: 6),
                 TextField(
                   onChanged: (v) => set(() => roleSearch = v),
-                  decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Find a role"), isDense: true, border: const OutlineInputBorder()),
+                  decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Find a role"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 ),
                 const SizedBox(height: 6),
                 Container(
@@ -435,7 +435,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                     child: DropdownButtonFormField<String>(
                       isExpanded: true,
                       initialValue: loc ?? '',
-                      decoration: InputDecoration(labelText: tr("Location"), border: const OutlineInputBorder(), isDense: true),
+                      decoration: InputDecoration(labelText: tr("Location"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                       items: [
                         const DropdownMenuItem(value: '', child: Text("All locations")),
                         const DropdownMenuItem(value: church, child: Text("Church (24 departments)")),
@@ -453,7 +453,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                       key: ValueKey('dept-$loc'),
                       isExpanded: true,
                       initialValue: dept ?? '',
-                      decoration: InputDecoration(labelText: tr("Department"), border: const OutlineInputBorder(), isDense: true),
+                      decoration: InputDecoration(labelText: tr("Department"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                       items: [
                         const DropdownMenuItem(value: '', child: Text("All departments")),
                         for (final d in (loc == church ? churchDepts : locDepts)) DropdownMenuItem(value: d, child: Text(d, overflow: TextOverflow.ellipsis)),
@@ -467,7 +467,7 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: freq,
-                      decoration: InputDecoration(labelText: tr("How often"), border: const OutlineInputBorder(), isDense: true),
+                      decoration: InputDecoration(labelText: tr("How often"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                       items: const [
                         DropdownMenuItem(value: 'once', child: Text("Once")),
                         DropdownMenuItem(value: 'daily', child: Text("Daily")),

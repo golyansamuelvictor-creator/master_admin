@@ -25,6 +25,7 @@ import 'widgets/media_mini_player.dart';
 import 'widgets/app_lock_settings.dart';
 import 'widgets/two_step.dart';
 import 'package:master_admin/core/app_palette.dart';
+import 'core/password_reset.dart';
 import 'core/security.dart';
 import 'core/offline.dart';
 
@@ -53,6 +54,9 @@ void main() async {
     url: demo?.$1 ?? kLiveSupabaseUrl,
     publishableKey: demo?.$2 ?? kLiveSupabaseKey,
   );
+
+  // "Forgot password?" link opened from the email: sign in for the reset
+  await PasswordReset.handleLinkAtStartup();
 
   // Reads the device copy right away; the account copy loads in the background.
   unawaited(AppLockManager.instance.init());
@@ -96,6 +100,7 @@ void main() async {
   try {
     final prefs = await SharedPreferences.getInstance();
     themeNotifier.value = themeModeFromName(prefs.getString('theme_mode'));
+    AppPalette.setBrandOnly(prefs.getBool('brand_colors') ?? true);
   } catch (_) {}
 
   // Load every Merriweather weight the app uses BEFORE the first screen.
@@ -151,6 +156,23 @@ Future<void> setAppThemeMode(ThemeMode mode) async {
   } catch (_) {}
 }
 
+/// "Church colours only" (Purple, Dark Blue, Red): on by default; can be
+/// switched off from the profile menu to compare. Redraws every screen.
+Future<void> setBrandColors(BuildContext context, bool on) async {
+  AppPalette.setBrandOnly(on);
+  final root = WidgetsBinding.instance.rootElement;
+  AppPalette.rebuildAll(root ?? context);
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('brand_colors', on);
+  } catch (_) {}
+}
+
+/// Rounded text boxes everywhere (the default when a field doesn't set its own border).
+const InputDecorationTheme kRoundedInputs = InputDecorationTheme(
+  border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+);
+
 class MasterAdminApp extends StatelessWidget {
   const MasterAdminApp({super.key});
 
@@ -176,7 +198,9 @@ class MasterAdminApp extends StatelessWidget {
             scaffoldBackgroundColor: kLightBg,
             // Every list row and card at the standard (duty card) height
             listTileTheme: const ListTileThemeData(dense: true, visualDensity: VisualDensity(vertical: -2), minVerticalPadding: 4, contentPadding: EdgeInsets.symmetric(horizontal: 12)),
-            cardTheme: const CardThemeData(margin: EdgeInsets.symmetric(vertical: 4, horizontal: 0)),
+            cardTheme: const CardThemeData(margin: EdgeInsets.symmetric(vertical: 4, horizontal: 0), elevation: 2.5, shadowColor: Color(0x40000000), surfaceTintColor: Colors.transparent),
+            // every text box rounded (forms, search, filters)
+            inputDecorationTheme: kRoundedInputs,
           ),
           darkTheme: ThemeData(
             useMaterial3: true,
@@ -187,7 +211,8 @@ class MasterAdminApp extends StatelessWidget {
             scaffoldBackgroundColor: kDarkBg,
             // Every list row and card at the standard (duty card) height
             listTileTheme: const ListTileThemeData(dense: true, visualDensity: VisualDensity(vertical: -2), minVerticalPadding: 4, contentPadding: EdgeInsets.symmetric(horizontal: 12)),
-            cardTheme: const CardThemeData(margin: EdgeInsets.symmetric(vertical: 4, horizontal: 0)),
+            cardTheme: const CardThemeData(margin: EdgeInsets.symmetric(vertical: 4, horizontal: 0), elevation: 2.5, shadowColor: Color(0xCC000000), surfaceTintColor: Colors.transparent),
+            inputDecorationTheme: kRoundedInputs,
           ),
           themeMode: currentMode,
           localizationsDelegates: const [
@@ -326,6 +351,10 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
               Positioned.fill(
                 child: Overlay(initialEntries: [OverlayEntry(builder: (_) => const MediaMiniPlayer())]),
               ),
+              // signed in, lock not checked yet (first moments after a
+              // reload): cover the app so nothing shows before the PIN
+              if (!AppLockManager.instance.isInitialized && Supabase.instance.client.auth.currentSession != null)
+                const Positioned.fill(child: ColoredBox(color: Colors.white, child: Center(child: CircularProgressIndicator()))),
               if (AppLockManager.instance.isLocked)
                 Positioned.fill(
                   child: Overlay(
@@ -348,8 +377,14 @@ class _SessionGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasSession = Supabase.instance.client.auth.currentSession != null;
-    return hasSession ? child : const AuthScreen();
+    return ValueListenableBuilder<bool>(
+      valueListenable: PasswordReset.pending,
+      builder: (context, reset, _) {
+        final hasSession = Supabase.instance.client.auth.currentSession != null;
+        if (hasSession && reset) return const NewPasswordScreen();
+        return hasSession ? child : const AuthScreen();
+      },
+    );
   }
 }
 
@@ -412,16 +447,17 @@ class _BrandHeaderState extends State<BrandHeader> with TickerProviderStateMixin
             width: logo,
             height: logo,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(logo * 0.24),
               boxShadow: [
                 BoxShadow(color: kPurple.withValues(alpha: 0.45), blurRadius: 40, spreadRadius: 4),
               ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(logo / 2),
+              borderRadius: BorderRadius.circular(logo * 0.24),
               child: Image.asset(
-                'assets/images/app_logo.png',
-                fit: BoxFit.cover,
+                'assets/brand/logo.webp', // the app icon
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.medium,
                 errorBuilder: (ctx, err, stack) =>
                     Icon(Icons.admin_panel_settings_rounded, size: c ? 70 : 80, color: AppPalette.fg(kGold)),
               ),
@@ -672,7 +708,7 @@ class _CinematicLockOverlayState extends State<CinematicLockOverlay> {
                 decoration: BoxDecoration(
                   color: AppPalette.bg(Colors.white.withValues(alpha: 0.05)),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppPalette.line(error ? Colors.redAccent : kPurple.withValues(alpha: 0.3)), width: 1.2),
+                  border: Border.all(color: AppPalette.line(error ? Colors.redAccent : kPurple.withValues(alpha: 0.3)), width: 1.2), boxShadow: AppPalette.cardShadow
                 ),
                 child: Column(
                   children: [
@@ -1021,7 +1057,7 @@ class _AccountPendingScreen extends StatelessWidget {
                   border: Border.all(
                     color: AppPalette.line(isRejected ? Colors.redAccent.withValues(alpha: 0.5) : kGold.withValues(alpha: 0.35)),
                     width: 1.2,
-                  ),
+                  ), boxShadow: AppPalette.cardShadow
                 ),
                 child: Column(
                   children: [

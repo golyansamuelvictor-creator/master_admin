@@ -1,11 +1,12 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import '../../widgets/h_scroll.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../../core/friendly_error.dart';
 
 /// Set unit targets — cascading goals.
 ///
@@ -138,7 +139,7 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = "Couldn't load goal setting. Ask the administrator to run 17_round16.sql.\n${e is PostgrestException ? e.message : e}";
+        _error = "Couldn't load goal setting${friendlyTail(e)}";
       });
     }
   }
@@ -393,7 +394,7 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
         isExpanded: true,
         initialValue: items.contains(value) ? value : null,
         style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.black87)),
-        decoration: InputDecoration(labelText: tr(label), isDense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: const OutlineInputBorder()),
+        decoration: InputDecoration(labelText: tr(label), isDense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
         items: [for (final i in items) DropdownMenuItem(value: i, child: Text(show?.call(i) ?? i, overflow: TextOverflow.ellipsis))],
         onChanged: (v) {
           if (v != null) onChanged(v);
@@ -665,8 +666,8 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
                                         filled: true,
                                         fillColor: AppPalette.bg(const Color(0xFFFFFDF2)),
                                         contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: AppPalette.line(Colors.amber.shade300))),
-                                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: pPurple, width: 1.4)),
+                                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppPalette.line(Colors.amber.shade300))),
+                                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: pPurple, width: 1.4)),
                                         suffixText: _isRate ? '%' : null,
                                         hintText: '–',
                                       ),

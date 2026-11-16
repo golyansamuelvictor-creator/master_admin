@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -15,6 +15,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 ///   A copy of the hash is kept on the device so unlocking works offline.
 /// - A user without a PIN unlocks with their account password instead.
 /// - Defaults: on, 5 minutes.
+/// - The lock survives a refresh, a new tab or reopening the app: the locked
+///   state and the time of the last activity are kept on the device, so a
+///   page reload never skips the PIN / password.
 class AppLockManager extends ChangeNotifier {
   static final AppLockManager instance = AppLockManager._internal();
   AppLockManager._internal();
@@ -60,24 +63,62 @@ class AppLockManager extends ChangeNotifier {
     _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((s) {
       final id = s.session?.user.id;
       if (id == null) {
+        // signed out: the next sign-in starts unlocked
+        final old = _userId;
         _userId = null;
         _pinHash = null;
         _pinSalt = null;
         _isLocked = false;
         _inactivityTimer?.cancel();
+        if (old != null && s.event == AuthChangeEvent.signedOut) unawaited(_clearLockState(old));
         notifyListeners();
       } else if (id != _userId) {
+        // a sign-in in this page (password, code, switching accounts): fresh
         _isLocked = false;
-        _load(id);
+        _load(id, fresh: true);
       }
     });
     final id = Supabase.instance.client.auth.currentUser?.id;
-    if (id != null) await _load(id);
-    _isInitialized = true;
-    notifyListeners();
+    // Coming back from Google sign-in is a fresh sign-in too.
+    final u = Uri.base;
+    final oauth = u.queryParameters.containsKey('code') || u.queryParameters.containsKey('token_hash') || u.fragment.contains('access_token');
+    try {
+      if (id != null) await _load(id, fresh: oauth);
+    } catch (e) {
+      debugPrint("App lock: $e");
+    } finally {
+      _isInitialized = true;
+      notifyListeners();
+    }
   }
 
-  Future<void> _load(String userId) async {
+  // ---- the lock kept on the device (survives refresh / reopening)
+  static String _kLocked(String id) => 'app_lock_locked_$id';
+  static String _kLast(String id) => 'app_lock_last_$id';
+  DateTime _lastSaved = DateTime.fromMillisecondsSinceEpoch(0);
+
+  Future<void> _saveLockState({bool force = false}) async {
+    final id = _userId;
+    if (id == null) return;
+    final now = DateTime.now();
+    if (!force && now.difference(_lastSaved) < const Duration(seconds: 15)) return;
+    _lastSaved = now;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool(_kLocked(id), _isLocked);
+      await p.setInt(_kLast(id), _lastActivity.millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
+  Future<void> _clearLockState(String id) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.remove(_kLocked(id));
+      await p.remove(_kLast(id));
+    } catch (_) {}
+  }
+
+  Future<void> _load(String userId, {bool fresh = false}) async {
     _userId = userId;
     _remoteChecked = false;
     final prefs = await SharedPreferences.getInstance();
@@ -87,8 +128,29 @@ class AppLockManager extends ChangeNotifier {
     if (!timeoutOptions.containsKey(_timeoutSeconds)) _timeoutSeconds = 300;
     _pinHash = prefs.getString('app_lock_hash_$userId');
     _pinSalt = prefs.getString('app_lock_salt_$userId');
-    resetInactivityTimer();
+    if (fresh) {
+      _isLocked = false;
+      resetInactivityTimer();
+      await _saveLockState(force: true);
+    } else {
+      // reload / reopened: locked before, or away longer than the timeout
+      final wasLocked = prefs.getBool(_kLocked(userId)) ?? false;
+      final lastMs = prefs.getInt(_kLast(userId));
+      final away = lastMs == null ? 0 : DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(lastMs)).inSeconds;
+      if (_isLockEnabled && (wasLocked || away >= _timeoutSeconds)) {
+        _inactivityTimer?.cancel();
+        _isLocked = true;
+        await _saveLockState(force: true);
+      } else {
+        resetInactivityTimer();
+      }
+    }
     notifyListeners();
+    unawaited(_loadRemote(userId, prefs));
+  }
+
+  /// The account copy of the lock settings (PIN, on/off, timeout).
+  Future<void> _loadRemote(String userId, SharedPreferences prefs) async {
     try {
       final row = await Supabase.instance.client.from('user_security').select().eq('user_id', userId).maybeSingle();
       if (_userId != userId) return;
@@ -106,6 +168,10 @@ class AppLockManager extends ChangeNotifier {
         if (old != null && old.isNotEmpty && old != '1234') await setPin(old);
       }
       _remoteChecked = true;
+      if (!_isLockEnabled && _isLocked) {
+        _isLocked = false; // the lock was turned off on another device
+        await _saveLockState(force: true);
+      }
       resetInactivityTimer();
       notifyListeners();
     } catch (e) {
@@ -158,9 +224,11 @@ class AppLockManager extends ChangeNotifier {
 
   /// Any activity (touch, mouse, key) restarts the countdown.
   void resetInactivityTimer() {
+    if (_isLocked) return; // activity behind the lock screen doesn't count
     _lastActivity = DateTime.now();
     _inactivityTimer?.cancel();
-    if (!_isLockEnabled || _isLocked || !_signedIn) return;
+    unawaited(_saveLockState());
+    if (!_isLockEnabled || !_signedIn) return;
     _inactivityTimer = Timer(Duration(seconds: _timeoutSeconds), lockScreen);
   }
 
@@ -181,12 +249,14 @@ class AppLockManager extends ChangeNotifier {
     if (!_signedIn || !_isLockEnabled) return;
     _inactivityTimer?.cancel();
     _isLocked = true;
+    unawaited(_saveLockState(force: true));
     notifyListeners();
   }
 
   void _unlocked() {
     _isLocked = false;
     resetInactivityTimer();
+    unawaited(_saveLockState(force: true));
     notifyListeners();
   }
 

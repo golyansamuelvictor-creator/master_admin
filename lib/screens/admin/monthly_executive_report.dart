@@ -16,6 +16,7 @@ import 'package:master_admin/core/app_palette.dart';
 import 'tribe_monthly_report.dart';
 import '../../widgets/nice_range_picker.dart';
 import '../../core/security.dart';
+import '../../core/friendly_error.dart';
 
 /// One duty in the report: this period against the period before.
 class DutyStat {
@@ -113,7 +114,9 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
   /// Compilation screen: 'exclude' = everyone else (default), 'only' = them.
   String _official = 'exclude';
   bool _officialView = false; // the area includes Dubai (or the whole church)
-  Map<String, dynamic> get _officialFilter => {'col': 'official', 'op': _official == 'only' ? 'is_true' : 'not_true'};
+  /// 'all' (Total: Dubai and Dubai Official together) adds no filter.
+  List<Map<String, dynamic>> get _officialFilter => _official == 'all' ? const [] : [{'col': 'official', 'op': _official == 'only' ? 'is_true' : 'not_true'}];
+  bool _dubaiArea = false;
 
   // Accountability drilldown level
   static const Map<String, String> _levelCols = {
@@ -324,7 +327,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
         'p_prev_to': _d(_prevEnd),
         'p_level': _levelCols[_drilldownLevel],
         'p_include_pending': _includePending,
-        'p_focus': [...focus, _officialFilter],
+        'p_focus': [...focus, ..._officialFilter],
       });
       if (!mounted || req != _req) return;
       final j = Map<String, dynamic>.from(res as Map);
@@ -335,7 +338,13 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           for (final f in (j['scope'] as List?) ?? const [])
             if (f is Map && f['col'] == 'location' && f['op'] == 'eq') f['val'].toString().toLowerCase(),
         ];
-        _officialView = locs.isEmpty || locs.any((l) => l.contains('dubai') || l.contains('uae'));
+        _dubaiArea = locs.any((l) => l.contains('dubai') || l.contains('uae'));
+        _officialView = locs.isEmpty || _dubaiArea;
+        if (_dubaiArea && _official == 'exclude') {
+          // UAE leaders: their units mix both, so start on Total
+          _official = 'all';
+          return await _loadReportData();
+        }
         if (_levelCols[_drilldownLevel] != j['level']) {
           // the level was adjusted to the area: load once more at that level
           return await _loadReportData();
@@ -431,7 +440,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       if (mounted && req == _req) {
         setState(() {
           _isLoading = false;
-          _error = e is PostgrestException ? "Couldn't build the report: ${e.message}. Ask the admin to run 11_round10.sql." : "Couldn't build the report: $e";
+          _error = "Couldn't build the report${friendlyTail(e)}";
         });
       }
     }
@@ -499,11 +508,11 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
           width: 560,
           child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: obs, maxLines: 4, decoration: InputDecoration(labelText: tr("Executive summary"), border: const OutlineInputBorder())),
+              TextField(controller: obs, maxLines: 4, decoration: InputDecoration(labelText: tr("Executive summary"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
               const SizedBox(height: 10),
-              TextField(controller: root, maxLines: 4, decoration: InputDecoration(labelText: tr("Problem areas and root causes"), border: const OutlineInputBorder())),
+              TextField(controller: root, maxLines: 4, decoration: InputDecoration(labelText: tr("Problem areas and root causes"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
               const SizedBox(height: 10),
-              TextField(controller: act, maxLines: 4, decoration: InputDecoration(labelText: tr("Recommended leadership actions"), border: const OutlineInputBorder())),
+              TextField(controller: act, maxLines: 4, decoration: InputDecoration(labelText: tr("Recommended leadership actions"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
             ]),
           ),
         ),
@@ -845,23 +854,23 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       },
     );
     final exports = Row(mainAxisSize: MainAxisSize.min, children: [
-      IconButton(
+      ExportOnly(child: IconButton(
         icon: Icon(Icons.picture_as_pdf_rounded, color: AppPalette.fg(Colors.red), size: 20),
         tooltip: tr("Download PDF"),
         onPressed: _isLoading || _error != null ? null : _downloadPdf,
-      ),
-      IconButton(
+      )),
+      ExportOnly(child: IconButton(
         icon: Icon(Icons.table_view_rounded, color: AppPalette.fg(Colors.green), size: 20),
         tooltip: tr("Export Excel"),
         onPressed: _isLoading || _error != null ? null : () => TableExport.excel(context, _excelTable()),
-      ),
-      IconButton(
+      )),
+      ExportOnly(child: IconButton(
         icon: Icon(Icons.print_rounded, color: AppPalette.fg(Colors.blueGrey), size: 20),
         tooltip: tr("Print report"),
         onPressed: _isLoading || _error != null
             ? null
             : () => TableExport.previewBuilder(context, "Executive report", _pdf, fileName: 'Executive_report_${_d(_curStart)}.pdf', initial: _pdfFormat),
-      ),
+      )),
     ]);
     return Container(
       // as wide as the cards below it
@@ -894,7 +903,8 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
               showSelectedIcon: false,
               style: const ButtonStyle(visualDensity: VisualDensity.compact),
               segments: [
-                ButtonSegment(value: 'exclude', label: Text(_activeUnit.toLowerCase().contains('dubai') ? "Dubai" : "Church", style: const TextStyle(fontSize: 11.5))),
+                if (_dubaiArea) const ButtonSegment(value: 'all', label: Text("Total", style: TextStyle(fontSize: 11.5))),
+                ButtonSegment(value: 'exclude', label: Text(_dubaiArea ? "Dubai" : "Church", style: const TextStyle(fontSize: 11.5))),
                 const ButtonSegment(value: 'only', label: Text("Dubai Official", style: TextStyle(fontSize: 11.5))),
               ],
               selected: {_official},
@@ -1096,7 +1106,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
 
   List<Map<String, dynamic>> get _focusJson => [
         for (final f in _focus) {'col': _levelCols[f.key], 'op': 'eq', 'val': f.value},
-        _officialFilter,
+        ..._officialFilter,
       ];
 
   // ---- the period split into its parts (averages per part)
@@ -1257,7 +1267,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
               future: future,
               builder: (ctx, snap) {
                 if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
-                if (snap.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't load the chart (run 21_round20.sql): ${snap.error}", textAlign: TextAlign.center)));
+                if (snap.hasError) return Center(child: Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't load the chart${friendlyTail(snap.error)}", textAlign: TextAlign.center)));
                 final (labels, a, _) = snap.data!;
                 final c = _changeColor(d.diff);
                 return Padding(
@@ -1491,7 +1501,7 @@ class _MonthlyExecutiveReportState extends State<MonthlyExecutiveReport> {
       if (!mounted || req != _cmpReq) return;
       setState(() {
         _cmpLoading = false;
-        _cmpError = "Couldn't compare: ${e is PostgrestException ? e.message : e}. Ask the admin to run 18_round17.sql.";
+        _cmpError = "Couldn't compare${friendlyTail(e)}";
       });
     }
   }

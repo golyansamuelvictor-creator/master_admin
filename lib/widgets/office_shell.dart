@@ -9,7 +9,7 @@
 //  * OfficeRulerPainter, OfficeZoomPill, OfficeViewIcon: status bar pieces
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -799,7 +799,7 @@ Future<String?> officeAsk(BuildContext context, String title, String initial, {S
       content: TextField(
         controller: c,
         autofocus: true,
-        decoration: InputDecoration(border: const OutlineInputBorder(), hintText: hint),
+        decoration: InputDecoration(border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), hintText: hint),
         onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
       ),
       actions: [

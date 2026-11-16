@@ -1,5 +1,5 @@
 import 'package:fl_chart/fl_chart.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,6 +8,8 @@ import '../core/app_palette.dart';
 import '../core/compilation_rules.dart';
 import '../core/i18n.dart';
 import '../core/table_export.dart';
+import '../core/friendly_error.dart';
+import '../core/security.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 final _f = DateFormat('yyyy-MM-dd');
@@ -109,7 +111,7 @@ class _AsmisPreAttendanceScreenState extends State<AsmisPreAttendanceScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't save (run 21_round20.sql): ${e is PostgrestException ? e.message : e}")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't save${friendlyTail(e)}")));
       }
     }
   }
@@ -151,7 +153,7 @@ class _AsmisPreAttendanceScreenState extends State<AsmisPreAttendanceScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           child: TextField(
-            decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search name, team or cell"), isDense: true, border: const OutlineInputBorder()),
+            decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search name, team or cell"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
             onChanged: (v) => setState(() => _q = v),
           ),
         ),
@@ -167,7 +169,6 @@ class _AsmisPreAttendanceScreenState extends State<AsmisPreAttendanceScreen> {
                     final v = _answer[id];
                     final prev = _latest[id];
                     return Card(
-                      elevation: 0.4,
                       margin: const EdgeInsets.symmetric(vertical: 2),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -251,7 +252,7 @@ class _AsmisScreenState extends State<AsmisScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = "Couldn't load (run 21_round20.sql): ${e is PostgrestException ? e.message : e}";
+        _error = "Couldn't load${friendlyTail(e)}";
       });
     }
   }
@@ -339,7 +340,7 @@ class _AsmisScreenState extends State<AsmisScreen> {
                             _load();
                           },
                         ),
-                        IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)), onPressed: () => TableExport.showMenu(context, () => _table(rows, day))),
+                        ExportOnly(child: IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)), onPressed: () => TableExport.showMenu(context, () => _table(rows, day)))),
                       ]),
                       if (day != null && (day['venue'] ?? '').toString().isNotEmpty)
                         Text("Venue: ${day['venue']}", textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.blueGrey.shade700))),
@@ -484,7 +485,7 @@ class _AsmisScheduleViewState extends State<AsmisScheduleView> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = "Couldn't load the ASMIS schedule (run 22_round21.sql): ${e is PostgrestException ? e.message : e}";
+        _error = "Couldn't load the ASMIS schedule${friendlyTail(e)}";
       });
     }
   }
@@ -499,7 +500,7 @@ class _AsmisScheduleViewState extends State<AsmisScheduleView> {
       for (final k in ['name', 'theme', 'service_time', 'venue', 'subjects', 'preparation', 'notes'])
         k: TextEditingController(text: (d?[k] ?? (k == 'name' ? 'All Saints Mobilised In-Person Service' : '')).toString()),
     };
-    InputDecoration deco(String l, {String? hint}) => InputDecoration(labelText: tr(l), hintText: hint == null ? null : tr(hint), border: const OutlineInputBorder(), isDense: true, alignLabelWithHint: true);
+    InputDecoration deco(String l, {String? hint}) => InputDecoration(labelText: tr(l), hintText: hint == null ? null : tr(hint), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true, alignLabelWithHint: true);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(

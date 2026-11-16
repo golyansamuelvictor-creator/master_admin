@@ -2,7 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import '../widgets/language_screens.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +18,7 @@ import 'add_account_screen.dart';
 import 'terms_screen.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../widgets/country_code_picker.dart';
+import '../core/password_reset.dart';
 import '../core/country_codes.dart';
 
 /// Result of checking a signed-in user's profile.
@@ -87,6 +88,14 @@ class _AuthScreenState extends State<AuthScreen> {
     _selectedCountry = _countries.first;
     _loadAppConfig();
     _listenToAuthChanges();
+    // an expired / used password-reset link
+    final linkErr = PasswordReset.linkError;
+    if (linkErr != null) {
+      PasswordReset.linkError = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showMsg(linkErr, isError: true);
+      });
+    }
 
     _scjIdController.addListener(_onScjIdChanged);
     _scjIdFocusNode.addListener(() {
@@ -1225,7 +1234,14 @@ class _AuthScreenState extends State<AuthScreen> {
           _emailField(),
           const SizedBox(height: 14),
           _passwordField(),
-          const SizedBox(height: 20),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => PasswordReset.ask(context, email: _emailController.text.trim()),
+              child: Text("Forgot password?", style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
+            ),
+          ),
+          const SizedBox(height: 8),
           _mainBtn('Sign In', _handleEmailSignIn),
           const SizedBox(height: 6),
           TextButton(
@@ -1312,7 +1328,7 @@ class _AuthScreenState extends State<AuthScreen> {
             decoration: BoxDecoration(
               color: AppPalette.bg(Colors.white),
               border: Border.all(color: AppPalette.line(Colors.grey.shade400)),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(10), boxShadow: AppPalette.cardShadow
             ),
             // every country, with a search box (the church's main ones first)
             child: InkWell(

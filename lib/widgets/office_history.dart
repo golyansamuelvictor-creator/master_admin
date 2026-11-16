@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -26,7 +26,7 @@ Future<void> showOfficeHistory(
       await db.from('office_versions').select('id, title, saved_at, content').eq('file_id', fileId).order('saved_at', ascending: false).limit(50),
     );
   } catch (e) {
-    error = "Version history isn't set up yet (run 26_round25.sql).";
+    error = "Version history isn't available right now.";
   }
   if (!context.mounted) return;
   final fmt = DateFormat('EEE d MMM yyyy, HH:mm');

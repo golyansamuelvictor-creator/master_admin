@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, use_build_context_synchronously
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1565,7 +1565,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         suffixIcon: suffix,
         filled: true,
         fillColor: AppPalette.bg(const Color(0xFFF3E5F5)),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         isDense: true,
       );

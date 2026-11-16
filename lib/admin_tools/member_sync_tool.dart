@@ -1,11 +1,14 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'dart:typed_data';
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import '../core/xlsx_safe.dart';
 import '../core/xlsx_fast.dart';
+import 'package:excel/excel.dart' as xl;
+import '../core/save_bytes.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 class MemberSyncTool extends StatefulWidget {
@@ -24,6 +27,42 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
   int? _totalUpserted;
   int? _totalDropped;
   bool _showColumnGuide = false;
+  // rows skipped in the last upload: SCJ ID, name, reason (download as Excel)
+  List<List<String>> _skippedRows = [];
+
+  /// 보고예정자 (not yet registered): no real SCJ ID yet.
+  static const _preStatus = '보고예정자';
+  static bool _isRealScjId(String? v) {
+    final t = (v ?? '').trim();
+    if (t.isEmpty) return false;
+    if (RegExp(r'[\u3131-\uD79D]').hasMatch(t)) return false; // Korean text, e.g. 보고예정자
+    return RegExp(r'\d').hasMatch(t);
+  }
+
+  static String _norm(Object? v) => (v ?? '').toString().trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  /// A stable temporary ID for a 보고예정자 member: the same person gets the
+  /// same ID in every upload (name + date of birth + location).
+  static String _tempId(String name, String dob, String location) {
+    int h = 0x811c9dc5;
+    for (final c in '${_norm(name)}|${_norm(dob)}|${_norm(location)}'.codeUnits) {
+      h ^= c;
+      h = (h * 0x01000193) & 0xFFFFFFFF;
+    }
+    return 'PRE-${h.toRadixString(16).toUpperCase().padLeft(8, '0')}';
+  }
+
+  Future<void> _downloadSkipped() async {
+    final book = xl.Excel.createExcel();
+    final sh = book[book.getDefaultSheet() ?? 'Sheet1'];
+    sh.appendRow([for (final h in ['Row', 'SCJ ID', 'Name', 'Why it was skipped']) xl.TextCellValue(h)]);
+    for (final r in _skippedRows) {
+      sh.appendRow([for (final c in r) xl.TextCellValue(c)]);
+    }
+    final bytes = book.encode();
+    if (bytes == null) return;
+    await saveBytesAs(Uint8List.fromList(bytes), 'skipped_members.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
 
   final Color _primaryPurple = const Color(0xFF4A148C);
   final Color _backgroundColor = const Color(0xFFF8FAFC);
@@ -46,6 +85,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
   /// duty and book_of_life from bol_dept; writing them fails).
   static const Set<String> _readOnly = {'id', 'created_at', 'is_worker', 'book_of_life'};
   static const List<String> _required = ['english_name', 'sub_location', 'dob'];
+  static String _fieldName(String k) => const {'english_name': 'name', 'sub_location': 'sub-location', 'dob': 'date of birth'}[k] ?? k;
   static const Set<String> _uuidCols = {'sub_location_id', 'dept_id', 'team_id', 'cell_id', 'introduced_by_id', 'official_dept_id'};
 
   static String _headerKey(String s) =>
@@ -156,6 +196,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       _totalInFile = null;
       _totalUpserted = null;
       _totalDropped = null;
+      _skippedRows = [];
     });
 
     try {
@@ -243,49 +284,91 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       final List<String> scjIdsInFile = [];
       final Set<String> locationsInFile = {};
       final List<String> skipped = [];
+      final List<List<String>> skippedRows = [];
+      final failed = <String>[];
+      int preCount = 0;
+      final renames = <String, String>{}; // PRE-… → the real SCJ ID now given
+      // the 보고예정자 already stored, by name + date of birth
+      final preByPerson = <String, String>{};
+      existingByScj.forEach((id, r) {
+        if (id.startsWith('PRE-')) preByPerson['${_norm(r['english_name'])}|${_norm(r['dob'])}'] = id;
+      });
+      void skip(int rowNo, String id, Object? name, String why) {
+        skipped.add(id.isEmpty ? (name ?? '').toString() : id);
+        skippedRows.add(['${rowNo + 1}', id, (name ?? '').toString(), why]);
+      }
       int unchanged = 0;
       final scjCol = colIndex['scj_id']!;
       String? cell(List<String?> row, int? i) => (i == null || i >= row.length) ? null : row[i];
       // the existing rows are all sent with the same columns, so they go in
       // a few big batches (before, nearly every member was its own request)
-      final writeCols = <String>{..._required, ...chosen}.toList();
+      final writeCols = <String>{..._required, ...chosen, if (known.contains('reg_status')) 'reg_status'}.toList();
 
       for (int i = 1; i < rows.length; i++) {
         if (i % 500 == 0) await _step("Step 3: Checking rows... $i of $dataRows", i / rows.length);
         final row = rows[i];
-        final scjId = cell(row, scjCol)?.trim();
-        if (scjId == null || scjId.isEmpty) continue;
-        scjIdsInFile.add(scjId);
-        final existing = existingByScj[scjId];
-
+        var scjId = cell(row, scjCol)?.trim() ?? '';
         final fromFile = <String, dynamic>{};
         for (final k in writeCols) {
           final v = _convert(k, cell(row, colIndex[k]));
           if (v != null) fromFile[k] = v;
         }
+        final rawName = cell(row, colIndex['english_name']) ?? cell(row, colIndex['korean_name']);
+        final statusCell = (cell(row, colIndex['reg_status']) ?? '').trim();
+        bool isPre = false, renamed = false;
+        if (!_isRealScjId(scjId)) {
+          // 보고예정자 / no SCJ ID yet: a temporary ID
+          final looksPre = scjId.contains(_preStatus) || statusCell.contains(_preStatus) || (scjId.isEmpty && (rawName ?? '').trim().isNotEmpty);
+          if (!looksPre) continue; // an empty line
+          if ((rawName ?? '').trim().isEmpty) {
+            skip(i, scjId, rawName, "No SCJ ID and no name");
+            continue;
+          }
+          final loc = (cell(row, colIndex['location']) ?? '').toString();
+          final dob = (fromFile['dob'] ?? cell(row, colIndex['dob']) ?? '').toString();
+          scjId = _tempId(rawName!, dob, loc);
+          fromFile['reg_status'] = _preStatus;
+          isPre = true;
+          preCount++;
+        } else if (!existingByScj.containsKey(scjId)) {
+          // got a real SCJ ID: was this person stored as 보고예정자?
+          final key = '${_norm(fromFile['english_name'] ?? rawName)}|${_norm(fromFile['dob'])}';
+          final pre = preByPerson.remove(key);
+          if (pre != null && existingByScj.containsKey(pre)) {
+            renames[pre] = scjId;
+            existingByScj[scjId] = {...existingByScj.remove(pre)!, 'scj_id': scjId};
+            renamed = true;
+          }
+        }
+        scjIdsInFile.add(scjId);
+        final existing = existingByScj[scjId];
 
         final loc = (fromFile['location'] ?? existing?['location'])?.toString();
         if (loc != null && loc.isNotEmpty) locationsInFile.add(loc);
 
         if (existing != null) {
           // only the chosen columns count as changes; blank cells keep what is stored
-          final changed = chosen.any((k) => fromFile.containsKey(k) && !_same(existing[k], fromFile[k]));
+          final changed = renamed || chosen.any((k) => fromFile.containsKey(k) && !_same(existing[k], fromFile[k]));
           if (!changed) {
             unchanged++;
             continue;
           }
           final out = <String, dynamic>{'scj_id': scjId};
           for (final k in writeCols) {
-            out[k] = fromFile.containsKey(k) ? fromFile[k] : existing[k];
+            // the status changes only when chosen (or for 보고예정자)
+            final fileWins = k != 'reg_status' || chosen.contains(k) || isPre || renamed;
+            out[k] = fileWins && fromFile.containsKey(k) ? fromFile[k] : existing[k];
           }
+          // registered now: no longer 보고예정자
+          if (renamed && (out['reg_status'] ?? '').toString().contains(_preStatus)) out['reg_status'] = 'Active';
           if (_required.any((k) => out[k] == null)) {
-            skipped.add(scjId);
+            skip(i, scjId, rawName, "Missing: ${_required.where((k) => out[k] == null).map(_fieldName).join(', ')}");
             continue;
           }
           changedRows.add(out);
         } else {
           if (_required.any((k) => fromFile[k] == null)) {
-            skipped.add(scjId);
+            skip(i, scjId, rawName, "Missing: ${_required.where((k) => fromFile[k] == null).map(_fieldName).join(', ')}");
             continue;
           }
           newRows.add({'scj_id': scjId, ...fromFile});
@@ -296,11 +379,20 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
         throw Exception("No valid rows with an SCJ ID, name, sub-location and date of birth were found in the file.");
       }
 
+      // 보고예정자 who now have a real SCJ ID: give them the new ID first
+      for (final e in renames.entries) {
+        await _step("Step 4: Giving registered members their SCJ ID... ${e.value}");
+        try {
+          await _supabase.from('members').update({'scj_id': e.value}).eq('scj_id', e.key);
+        } catch (err) {
+          failed.add("${e.value}: $err");
+        }
+      }
+
       // Save: changed members in batches of 500; new members grouped by the
       // columns they fill, so blank cells take the table's default values.
       final total = changedRows.length + newRows.length;
       int saved = 0, done = 0;
-      final failed = <String>[];
       for (int i = 0; i < changedRows.length; i += 500) {
         await _step("Step 4: Updating records... $done of $total", total == 0 ? null : done / total);
         final chunk = changedRows.sublist(i, (i + 500 > changedRows.length) ? changedRows.length : i + 500);
@@ -351,10 +443,13 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
         _totalInFile = scjIdsInFile.length;
         _totalUpserted = saved;
         _totalDropped = droppedCount;
+        _skippedRows = skippedRows;
         final summary = "${changedRows.length} updated, ${newRows.length} new, $unchanged already up to date.";
         final notes = [
+          if (preCount > 0) "$preCount 보고예정자 (not yet registered) kept with a temporary ID (PRE-…).",
+          if (renames.isNotEmpty) "${renames.length} 보고예정자 received their SCJ ID.",
           if (skipped.isNotEmpty)
-            "${skipped.length} row(s) skipped because name, sub-location or date of birth is missing: ${skipped.take(20).join(', ')}${skipped.length > 20 ? ' ...' : ''}",
+            "${skipped.length} row(s) skipped (download the list below to see why): ${skipped.take(10).join(', ')}${skipped.length > 10 ? ' ...' : ''}",
           if (failed.isNotEmpty)
             "${failed.length} row(s) not saved, the database refused them: ${failed.take(10).join('; ')}${failed.length > 10 ? ' ...' : ''}",
         ];
@@ -468,7 +563,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5), boxShadow: AppPalette.cardShadow
       ),
       child: Column(
         children: [
@@ -634,7 +729,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(const Color(0xFFE2E8F0)), width: 1.5),
+        border: Border.all(color: AppPalette.line(const Color(0xFFE2E8F0)), width: 1.5), boxShadow: AppPalette.cardShadow
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -703,7 +798,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200), width: 1.5), boxShadow: AppPalette.cardShadow
       ),
       child: Column(
         children: [
@@ -723,6 +818,15 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
               color: AppPalette.fg(_log.startsWith("Error") ? Colors.red.shade700 : const Color(0xFF1E293B)),
             ),
           ),
+          if (_skippedRows.isNotEmpty && !_isProcessing)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: OutlinedButton.icon(
+                onPressed: _downloadSkipped,
+                icon: const Icon(Icons.download_rounded, size: 18),
+                label: Text.rich(TextSpan(text: "${tr('Download the skipped rows')} (${_skippedRows.length})")),
+              ),
+            ),
         ],
       ),
     );

@@ -1,5 +1,5 @@
 // ignore_for_file: use_build_context_synchronously
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_palette.dart';
 import '../../core/app_sizes.dart';
 import '../../core/i18n.dart';
+import '../../core/friendly_error.dart';
+import '../../widgets/member_performance.dart';
 
 /// Transfer approvals: the requests waiting for you at your step.
 /// The destination department assigns the team and cell; then the team
@@ -59,7 +61,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load the requests (run 13_round12.sql): ${e is PostgrestException ? e.message : e}";
+          _error = "Couldn't load the requests${friendlyTail(e)}";
         });
       }
     }
@@ -101,7 +103,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                   if (teams.isNotEmpty)
                     DropdownButtonFormField<String>(
                       initialValue: team,
-                      decoration: InputDecoration(labelText: tr("Team"), border: const OutlineInputBorder(), isDense: true),
+                      decoration: InputDecoration(labelText: tr("Team"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                       items: [for (final t in teams) DropdownMenuItem(value: t, child: Text(t))],
                       onChanged: (v) => set(() {
                         team = v;
@@ -109,18 +111,18 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                       }),
                     )
                   else
-                    TextField(controller: teamCtl, decoration: InputDecoration(labelText: tr("Team"), border: const OutlineInputBorder(), isDense: true)),
+                    TextField(controller: teamCtl, decoration: InputDecoration(labelText: tr("Team"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
                   const SizedBox(height: 8),
                   if (cells.isNotEmpty)
                     DropdownButtonFormField<String>(
                       key: ValueKey(team),
                       initialValue: cell,
-                      decoration: InputDecoration(labelText: tr("Cell"), border: const OutlineInputBorder(), isDense: true),
+                      decoration: InputDecoration(labelText: tr("Cell"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                       items: [for (final c in cells) DropdownMenuItem(value: c, child: Text(c))],
                       onChanged: (v) => set(() => cell = v),
                     )
                   else
-                    TextField(controller: cellCtl, decoration: InputDecoration(labelText: tr("Cell"), border: const OutlineInputBorder(), isDense: true)),
+                    TextField(controller: cellCtl, decoration: InputDecoration(labelText: tr("Cell"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
                   const SizedBox(height: 10),
                 ],
                 if (approve && r['is_final'] == true)
@@ -128,7 +130,7 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                     padding: EdgeInsets.only(bottom: 8),
                     child: Text("Confirming moves the member to the new unit in the member list.", textAlign: TextAlign.center),
                   ),
-                TextField(controller: note, maxLines: 2, decoration: InputDecoration(labelText: tr(approve ? "Note (optional)" : "Reason for rejecting"), border: const OutlineInputBorder())),
+                TextField(controller: note, maxLines: 2, decoration: InputDecoration(labelText: tr(approve ? "Note (optional)" : "Reason for rejecting"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
               ]),
             ),
             actions: [
@@ -207,6 +209,17 @@ class _ApprovalInboxState extends State<ApprovalInbox> {
                               ]),
                               if ((r['reason'] ?? '').toString().isNotEmpty)
                                 Padding(padding: const EdgeInsets.only(top: 6), child: Text("Reason: ${r['reason']}", style: const TextStyle(fontSize: 12))),
+                              // the receiving unit reviews the person first
+                              if ((r['member_id'] ?? '').toString().isNotEmpty)
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton.icon(
+                                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                                    onPressed: () => showMemberPerformance(context, memberId: r['member_id'].toString(), name: (r['member_name'] ?? '').toString()),
+                                    icon: const Icon(Icons.insights_rounded, size: 18),
+                                    label: const Text("Review faith & performance"),
+                                  ),
+                                ),
                               Text("Requested by ${r['requester_name'] ?? '—'} · ${DateFormat('d MMM yyyy').format(DateTime.parse(r['created_at'].toString()).toLocal())}",
                                   style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
                               if (photos.isNotEmpty) ...[

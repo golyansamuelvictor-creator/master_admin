@@ -1,5 +1,5 @@
 // ignore_for_file: use_build_context_synchronously
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,6 +11,8 @@ import '../../core/i18n.dart';
 import '../../core/table_export.dart';
 import 'bb_sheets.dart';
 import 'bb_student_form.dart';
+import '../../core/friendly_error.dart';
+import '../../core/security.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -131,7 +133,7 @@ class _BbWorkspaceScreenState extends State<BbWorkspaceScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load the BB File (run 12_round11.sql and 13_round12.sql): ${e is PostgrestException ? e.message : e}";
+          _error = "Couldn't load the BB File${friendlyTail(e)}";
         });
       }
     }
@@ -220,7 +222,7 @@ Widget _section(BuildContext context, String title, Widget child, {ExportTable F
     decoration: BoxDecoration(
       color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: AppPalette.line(Colors.black12)),
+      border: Border.all(color: AppPalette.line(Colors.black12)), boxShadow: AppPalette.cardShadow
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
@@ -234,7 +236,7 @@ Widget _section(BuildContext context, String title, Widget child, {ExportTable F
           ),
           if (trailing != null) trailing,
           if (export != null)
-            IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple), size: 20), onPressed: () => TableExport.showMenu(context, export)),
+            ExportOnly(child: IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple), size: 20), onPressed: () => TableExport.showMenu(context, export))),
           IconButton(
             tooltip: tr('Fullscreen View'),
             icon: Icon(Icons.open_in_full_rounded, color: AppPalette.fg(Colors.blueGrey), size: 19),
@@ -246,11 +248,11 @@ Widget _section(BuildContext context, String title, Widget child, {ExportTable F
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   if (export != null)
                     Center(
-                      child: TextButton.icon(
+                      child: ExportOnly(child: TextButton.icon(
                         onPressed: () => TableExport.showMenu(context, export),
                         icon: const Icon(Icons.download_rounded, size: 18),
                         label: const Text("Excel / PDF / Print"),
-                      ),
+                      )),
                     ),
                   child,
                 ]),
@@ -676,7 +678,6 @@ class _SummaryTabState extends State<BbSummaryView> {
                 SizedBox(
                   width: 220,
                   child: Card(
-                    elevation: 0.5,
                     child: Padding(
                       padding: const EdgeInsets.all(10),
                       child: Column(children: [
@@ -803,7 +804,7 @@ class _FileTabState extends State<_FileTab> {
       Padding(
         padding: const EdgeInsets.fromLTRB(AppSizes.gutter, 10, AppSizes.gutter, 4),
         child: TextField(
-          decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search student, guide, teacher or phone"), isDense: true, border: const OutlineInputBorder()),
+          decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search student, guide, teacher or phone"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
           onChanged: (v) => setState(() => _q = v),
         ),
       ),
@@ -817,11 +818,11 @@ class _FileTabState extends State<_FileTab> {
               _filter("Month", _month, widget.cfg.months, (v) => _month = v),
               _filter("Stage", _stage, widget.cfg.stageNames, (v) => _stage = v),
               _filter("Status", _status, widget.cfg.options['bb_status'] ?? const ['Active', 'Not Active', 'Dropped'], (v) => _status = v),
-              IconButton(
+              ExportOnly(child: IconButton(
                 tooltip: tr('Excel / PDF / Print'),
                 icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)),
                 onPressed: () => TableExport.showMenu(context, () => ExportTable(title: "BB File", headers: headers, rows: [for (final s in list) row(s)])),
-              ),
+              )),
               if (!widget.fullScreen)
                 IconButton(
                   tooltip: tr('Fullscreen View'),
@@ -849,7 +850,6 @@ class _FileTabState extends State<_FileTab> {
                   final c = widget.cfg.stageColor(stage);
                   final status = _v(s, 'bb_status');
                   return Card(
-                    elevation: 0.5,
                     margin: const EdgeInsets.symmetric(vertical: 3),
                     child: SizedBox(
                       height: AppSizes.listCard,
@@ -934,7 +934,7 @@ class _DroppedTabState extends State<_DroppedTab> {
                 const SizedBox(height: 8),
                 Text("Stage when dropped: ${s['drop_stage'] ?? s['level_status'] ?? '-'}", style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 8),
-                TextField(controller: reason, maxLines: 3, decoration: InputDecoration(labelText: tr("Reason"), border: const OutlineInputBorder())),
+                TextField(controller: reason, maxLines: 3, decoration: InputDecoration(labelText: tr("Reason"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
               ]),
             ),
             actions: [
@@ -952,7 +952,7 @@ class _DroppedTabState extends State<_DroppedTab> {
       widget.onSaved();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't save (run 18_round17.sql): ${e is PostgrestException ? e.message : e}"), backgroundColor: Colors.red.shade700));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't save${friendlyTail(e)}"), backgroundColor: Colors.red.shade700));
       }
     }
   }
@@ -972,11 +972,11 @@ class _DroppedTabState extends State<_DroppedTab> {
             width: 240,
             child: TextField(
               onChanged: (v) => setState(() => _q = v),
-              decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search student, guide, center"), isDense: true, border: const OutlineInputBorder()),
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search student, guide, center"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
             ),
           ),
           Text("${list.length} dropped", style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.red.shade800))),
-          IconButton(
+          ExportOnly(child: IconButton(
             tooltip: tr('Excel / PDF / Print'),
             icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)),
             onPressed: () => TableExport.showMenu(
@@ -1001,7 +1001,7 @@ class _DroppedTabState extends State<_DroppedTab> {
                 ],
               ),
             ),
-          ),
+          )),
         ]),
       ),
       Expanded(
@@ -1016,7 +1016,6 @@ class _DroppedTabState extends State<_DroppedTab> {
                   final reason = (s['drop_reason'] ?? '').toString();
                   // rows at 60% of the earlier height, like Missed & reasons
                   return Card(
-                    elevation: 0.5,
                     margin: const EdgeInsets.symmetric(vertical: 1.5),
                     child: ListTile(
                       dense: true,
@@ -1112,7 +1111,7 @@ class _MissedTabState extends State<_MissedTab> {
             },
           ),
           FilterChip(label: const Text("Only students who missed"), selected: _onlyMissed, onSelected: (v) => setState(() => _onlyMissed = v)),
-          IconButton(
+          ExportOnly(child: IconButton(
             tooltip: tr('Excel / PDF / Print'),
             icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)),
             onPressed: () => TableExport.showMenu(
@@ -1137,7 +1136,7 @@ class _MissedTabState extends State<_MissedTab> {
                 ],
               ),
             ),
-          ),
+          )),
           if (!widget.fullScreen)
             IconButton(
               tooltip: tr('Fullscreen View'),
@@ -1160,7 +1159,6 @@ class _MissedTabState extends State<_MissedTab> {
                       final missed = ((r['missed'] ?? 0) as num).toInt();
                       // rows at 60% of the earlier height
                       return Card(
-                        elevation: 0.5,
                         margin: const EdgeInsets.symmetric(vertical: 1.5),
                         child: ExpansionTile(
                           shape: const Border(),

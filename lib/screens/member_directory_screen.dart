@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -44,7 +44,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
   // Loaded once per scope; search and unit filters work on this list, so
   // typing no longer reloads every member from the server.
   Future<List<dynamic>>? _membersFuture;
-  final Map<String, String?> _filters = {'book_of_life': null, 'location': null, 'sub_location': null, 'department': null, 'team': null, 'cell_group': null};
+  final Map<String, String?> _filters = {'book_of_life': null, 'location': null, 'sub_location': null, 'department': null, 'team': null, 'cell_group': null, 'duty': null, 'official': null};
   static const Map<String, String> _filterLabels = {
     'book_of_life': 'Group',
     'location': 'Location',
@@ -52,6 +52,8 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     'department': 'Department',
     'team': 'Team',
     'cell_group': 'Cell group',
+    'duty': 'Role', // the member's duty (Cell Leader, Team Secretary …)
+    'official': 'Dubai Official', // shows only where both kinds are listed
   };
 
   @override
@@ -343,7 +345,15 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     ]);
   }
 
-  String _v(dynamic m, String k) => (m[k] ?? '').toString().trim();
+  String _v(dynamic m, String k) {
+    if (k == 'official') {
+      // only Dubai / UAE members are Official or not
+      final loc = (m['location'] ?? '').toString().toLowerCase();
+      if (!(loc.contains('dubai') || loc.contains('uae'))) return '';
+      return m['official'] == true ? 'Official' : 'Not official';
+    }
+    return (m[k] ?? '').toString().trim();
+  }
 
   /// Members matching the search and every chosen filter, except [skip]
   /// (used to work out the choices still possible in that filter).
@@ -376,7 +386,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
           _page = 0;
         }),
         itemBuilder: (_) => [
-          PopupMenuItem(value: '__all', child: Text("All ${_filterLabels[key]!.toLowerCase()}s")),
+          PopupMenuItem(value: '__all', child: Text(key == 'official' ? "All" : "All ${_filterLabels[key]!.toLowerCase()}s")),
           const PopupMenuDivider(),
           for (final o in options) CheckedPopupMenuItem(value: o, checked: o == selected, child: Text(o)),
         ],

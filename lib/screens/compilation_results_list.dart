@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
@@ -10,6 +10,7 @@ import 'package:master_admin/widgets/app_menus.dart';
 import 'package:master_admin/core/offering_categories.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/security.dart';
 
 class CompilationResultsList extends StatefulWidget {
   final List<dynamic> logs;
@@ -348,7 +349,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                               )
                             : null,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onChanged: (val) => setDialogState(() {}),
                     ),
@@ -608,7 +609,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
             onPressed: _showColumnVisibilityDialog,
           ),
           // Export Popup Menu (Excel, PDF, Print)
-          PopupMenuButton<String>(
+          ExportOnly(child: PopupMenuButton<String>(
             tooltip: tr("Download & Print"),
             icon: Icon(Icons.download_rounded, color: AppPalette.fg(Colors.white), size: 20),
             onSelected: (value) {
@@ -648,7 +649,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
                 ),
               ),
             ],
-          ),
+          )),
         ],
       ),
       body: Column(

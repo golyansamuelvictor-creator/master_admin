@@ -1,7 +1,7 @@
 import 'package:excel/excel.dart' as xl;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,6 +11,8 @@ import '../../core/compilation_rules.dart';
 import '../../core/i18n.dart';
 import '../../core/table_export.dart';
 import '../../core/security.dart';
+import '../../core/friendly_error.dart';
+import '../../widgets/note_card.dart';
 
 /// Performance Report › Tribe monthly report: 예배 출결 현황 (service
 /// attendance), the sheet the Internal Affairs Department Secretary sends to
@@ -131,7 +133,7 @@ class _TribeMonthlyReportState extends State<TribeMonthlyReport> {
           controller: c,
           autofocus: true,
           keyboardType: TextInputType.number,
-          decoration: InputDecoration(helperText: tr("Compiled: ${(r[key] as num?)?.toInt() ?? 0}"), border: const OutlineInputBorder()),
+          decoration: InputDecoration(helperText: tr("Compiled: ${(r[key] as num?)?.toInt() ?? 0}"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
           onSubmitted: (s) => Navigator.pop(ctx, int.tryParse(s.trim())),
         ),
         actions: [
@@ -176,7 +178,7 @@ class _TribeMonthlyReportState extends State<TribeMonthlyReport> {
   // ---------------------------------------------------------------- headers
 
   static const _groups = [
-    ('1) 전월 입교자 출석 현황', "Last month's new members", 6, _cNew),
+    ('1) 전월 입교자 출석 현황', "New members of the month", 6, _cNew),
     ('2) 전성도 출석 현황', 'All saints', 6, _cHead),
     ('3) 결석 현황', 'Absentees', 5, _cAbs),
   ];
@@ -233,11 +235,11 @@ class _TribeMonthlyReportState extends State<TribeMonthlyReport> {
             icon: const Icon(Icons.grid_on_rounded, size: 18),
             label: const Text("Download Excel"),
           ),
-          OutlinedButton.icon(
+          ExportOnly(child: OutlinedButton.icon(
             onPressed: _loading || _rows.isEmpty ? null : () => TableExport.showMenu(context, _table),
             icon: const Icon(Icons.ios_share_rounded, size: 18),
             label: const Text("PDF / Print"),
-          ),
+          )),
         ]),
         const SizedBox(height: 8),
         Text(title, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 15, color: AppPalette.fg(_purple))),
@@ -247,7 +249,7 @@ class _TribeMonthlyReportState extends State<TribeMonthlyReport> {
         if (_loading)
           const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()))
         else if (_error != null)
-          Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't compile the report (run 20_round19.sql): $_error", textAlign: TextAlign.center))
+          Padding(padding: const EdgeInsets.all(20), child: Text("Couldn't compile the report${friendlyTail(_error)}", textAlign: TextAlign.center))
         else
           _grid(),
         const SizedBox(height: 12),
@@ -315,23 +317,18 @@ class _TribeMonthlyReportState extends State<TribeMonthlyReport> {
     );
   }
 
-  Widget _notes() => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(10), border: Border.all(color: AppPalette.line(Colors.black12))),
-        child: DefaultTextStyle.merge(
-          style: TextStyle(fontSize: 11.5, height: 1.4, color: AppPalette.fg(Colors.blueGrey.shade800)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text("How it is compiled", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12.5, color: AppPalette.fg(_purple))),
-            const SizedBox(height: 4),
-            const Text("• Roll (출결재적): the church's members, Dropped members left out. MOU and 24Dept are churches of their own."),
-            const Text("• Each member counts once: in-person if they attended in person at least once this month, else online, else another way."),
-            const Text("• Other (기타예배) = roll − in-person − online − absentees, as in the template (it includes members who were not reported)."),
-            Text("• Absentees: no attendance this month. One-off: fewer than $_long services missed in a row; long-term: $_long or more."),
-            const Text("• Long-term absentees are manageable (관리가능) when their latest care log of the last 90 days has a workable outcome."),
-            const Text("• New members (전월 입교자): status 입교, joined last month (date joined or course completion date)."),
-            const Text("• Corrected numbers show in yellow and are used in the downloads."),
-          ]),
-        ),
+  Widget _notes() => NoteCard(
+        title: "How it is compiled",
+        icon: Icons.fact_check_rounded,
+        points: [
+          "Roll (출결재적): the church's members, Dropped members left out. MOU and 24Dept are churches of their own.",
+          "Each member counts once: in-person if they attended in person at least once this month, else online, else another way.",
+          "Other (기타예배): roll − in-person − online − absentees, as in the template (it includes members who were not reported).",
+          "Absentees: no attendance this month. One-off: fewer than $_long services missed in a row; long-term: $_long or more.",
+          "Manageable (관리가능): long-term absentees whose latest care log of the last 90 days has a workable outcome.",
+          "New members (입교자): registered in the chosen month, read from the SCJ ID: 00431103-… = year 43 (2026), November 3.",
+        ],
+        footer: "Corrected numbers show in yellow and are used in the downloads.",
       );
 
   // -------------------------------------------------------------- downloads

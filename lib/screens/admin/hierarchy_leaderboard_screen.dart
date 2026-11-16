@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:math';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -306,7 +306,7 @@ class _HierarchyLeaderboardScreenState extends State<HierarchyLeaderboardScreen>
               isDense: true,
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               items: _availableLevels.map((lvl) {
                 return DropdownMenuItem(

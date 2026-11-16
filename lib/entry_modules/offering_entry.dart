@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -237,7 +237,7 @@ class _OfferingEntryState extends State<OfferingEntry> {
           SizedBox(
             width: 280,
             child: TextField(
-              decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search name, team or cell"), isDense: true, border: const OutlineInputBorder()),
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search name, team or cell"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
               onChanged: (v) => setState(() => _search = v),
             ),
           ),
@@ -309,7 +309,7 @@ class _OfferingEntryState extends State<OfferingEntry> {
                                   keyboardType: const TextInputType.numberWithOptions(decimal: false),
                                   inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,]'))],
                                   style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(c.color), fontWeight: FontWeight.bold),
-                                  decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4), border: OutlineInputBorder(), hintText: '0'),
+                                  decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), hintText: '0'),
                                   onChanged: (v) => _set(mid, c.column, v),
                                 ),
                               ),

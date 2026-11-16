@@ -1,5 +1,5 @@
 // ignore_for_file: use_build_context_synchronously
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,6 +9,7 @@ import '../core/app_sizes.dart';
 import '../core/i18n.dart';
 import 'admin/target_setter_screen.dart';
 import 'asmis_screens.dart';
+import '../widgets/note_card.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -184,22 +185,22 @@ class _PoliciesViewState extends State<PoliciesView> {
             width: 520,
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                TextField(controller: title, decoration: InputDecoration(labelText: tr("Title"), border: const OutlineInputBorder())),
+                TextField(controller: title, decoration: InputDecoration(labelText: tr("Title"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
                 const SizedBox(height: 10),
                 Row(children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: level,
-                      decoration: InputDecoration(labelText: tr("Level"), border: const OutlineInputBorder(), isDense: true),
+                      decoration: InputDecoration(labelText: tr("Level"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                       items: [for (final e in kPolicyLevels.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
                       onChanged: (v) => set(() => level = v ?? 'all'),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: TextField(controller: category, decoration: InputDecoration(labelText: tr("Category"), hintText: tr("e.g. BB, Attendance, Reporting"), border: const OutlineInputBorder(), isDense: true))),
+                  Expanded(child: TextField(controller: category, decoration: InputDecoration(labelText: tr("Category"), hintText: tr("e.g. BB, Attendance, Reporting"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true))),
                 ]),
                 const SizedBox(height: 10),
-                TextField(controller: body, minLines: 4, maxLines: 12, decoration: InputDecoration(labelText: tr("What the policy / standard says"), border: const OutlineInputBorder(), alignLabelWithHint: true)),
+                TextField(controller: body, minLines: 4, maxLines: 12, decoration: InputDecoration(labelText: tr("What the policy / standard says"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), alignLabelWithHint: true)),
                 const SizedBox(height: 6),
                 Row(children: [
                   TextButton.icon(
@@ -399,7 +400,7 @@ class _PoliciesViewState extends State<PoliciesView> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFFAF7FE)), borderRadius: BorderRadius.circular(10)),
-                    child: SelectableText((p['body'] ?? '').toString(), style: GoogleFonts.merriweather(fontSize: 12.5, height: 1.4)),
+                    child: NoteBody(text: (p['body'] ?? '').toString()),
                   ),
                 ],
               ),
@@ -489,22 +490,22 @@ class _GoalsViewState extends State<GoalsView> {
                 for (final (i, c, label) in [(1, loc, "Location"), (2, sub, "Sub-location"), (3, dept, "Department"), (4, team, "Team"), (5, cell, "Cell")])
                   if (depth() >= i) ...[
                     const SizedBox(height: 10),
-                    TextField(controller: c, decoration: InputDecoration(labelText: tr(label), border: const OutlineInputBorder(), isDense: true)),
+                    TextField(controller: c, decoration: InputDecoration(labelText: tr(label), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
                   ],
                 const SizedBox(height: 10),
                 if (_metrics.isNotEmpty)
                   DropdownButtonFormField<String>(
                     initialValue: _metrics.contains(metric.text) ? metric.text : _metrics.first,
-                    decoration: InputDecoration(labelText: tr("What is counted"), border: const OutlineInputBorder(), isDense: true),
+                    decoration: InputDecoration(labelText: tr("What is counted"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                     items: [for (final m in _metrics) DropdownMenuItem(value: m, child: Text(m))],
                     onChanged: (v) => metric.text = v ?? '',
                   )
                 else
-                  TextField(controller: metric, decoration: InputDecoration(labelText: tr("What is counted"), hintText: tr("e.g. Attendance %"), border: const OutlineInputBorder(), isDense: true)),
+                  TextField(controller: metric, decoration: InputDecoration(labelText: tr("What is counted"), hintText: tr("e.g. Attendance %"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
                 const SizedBox(height: 10),
-                TextField(controller: target, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: tr("Target"), border: const OutlineInputBorder(), isDense: true)),
+                TextField(controller: target, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: tr("Target"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
                 const SizedBox(height: 10),
-                TextField(controller: note, decoration: InputDecoration(labelText: tr("Note (optional)"), border: const OutlineInputBorder(), isDense: true)),
+                TextField(controller: note, decoration: InputDecoration(labelText: tr("Note (optional)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
               ]),
             ),
           ),
@@ -619,7 +620,6 @@ class _GoalsViewState extends State<GoalsView> {
       else
         for (final g in _rows)
           Card(
-            elevation: 0.5,
             margin: const EdgeInsets.symmetric(vertical: 3),
             child: ListTile(
               leading: Icon(g['unit_level'] == 'church' ? Icons.church_rounded : (g['unit_level'] == 'location' ? Icons.location_on_rounded : Icons.place_outlined), color: AppPalette.fg(_kPurple)),
@@ -692,7 +692,6 @@ class _OpeningMonthsViewState extends State<_OpeningMonthsView> {
       const SizedBox(height: 8),
       for (final m in _rows)
         Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: Card(
-          elevation: 0.5,
           margin: const EdgeInsets.symmetric(vertical: 3),
           child: SwitchListTile(
             contentPadding: const EdgeInsets.only(left: 4, right: 8),
@@ -843,12 +842,12 @@ class _CentersViewState extends State<_CentersView> {
           content: SizedBox(
             width: 360,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: name, enabled: c == null, decoration: InputDecoration(labelText: tr("Center name"), border: const OutlineInputBorder(), isDense: true)),
+              TextField(controller: name, enabled: c == null, decoration: InputDecoration(labelText: tr("Center name"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: loc,
                 isExpanded: true,
-                decoration: InputDecoration(labelText: tr("Location"), border: const OutlineInputBorder(), isDense: true),
+                decoration: InputDecoration(labelText: tr("Location"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                 items: [for (final l in locs) DropdownMenuItem(value: l, child: Text(l, overflow: TextOverflow.ellipsis))],
                 onChanged: (v) => set(() {
                   loc = v;
@@ -860,7 +859,7 @@ class _CentersViewState extends State<_CentersView> {
                 key: ValueKey('sub-$loc'),
                 initialValue: sub,
                 isExpanded: true,
-                decoration: InputDecoration(labelText: tr("Sub-location"), border: const OutlineInputBorder(), isDense: true),
+                decoration: InputDecoration(labelText: tr("Sub-location"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                 items: [for (final s in subs) DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))],
                 onChanged: loc == null ? null : (v) => set(() => sub = v),
               ),
@@ -1032,7 +1031,6 @@ extension on _CentersViewState {
           final off = c['is_active'] == false;
           final loc = (c['location'] ?? '').toString(), sub = (c['sub_location'] ?? '').toString();
           return Card(
-            elevation: 0.5,
             margin: const EdgeInsets.symmetric(vertical: 4),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 4, 6),

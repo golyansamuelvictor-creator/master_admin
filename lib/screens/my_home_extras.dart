@@ -780,7 +780,7 @@ class _PollCreatorState extends State<_PollCreator> {
               autofocus: true,
               maxLines: 2,
               onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(labelText: tr("Question"), border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: tr("Question"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
             ),
             const SizedBox(height: 12),
             Text("Options", style: TextStyle(fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[700]))),
@@ -793,7 +793,7 @@ class _PollCreatorState extends State<_PollCreator> {
                     child: TextField(
                       controller: _opts[i],
                       onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(isDense: true, hintText: tr("Option ${i + 1}"), border: const OutlineInputBorder()),
+                      decoration: InputDecoration(isDense: true, hintText: tr("Option ${i + 1}"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                     ),
                   ),
                   if (_opts.length > 2)
@@ -1128,7 +1128,7 @@ Future<(double, double, String)?> _pickLocation(BuildContext context) async {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             _MapPreview(lat: pos.latitude, lng: pos.longitude, width: 280, height: 170),
             const SizedBox(height: 10),
-            TextField(controller: label, decoration: InputDecoration(labelText: tr("Place name (optional)"), border: OutlineInputBorder(), isDense: true)),
+            TextField(controller: label, decoration: InputDecoration(labelText: tr("Place name (optional)"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
             const SizedBox(height: 4),
             Text("Accuracy about ${pos.accuracy.round()} m", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
           ]),
@@ -1209,7 +1209,7 @@ class _ContactsScreenState extends State<_ContactsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text("Add ${p.name}"),
-        content: TextField(controller: nick, decoration: InputDecoration(labelText: tr("Name in my contacts (optional)"), border: OutlineInputBorder())),
+        content: TextField(controller: nick, decoration: InputDecoration(labelText: tr("Name in my contacts (optional)"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
           ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Add")),
@@ -1228,7 +1228,7 @@ class _ContactsScreenState extends State<_ContactsScreen> {
             final c = TextEditingController(text: p.nickname ?? '');
             return AlertDialog(
               title: const Text("Name in my contacts"),
-              content: TextField(controller: c, autofocus: true, decoration: InputDecoration(hintText: p.name, border: const OutlineInputBorder())),
+              content: TextField(controller: c, autofocus: true, decoration: InputDecoration(hintText: p.name, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
               actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")), ElevatedButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text("Save"))],
             );
           });
@@ -1405,7 +1405,7 @@ class _ChatSettingsScreenState extends State<_ChatSettingsScreen> {
       await ChatService.savePrivacy(values);
       _ChatPrefs.apply(values);
     } catch (e) {
-      _snack("Couldn't save the settings. Ask the admin to run 08_round7.sql.");
+      _snack("Couldn't save the settings. Check your internet connection and refresh.");
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1448,7 +1448,7 @@ class _ChatSettingsScreenState extends State<_ChatSettingsScreen> {
       setState(() => _profile['avatar_url'] = url);
       _snack("Profile photo updated.");
     } catch (e) {
-      _snack("Couldn't upload the photo. Ask the admin to run 08_round7.sql.");
+      _snack("Couldn't upload the photo. Check your internet connection and refresh.");
     }
   }
 

@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, use_build_context_synchronously
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:master_admin/core/app_palette.dart';
 
 import 'member_change_approvals_screen.dart';
+import '../widgets/member_performance.dart';
 
 /// A member's full profile (members + milestones + unit history + the
 /// attendance badge).
@@ -169,7 +170,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                             labelText: tr(f['label'].toString()),
                             helperText: f['field'] == 'phone_numbers' ? tr("Separate numbers with commas") : null,
                             isDense: true,
-                            border: const OutlineInputBorder(),
+                            border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                           ),
                         ),
                       ),
@@ -340,6 +341,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       runSpacing: 14,
                       alignment: WrapAlignment.center,
                       children: [for (final s in sections) SizedBox(width: cardW, child: s)],
+                    ),
+                  ),
+                  // the member's faith life: every duty over a chosen period
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 14, 10, 0),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 900),
+                      child: _buildSection("Faith & Performance", Icons.insights_rounded, const Color(0xFF4A148C), [
+                        MemberPerformanceView(memberId: widget.member['id'].toString()),
+                      ]),
                     ),
                   ),
                   const SizedBox(height: 50),

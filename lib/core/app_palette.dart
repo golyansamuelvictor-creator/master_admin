@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 /// Dark mode for screens that were drawn with fixed colours.
 ///
@@ -16,15 +16,76 @@ class AppPalette {
   /// Set from the app's theme mode in main.dart.
   static bool isDark = false;
 
+  /// A soft shadow under cards (raised look); deeper and darker in Dark mode
+  /// so it still shows on the dark background.
+  static List<BoxShadow> get cardShadow => isDark
+      ? const [BoxShadow(color: Color(0x73000000), blurRadius: 10, offset: Offset(0, 3))]
+      : const [
+          BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 3)),
+          BoxShadow(color: Color(0x0D000000), blurRadius: 2, offset: Offset(0, 1)),
+        ];
+
+  /// Elevation and shadow colour for Card / Material cards.
+  static const double cardElevation = 2.5;
+  static Color get cardShadowColor => isDark ? const Color(0xCC000000) : const Color(0x40000000);
+
   static final Map<int, Color> _bgCache = {};
   static final Map<int, Color> _fgCache = {};
 
-  static Color? bg(Color? c) => (c == null || !isDark) ? c : _darkSurface(c);
-  static Color? fg(Color? c) => (c == null || !isDark) ? c : _lightText(c);
-  static Color line(Color c) => isDark ? _darkLine(c) : c;
+  static Color? bg(Color? c) => c == null ? null : (isDark ? _darkSurface(brand(c)) : brand(c));
+  static Color? fg(Color? c) => c == null ? null : (isDark ? _lightText(brand(c)) : brand(c));
+  static Color line(Color c) => isDark ? _darkLine(brand(c)) : brand(c);
 
   /// Non-null bg(), for gradient stops.
-  static Color solid(Color c) => isDark ? _darkSurface(c) : c;
+  static Color solid(Color c) => isDark ? _darkSurface(brand(c)) : brand(c);
+
+  // ------------------------------------------------------------------
+  // The church colours: Purple, Dark Blue and Red (+ black, white, greys).
+  // When on (Settings › Appearance › "Church colours only"), every other
+  // colour drawn through these helpers is moved to the nearest of the three,
+  // keeping its lightness, so pale tints stay pale and dark text stays dark:
+  //   purples / magentas      → Purple   (#4A148C)
+  //   greens, teals, blues     → Dark Blue (#1E3A8A)
+  //   reds, oranges, pinks     → Red      (#B91C1C)
+  //   yellow / amber highlights stay (they mark corrections and warnings).
+  // ------------------------------------------------------------------
+  static bool brandOnly = true;
+  static const Color purple = Color(0xFF4A148C);
+  static const Color blue = Color(0xFF1E3A8A);
+  static const Color red = Color(0xFFB91C1C);
+  static final Map<int, Color> _brandCache = {};
+
+  static Color brand(Color c) {
+    if (!brandOnly) return c;
+    return _brandCache.putIfAbsent(c.toARGB32(), () {
+      final hsl = HSLColor.fromColor(c);
+      if (hsl.saturation < 0.18 || hsl.lightness < 0.06 || hsl.lightness > 0.97) return c; // greys, black, white
+      final h = hsl.hue;
+      double target;
+      double sat;
+      if (h >= 45 && h < 70) return c; // amber / yellow highlights
+      if (h >= 255 && h < 330) {
+        target = 276; // purple
+        sat = 0.75;
+      } else if (h >= 70 && h < 255) {
+        target = 226; // dark blue
+        sat = 0.64;
+      } else {
+        target = 0; // red
+        sat = 0.74;
+      }
+      return hsl.withHue(target).withSaturation(hsl.saturation < sat ? hsl.saturation : sat).toColor();
+    });
+  }
+
+  static void setBrandOnly(bool v) {
+    if (brandOnly == v) return;
+    brandOnly = v;
+    _brandCache.clear();
+    _bgCache.clear();
+    _fgCache.clear();
+    _lineCache.clear();
+  }
 
   static final Map<int, Color> _lineCache = {};
 

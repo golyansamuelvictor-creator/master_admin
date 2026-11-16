@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -19,7 +19,7 @@ Future<bool> showPinSetupDialog(BuildContext context, {bool intro = false}) asyn
     context: context,
     barrierDismissible: !intro,
     builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
-      InputDecoration deco(String label) => InputDecoration(labelText: label, isDense: true, border: const OutlineInputBorder(), counterText: '');
+      InputDecoration deco(String label) => InputDecoration(labelText: label, isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), counterText: '');
       Widget field(TextEditingController c, String label, {bool focus = false}) => TextField(
             controller: c,
             autofocus: focus,

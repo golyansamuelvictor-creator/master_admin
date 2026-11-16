@@ -1,5 +1,5 @@
 import 'package:file_picker/file_picker.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -67,7 +67,7 @@ class _ServicePhotosScreenState extends State<ServicePhotosScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't open service pictures. Ask the admin to run 09_round8.sql.";
+          _error = "Couldn't open service pictures. Check your internet connection and refresh.";
         });
       }
     }
@@ -141,7 +141,7 @@ class _ServicePhotosScreenState extends State<ServicePhotosScreen> {
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: day,
-                decoration: InputDecoration(labelText: tr("Service"), isDense: true, border: OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr("Service"), isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 items: const [
                   DropdownMenuItem(value: 'Sunday', child: Text("Sunday service")),
                   DropdownMenuItem(value: 'Wednesday', child: Text("Wednesday service")),
@@ -150,7 +150,7 @@ class _ServicePhotosScreenState extends State<ServicePhotosScreen> {
                 onChanged: (v) => setD(() => day = v ?? day),
               ),
               const SizedBox(height: 10),
-              TextField(controller: caption, decoration: InputDecoration(labelText: tr("Note (optional)"), isDense: true, border: OutlineInputBorder())),
+              TextField(controller: caption, decoration: InputDecoration(labelText: tr("Note (optional)"), isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
             ]),
           ),
           actions: [
@@ -351,7 +351,7 @@ class _ServicePhotosScreenState extends State<ServicePhotosScreen> {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: DropdownButtonFormField<String>(
                         initialValue: _location,
-                        decoration: InputDecoration(labelText: tr("Location"), isDense: true, border: OutlineInputBorder()),
+                        decoration: InputDecoration(labelText: tr("Location"), isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                         items: [for (final l in _locations) DropdownMenuItem(value: l, child: Text(l))],
                         onChanged: (v) {
                           setState(() => _location = v);

@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -75,7 +75,7 @@ class _FeedbackFormState extends State<FeedbackForm> {
   @override
   Widget build(BuildContext context) {
     final k = kFeedbackKinds[widget.kind] ?? kFeedbackKinds['feedback']!;
-    InputDecoration deco(String l, {String? h}) => InputDecoration(labelText: l, hintText: h, border: const OutlineInputBorder(), isDense: true, alignLabelWithHint: true);
+    InputDecoration deco(String l, {String? h}) => InputDecoration(labelText: l, hintText: h, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true, alignLabelWithHint: true);
     return Scaffold(
       appBar: AppBar(title: Text(k.$1, style: GoogleFonts.merriweather(fontWeight: FontWeight.bold, fontSize: 17))),
       body: Center(
@@ -168,12 +168,12 @@ class _FeedbackListScreenState extends State<FeedbackListScreen> {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               DropdownButtonFormField<String>(
                 initialValue: status,
-                decoration: InputDecoration(labelText: tr("Status"), border: OutlineInputBorder(), isDense: true),
+                decoration: InputDecoration(labelText: tr("Status"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                 items: [for (final e in kFeedbackStatus.entries) DropdownMenuItem(value: e.key, child: Text(e.value.$1))],
                 onChanged: (v) => setD(() => status = v ?? status),
               ),
               const SizedBox(height: 12),
-              TextField(controller: reply, maxLines: 4, decoration: InputDecoration(labelText: tr("Reply to the sender (optional)"), border: OutlineInputBorder())),
+              TextField(controller: reply, maxLines: 4, decoration: InputDecoration(labelText: tr("Reply to the sender (optional)"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
             ]),
           ),
           actions: [

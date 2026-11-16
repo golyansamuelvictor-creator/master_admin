@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, unused_element
 import 'dart:math' as math;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -10,6 +10,9 @@ import '../core/offering_categories.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../core/chart_kit.dart';
+import '../core/security.dart';
+import '../widgets/zoom_box.dart';
 
 class _OfferingUnitStat {
   final String unitName;
@@ -734,18 +737,11 @@ class _OfferingModuleState extends State<OfferingModule> {
                   sideTitles: SideTitles(
                     showTitles: true,
                     interval: 1,
-                    reservedSize: 32,
+                    reservedSize: 46,
                     getTitlesWidget: (v, m) {
                       int idx = v.toInt();
                       if (idx < 0 || idx >= periodLabels.length) return const SizedBox();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Text(
-                          periodLabels[idx],
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
-                        ),
-                      );
+                      return axisLabel(periodLabels[idx], m, count: periodLabels.length, style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])));
                     },
                   ),
                 ),
@@ -968,11 +964,11 @@ class _OfferingModuleState extends State<OfferingModule> {
                   ),
                 ),
                 if (onPdf != null)
-                  IconButton(
+                  ExportOnly(child: IconButton(
                     icon: Icon(Icons.download_rounded, size: 20, color: AppPalette.fg(pPurple)),
                     tooltip: tr('Excel / PDF / Print'),
                     onPressed: onPdf,
-                  ),
+                  )),
                 IconButton(
                   icon: Icon(Icons.open_in_full_rounded, size: 19, color: AppPalette.fg(Colors.blueGrey)),
                   tooltip: tr('Fullscreen View'),
@@ -981,7 +977,7 @@ class _OfferingModuleState extends State<OfferingModule> {
               ],
             ),
           ),
-          content,
+          ZoomBox(child: content),
         ],
       ),
     );
@@ -1002,7 +998,7 @@ class _OfferingModuleState extends State<OfferingModule> {
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: content,
+            child: ZoomBox(child: content),
           ),
         ),
       ),

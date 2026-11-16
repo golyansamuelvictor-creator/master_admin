@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -25,6 +25,7 @@ import '../services/call_service.dart';
 import '../services/live_service.dart';
 import '../widgets/app_menus.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../core/friendly_error.dart';
 
 part 'my_home_extras.dart';
 
@@ -197,7 +198,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
         content: TextField(
           controller: c,
           autofocus: true,
-          decoration: InputDecoration(hintText: tr("Paste the invite link or code"), border: const OutlineInputBorder()),
+          decoration: InputDecoration(hintText: tr("Paste the invite link or code"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
@@ -426,7 +427,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = "Couldn't load your chats. If this keeps happening, ask the admin to run 06_round6.sql.";
+        _error = "Couldn't load your chats. Check your internet connection and refresh.";
       });
     }
   }
@@ -1236,7 +1237,7 @@ class _ConversationViewState extends State<_ConversationView> {
       if (m != null) _onRemote(m);
       widget.onActivity();
     } catch (e) {
-      _snack(e is PostgrestException ? e.message : "The poll couldn't be created. Ask the admin to run 08_round7.sql.");
+      _snack("The poll couldn't be created${friendlyTail(e)}");
     }
   }
 
@@ -1451,7 +1452,7 @@ class _ConversationViewState extends State<_ConversationView> {
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(color: AppPalette.bg(Colors.white.withValues(alpha: 0.85)), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: AppPalette.bg(Colors.white.withValues(alpha: 0.85)), borderRadius: BorderRadius.circular(12), boxShadow: AppPalette.cardShadow),
           child: Text(label, style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade700), fontWeight: FontWeight.w600)),
         ),
       ),
@@ -2193,9 +2194,9 @@ class _ChatInfoPanelState extends State<_ChatInfoPanel> {
         content: SizedBox(
           width: 400,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: nameC, decoration: InputDecoration(labelText: tr("Group name"), border: OutlineInputBorder())),
+            TextField(controller: nameC, decoration: InputDecoration(labelText: tr("Group name"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
             const SizedBox(height: 10),
-            TextField(controller: descC, maxLines: 3, decoration: InputDecoration(labelText: tr("Description"), border: OutlineInputBorder())),
+            TextField(controller: descC, maxLines: 3, decoration: InputDecoration(labelText: tr("Description"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
           ]),
         ),
         actions: [
@@ -2576,10 +2577,10 @@ class _NewGroupDialogState extends State<_NewGroupDialog> {
               controller: _name,
               autofocus: true,
               onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(labelText: tr("Group name"), border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: tr("Group name"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
             ),
             const SizedBox(height: 10),
-            TextField(controller: _desc, maxLines: 2, decoration: InputDecoration(labelText: tr("Description (optional)"), border: OutlineInputBorder())),
+            TextField(controller: _desc, maxLines: 2, decoration: InputDecoration(labelText: tr("Description (optional)"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
             const SizedBox(height: 12),
             Row(children: [
               Expanded(child: Text("${_people.length} people added", style: const TextStyle(fontWeight: FontWeight.bold))),

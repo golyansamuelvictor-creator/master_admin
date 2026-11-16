@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/i18n.dart';
@@ -162,7 +162,7 @@ class _StartDialogState extends State<_StartDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _title,
-            decoration: InputDecoration(labelText: tr("Title (optional), e.g. Morning Light"), border: const OutlineInputBorder(), isDense: true),
+            decoration: InputDecoration(labelText: tr("Title (optional), e.g. Morning Light"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,

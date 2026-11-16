@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, unused_element
 import 'dart:math' as math;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -8,6 +8,9 @@ import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../core/chart_kit.dart';
+import '../core/security.dart';
+import '../widgets/zoom_box.dart';
 
 class _GrowthUnitStat {
   final String unitName;
@@ -437,7 +440,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
         Container(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
           height: 300,
-          child: BarChart(
+          child: chartScroll(bars: displayUnits.length, child: BarChart(
             BarChartData(
               maxY: maxY,
               minY: 0,
@@ -473,18 +476,13 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 30,
+                    reservedSize: kTiltedAxisReserve,
                     getTitlesWidget: (v, m) {
                       int idx = v.toInt();
                       if (idx < 0 || idx >= displayUnits.length) return const SizedBox();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(
-                          displayUnits[idx].unitName,
-                          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
+                      return axisLabel(displayUnits[idx].unitName, m,
+                          count: displayUnits.length,
+                          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])));
                     },
                   ),
                 ),
@@ -524,7 +522,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                 );
               }),
             ),
-          ),
+          )),
         ),
       ],
     );
@@ -715,11 +713,11 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
                   ),
                 ),
                 if (onPdf != null)
-                  IconButton(
+                  ExportOnly(child: IconButton(
                     icon: Icon(Icons.download_rounded, size: 20, color: AppPalette.fg(pPurple)),
                     tooltip: tr('Excel / PDF / Print'),
                     onPressed: onPdf,
-                  ),
+                  )),
                 IconButton(
                   icon: Icon(Icons.open_in_full_rounded, size: 19, color: AppPalette.fg(Colors.blueGrey)),
                   tooltip: tr('Fullscreen View'),
@@ -728,7 +726,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
               ],
             ),
           ),
-          content,
+          ZoomBox(child: content),
         ],
       ),
     );
@@ -749,7 +747,7 @@ class _GrowthTrackingModuleState extends State<GrowthTrackingModule> {
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: content,
+            child: ZoomBox(child: content),
           ),
         ),
       ),

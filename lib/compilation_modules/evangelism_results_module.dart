@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, unused_element
 import 'dart:math' as math;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -9,6 +9,9 @@ import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
 import 'evangelism_goals_view.dart';
+import '../core/chart_kit.dart';
+import '../core/security.dart';
+import '../widgets/zoom_box.dart';
 
 class _EvangelismResultUnitStat {
   final String unitName;
@@ -554,7 +557,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
         Container(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
           height: 300,
-          child: BarChart(
+          child: chartScroll(bars: labels.length, child: BarChart(
             BarChartData(
               maxY: maxY,
               minY: 0,
@@ -590,17 +593,13 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 28,
+                    reservedSize: kTiltedAxisReserve,
                     getTitlesWidget: (val, meta) {
                       int idx = val.toInt();
                       if (idx < 0 || idx >= labels.length) return const SizedBox();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(
-                          labels[idx],
-                          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])),
-                        ),
-                      );
+                      return axisLabel(labels[idx], meta,
+                          count: labels.length,
+                          style: GoogleFonts.merriweather(fontSize: 9.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.blueGrey[800])));
                     },
                   ),
                 ),
@@ -631,7 +630,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
                 );
               }),
             ),
-          ),
+          )),
         ),
       ],
     );
@@ -798,11 +797,11 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
                   ),
                 ),
                 if (onPdf != null)
-                  IconButton(
+                  ExportOnly(child: IconButton(
                     icon: Icon(Icons.download_rounded, size: 20, color: AppPalette.fg(pPurple)),
                     tooltip: tr('Excel / PDF / Print'),
                     onPressed: onPdf,
-                  ),
+                  )),
                 IconButton(
                   icon: Icon(Icons.open_in_full_rounded, size: 19, color: AppPalette.fg(Colors.blueGrey)),
                   tooltip: tr('Fullscreen View'),
@@ -811,7 +810,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
               ],
             ),
           ),
-          content,
+          ZoomBox(child: content),
         ],
       ),
     );
@@ -832,7 +831,7 @@ class _EvangelismResultsModuleState extends State<EvangelismResultsModule> {
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: content,
+            child: ZoomBox(child: content),
           ),
         ),
       ),

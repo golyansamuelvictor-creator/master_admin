@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,6 +12,7 @@ import '../../core/app_palette.dart';
 import '../../core/i18n.dart';
 import '../../widgets/nice_range_picker.dart';
 import '../../widgets/home_live_cards.dart' show VerticalMarquee;
+import '../../core/friendly_error.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 const String _bucket = 'education';
@@ -138,7 +139,7 @@ class _EducationContentsScreenState extends State<EducationContentsScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = "Couldn't load (run 22_round21.sql): ${e is PostgrestException ? e.message : e}";
+        _error = "Couldn't load${friendlyTail(e)}";
       });
     }
   }
@@ -506,7 +507,7 @@ class _EducationContentDetailState extends State<EducationContentDetail> {
 
     Widget chip(IconData i, String t) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20)),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20), boxShadow: AppPalette.cardShadow),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(i, size: 13, color: Colors.white),
             const SizedBox(width: 5),
@@ -845,9 +846,9 @@ class _EducationEditorState extends State<EducationEditor> {
       builder: (ctx) => AlertDialog(
         title: const Text("Add a link"),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: url, decoration: InputDecoration(labelText: tr("Link (https://…)"), border: const OutlineInputBorder())),
+          TextField(controller: url, decoration: InputDecoration(labelText: tr("Link (https://…)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
           const SizedBox(height: 10),
-          TextField(controller: name, decoration: InputDecoration(labelText: tr("Name shown"), border: const OutlineInputBorder())),
+          TextField(controller: name, decoration: InputDecoration(labelText: tr("Name shown"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
@@ -917,7 +918,7 @@ class _EducationEditorState extends State<EducationEditor> {
 
   @override
   Widget build(BuildContext context) {
-    InputDecoration deco(String l, {String? hint}) => InputDecoration(labelText: tr(l), hintText: hint == null ? null : tr(hint), border: const OutlineInputBorder(), alignLabelWithHint: true);
+    InputDecoration deco(String l, {String? hint}) => InputDecoration(labelText: tr(l), hintText: hint == null ? null : tr(hint), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), alignLabelWithHint: true);
     return Scaffold(
       backgroundColor: AppPalette.bg(const Color(0xFFF6F4FA)),
       appBar: AppBar(
@@ -968,12 +969,20 @@ class _EducationEditorState extends State<EducationEditor> {
             const SizedBox(height: 10),
             TextField(controller: _body, minLines: 8, maxLines: 30, decoration: deco("Full text")),
             const SizedBox(height: 12),
-            Row(children: [
-              Text("Pictures, audio, video & files", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(_kPurple))),
-              const Spacer(),
-              TextButton.icon(onPressed: _busy ? null : _addLink, icon: const Icon(Icons.link_rounded, size: 18), label: const Text("Link")),
-              FilledButton.tonalIcon(onPressed: _busy ? null : _addFiles, icon: const Icon(Icons.upload_rounded, size: 18), label: const Text("Upload")),
-            ]),
+            // wraps on phones so "Upload" is never cut off
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                Text("Pictures, audio, video & files", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13, color: AppPalette.fg(_kPurple))),
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  TextButton.icon(onPressed: _busy ? null : _addLink, icon: const Icon(Icons.link_rounded, size: 18), label: const Text("Link")),
+                  FilledButton.tonalIcon(onPressed: _busy ? null : _addFiles, icon: const Icon(Icons.upload_rounded, size: 18), label: const Text("Upload")),
+                ]),
+              ],
+            ),
             Text("Up to 50 MB a file.", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
             const SizedBox(height: 6),
             ReorderableListView(

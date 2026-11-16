@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -618,7 +618,7 @@ class _CellStatusScreenState extends State<CellStatusScreen> {
     decoration: BoxDecoration(
       color: AppPalette.bg(Colors.white),
       borderRadius: BorderRadius.circular(15),
-      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
+      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), boxShadow: AppPalette.cardShadow
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(t, style: GoogleFonts.merriweather(fontSize: 14, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),

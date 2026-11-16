@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/i18n.dart';
@@ -93,7 +93,7 @@ class _SecondaryUnitPickerState extends State<SecondaryUnitPicker> {
           key: ValueKey('$label|${items.length}|$value'),
           initialValue: items.contains(value) ? value : null,
           isExpanded: true,
-          decoration: InputDecoration(labelText: tr(label), border: const OutlineInputBorder(), isDense: true),
+          decoration: InputDecoration(labelText: tr(label), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
           items: [for (final i in items) DropdownMenuItem(value: i, child: Text(i, overflow: TextOverflow.ellipsis))],
           onChanged: onChanged,
         ),

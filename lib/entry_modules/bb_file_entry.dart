@@ -2,7 +2,7 @@
 import 'dart:math' as math;
 import '../core/table_export.dart';
 import 'package:flutter/gestures.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -531,7 +531,7 @@ class _BbFileEntryState extends State<BbFileEntry> {
               child: Column(
                 children: [
                   TextField(
-                    decoration: InputDecoration(hintText: tr("Search..."), isDense: true, prefixIcon: const Icon(Icons.search, size: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                    decoration: InputDecoration(hintText: tr("Search..."), isDense: true, prefixIcon: const Icon(Icons.search, size: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
                     onChanged: (q) => setDialogState(() => query = q),
                   ),
                   const SizedBox(height: 6),

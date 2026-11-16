@@ -1,7 +1,7 @@
 import 'package:excel/excel.dart' as xl;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -12,6 +12,8 @@ import '../../core/xlsx_safe.dart';
 import '../../widgets/h_scroll.dart';
 import 'student_duties.dart' show StudentsConfig;
 import 'student_profile.dart';
+import '../../core/friendly_error.dart';
+import '../../core/security.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -110,7 +112,7 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load the students (run 22_round21.sql): ${e is PostgrestException ? e.message : e}";
+          _error = "Couldn't load the students${friendlyTail(e)}";
         });
       }
     }
@@ -149,7 +151,7 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
                 child: DropdownButtonFormField<String>(
                   initialValue: choices.contains(v) ? v : null,
                   isExpanded: true,
-                  decoration: InputDecoration(labelText: tr(f.$2), isDense: true, border: const OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: tr(f.$2), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                   items: [for (final o in {...choices, if (v.isNotEmpty) v}) DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis))],
                   onChanged: widget.canEdit ? (x) => set(() => c[f.$1]!.text = x ?? '') : null,
                 ),
@@ -163,7 +165,7 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
                 decoration: InputDecoration(
                   labelText: tr(f.$2),
                   isDense: true,
-                  border: const OutlineInputBorder(),
+                  border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                   suffixIcon: scj && widget.canEdit
                       ? IconButton(
                           tooltip: tr("Fill from member list"),
@@ -381,7 +383,7 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
               width: 210,
               height: 34,
               child: TextField(
-                decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search name, center, guide"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder()),
+                decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 17), hintText: tr("Search name, center, guide"), isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 6), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 onChanged: (v) => setState(() => _q = v),
               ),
             ),
@@ -392,7 +394,7 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
               message: "${list.length} students · BB students who pass the interview are added automatically",
               child: Text("${list.length}", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(_kPurple))),
             ),
-            IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)), onPressed: () => TableExport.showMenu(context, () => _export(list))),
+            ExportOnly(child: IconButton(tooltip: tr('Excel / PDF / Print'), icon: Icon(Icons.download_rounded, color: AppPalette.fg(_kPurple)), onPressed: () => TableExport.showMenu(context, () => _export(list)))),
             if (widget.canEdit) ...[
               PopupMenuButton<String>(
                 tooltip: tr("Excel upload"),
@@ -421,7 +423,6 @@ class _CenterStudentsTabState extends State<CenterStudentsTab> {
                         itemBuilder: (_, i) {
                           final s = list[i];
                           return Card(
-                            elevation: 0.5,
                             margin: const EdgeInsets.symmetric(vertical: 3),
                             child: ListTile(
                               dense: true,
@@ -493,7 +494,7 @@ Future<bool> graduateStudent(BuildContext context, Map<String, dynamic> s) async
               for (final e in c.entries)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: TextField(controller: e.value, decoration: InputDecoration(labelText: tr(labels[e.key]!), isDense: true, border: const OutlineInputBorder())),
+                  child: TextField(controller: e.value, decoration: InputDecoration(labelText: tr(labels[e.key]!), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
                 ),
             ]),
           ),

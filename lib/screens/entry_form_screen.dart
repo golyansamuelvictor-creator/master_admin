@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, avoid_print
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import '../core/group_scope.dart';
 import 'package:flutter/services.dart';
@@ -1460,7 +1460,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                           },
                         ),
                         if (!_visitNeedsOk)
-                          Text("The list of those who need visitation isn't available yet (run 20_round19.sql).",
+                          Text("The list of those who need visitation isn't available right now.",
                               style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.orange.shade800))),
                       ]),
                     ),

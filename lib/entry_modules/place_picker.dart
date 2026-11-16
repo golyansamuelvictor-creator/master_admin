@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -128,7 +128,7 @@ class PlacePicker {
                   child: TextField(
                     autofocus: true,
                     onChanged: (v) => set(() => q = v),
-                    decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search"), isDense: true, border: const OutlineInputBorder()),
+                    decoration: InputDecoration(prefixIcon: const Icon(Icons.search, size: 18), hintText: tr("Search"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                   ),
                 ),
               Expanded(

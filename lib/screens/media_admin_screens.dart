@@ -2,7 +2,7 @@
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -273,7 +273,7 @@ class _MediaUploadScreenState extends State<MediaUploadScreen> {
               child: DropdownButtonFormField<String>(
                 initialValue: catValue,
                 isExpanded: true,
-                decoration: InputDecoration(labelText: tr("Category *"), border: OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr("Category *"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 items: [
                   for (final c in cats)
                     DropdownMenuItem(
@@ -340,14 +340,14 @@ class _MediaUploadScreenState extends State<MediaUploadScreen> {
           controller: c,
           minLines: lines,
           maxLines: lines,
-          decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), alignLabelWithHint: lines > 1),
+          decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), alignLabelWithHint: lines > 1),
         ),
       );
 
   Widget _fileBox({required IconData icon, required String title, required String subtitle, required String button, VoidCallback? onTap, Uint8List? preview}) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(14), border: Border.all(color: AppPalette.line(Colors.black12))),
+      decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(14), border: Border.all(color: AppPalette.line(Colors.black12)), boxShadow: AppPalette.cardShadow),
       child: Row(children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
@@ -422,9 +422,9 @@ class _MediaCategoryManagerState extends State<MediaCategoryManager> {
             width: 460,
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                TextField(controller: name, decoration: InputDecoration(labelText: tr("Name"), border: OutlineInputBorder())),
+                TextField(controller: name, decoration: InputDecoration(labelText: tr("Name"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
                 const SizedBox(height: 10),
-                TextField(controller: desc, maxLines: 2, decoration: InputDecoration(labelText: tr("Description (optional)"), border: OutlineInputBorder())),
+                TextField(controller: desc, maxLines: 2, decoration: InputDecoration(labelText: tr("Description (optional)"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
                 const SizedBox(height: 12),
                 const Text("Holds", style: TextStyle(fontWeight: FontWeight.bold)),
                 Wrap(spacing: 6, children: [

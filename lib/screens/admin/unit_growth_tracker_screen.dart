@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:math';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -216,7 +216,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200)), boxShadow: AppPalette.cardShadow
       ),
       child: Row(
         children: [
@@ -245,7 +245,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
+        border: Border.all(color: AppPalette.line(Colors.grey.shade200)), boxShadow: AppPalette.cardShadow
       ),
       child: Row(
         children: [
@@ -258,7 +258,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
                 labelText: tr("Level to Compare"),
                 labelStyle: TextStyle(fontSize: 11, color: AppPalette.fg(pPurple), fontWeight: FontWeight.bold),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               items: _availableLevels.map((lvl) {
                 return DropdownMenuItem(
@@ -289,7 +289,7 @@ class _UnitGrowthTrackerScreenState extends State<UnitGrowthTrackerScreen> {
                 labelText: tr("Period"),
                 labelStyle: TextStyle(fontSize: 11, color: AppPalette.fg(pPurple), fontWeight: FontWeight.bold),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
               items: _periods.map((p) {
                 return DropdownMenuItem(

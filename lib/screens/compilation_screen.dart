@@ -1,5 +1,5 @@
 // ignore_for_file: use_build_context_synchronously, curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import '../core/group_scope.dart';
 import 'package:flutter/services.dart';
@@ -30,6 +30,7 @@ import '../core/table_export.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../widgets/app_menus.dart';
 import 'package:master_admin/core/offering_categories.dart';
+import '../core/chart_kit.dart';
 
 class CompilationEngine extends StatefulWidget {
   final String role, userUnit, selectedDuty, loc, sub, dept, team; 
@@ -113,7 +114,15 @@ class _CompilationEngineState extends State<CompilationEngine> {
   bool _dualModeIsChurch = true;
   /// Dubai Official (members.official): counted on their own. 'exclude' =
   /// Uganda Church / Dubai without them (the default), 'only' = Dubai Official.
-  String _official = 'exclude';
+  late String _official = _isDubaiLeader ? 'all' : 'exclude'; // UAE leaders start on Total
+
+  /// All-saints duties (Service, All Saints Education, Cell Service …):
+  /// General = workers and saints; Workers = workers only.
+  bool _workersOnly = false;
+  bool get _isAllSaintsDuty {
+    final d = widget.selectedDuty.trim();
+    return !_isWorkerDuty && !const {'BB File', 'Evangelism', 'Evangelism Part', 'Evangelism Results', 'Growth Tracking', 'Evangelism Goals'}.contains(d);
+  }
 
   /// A department leader of the main sub-location (named like its location,
   /// e.g. Mukono › Mukono) oversees the department in every sub-location.
@@ -958,7 +967,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
         // Dubai Official: on their own, or left out of everything else
         if (!isBBTable) {
           final col = isMembersTable ? 'official' : 'members.official';
-          q = _official == 'only' ? q.eq(col, true) : q.not(col, 'is', true);
+          if (_official == 'only') {
+            q = q.eq(col, true);
+          } else if (_official == 'exclude') {
+            q = q.not(col, 'is', true);
+          } // 'all': Total (Dubai and Dubai Official together)
+          if (_workersOnly && _isAllSaintsDuty) q = q.eq(isMembersTable ? 'is_worker' : 'members.is_worker', true);
         }
 
         // Picker selections (only the pickers visible at this level)
@@ -1074,7 +1088,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
         }
       }
 
-      mQuery = _official == 'only' ? mQuery.eq('official', true) : mQuery.not('official', 'is', true);
+      if (_official == 'only') {
+        mQuery = mQuery.eq('official', true);
+      } else if (_official == 'exclude') {
+        mQuery = mQuery.not('official', 'is', true);
+      }
+      if (_workersOnly && _isAllSaintsDuty) mQuery = mQuery.eq('is_worker', true);
 
       if (pickers.contains('loc') && _sel('loc').isNotEmpty) {
         mQuery = _sel('loc') == CompLevel.mou ? mQuery.eq('department', CompLevel.mou) : mQuery.eq('location', _sel('loc'));
@@ -1564,11 +1583,11 @@ class _CompilationEngineState extends State<CompilationEngine> {
           sideTitles: SideTitles(
             showTitles: true,
             interval: 1,
-            reservedSize: 22,
+            reservedSize: 46,
             getTitlesWidget: (v, m) {
               final i = v.toInt();
               if (i < 0 || i >= labels.length || v != i.toDouble()) return const SizedBox.shrink();
-              return Padding(padding: const EdgeInsets.only(top: 4), child: Text(labels[i], style: GoogleFonts.merriweather(fontSize: 9)));
+              return axisLabel(labels[i], m, count: labels.length, style: GoogleFonts.merriweather(fontSize: 9));
             },
           ),
         ),
@@ -1841,7 +1860,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
               decoration: BoxDecoration(
                 color: AppPalette.bg(Colors.white),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
+                border: Border.all(color: AppPalette.line(Colors.purple.shade200)), boxShadow: AppPalette.cardShadow
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<T>(
@@ -2549,7 +2568,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
+        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), boxShadow: AppPalette.cardShadow
       ),
       child: SwitchListTile(
         dense: true,
@@ -2597,7 +2616,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       debugPrint("Findings save error: $e");
       if (!mounted) return;
       final msg = e is PostgrestException && e.code == '42501'
-          ? "Your account isn't allowed to save findings yet. Ask the admin to run 08_round7.sql."
+          ? "Your account isn't allowed to save findings."
           : "Couldn't save your findings${e is PostgrestException ? ': ${e.message}' : '. Please try again.'}";
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red.shade800, content: Text(msg)));
     } finally {
@@ -2863,7 +2882,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
                       const SizedBox(height: 6),
                       Row(children: [
                         if (_hasDualModeForCurrentDuty) ...[
-                          _modeBtn(_isTheologyDept ? "Across locations" : "Uganda Church", _dualModeIsChurch && _official != 'only', () {
+                          _modeBtn(_isTheologyDept ? "Across locations" : "Uganda Church", _dualModeIsChurch && _official == 'exclude', () {
                             _dualModeIsChurch = true;
                             _official = 'exclude';
                           }),
@@ -2872,8 +2891,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
                             _dualModeIsChurch = false;
                             _official = 'exclude';
                           }),
-                        ] else
-                          _modeBtn(_isDubaiLeader ? "Dubai" : "Uganda Church", _official != 'only', () => _official = 'exclude'),
+                        ] else ...[
+                          // UAE leaders: their units mix both; Total = everyone
+                          if (_isDubaiLeader) ...[
+                            _modeBtn("Total", _official == 'all', () => _official = 'all'),
+                            const SizedBox(width: 6),
+                          ],
+                          _modeBtn(_isDubaiLeader ? "Dubai" : "Uganda Church", _official == 'exclude', () => _official = 'exclude'),
+                        ],
                         const SizedBox(width: 6),
                         _modeBtn("Dubai Official", _official == 'only', () {
                           _dualModeIsChurch = true;
@@ -2886,6 +2911,24 @@ class _CompilationEngineState extends State<CompilationEngine> {
                 const SizedBox(height: 10),
               ],
 
+              if (_isAllSaintsDuty) ...[
+                Center(
+                  child: FittedBox(fit: BoxFit.scaleDown, child: SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    segments: const [
+                      ButtonSegment(value: false, icon: Icon(Icons.groups_rounded, size: 16), label: Text("General (Workers & Saints)")),
+                      ButtonSegment(value: true, icon: Icon(Icons.badge_rounded, size: 16), label: Text("Workers")),
+                    ],
+                    selected: {_workersOnly},
+                    onSelectionChanged: (v) {
+                      setState(() => _workersOnly = v.first);
+                      _fetchData();
+                    },
+                  )),
+                ),
+                const SizedBox(height: 10),
+              ],
               _bentoNavCard("Data category", _timeOptionsShown, _isOneDay ? 'One day' : _timePeriod, (v) async {
                 if (v == 'One day') {
                   final d = await _pickOneDay();
@@ -2942,8 +2985,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white), 
         borderRadius: BorderRadius.circular(15), 
-        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))]
+        border: Border.all(color: AppPalette.line(Colors.black12)),
+        boxShadow: AppPalette.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2951,47 +2994,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Unit navigation", style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),
+              Text("Unit navigation", style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
               Icon(Icons.tune_rounded, size: 16, color: AppPalette.fg(pPurple)),
             ],
           ),
-          Divider(height: 16, color: AppPalette.bg(Colors.black26)),
-          ..._hierarchy.map((levelName) {
-            bool isSelected = _currentLevel == levelName;
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _currentLevel = levelName;
-                        _updateGroupByFromLevel(levelName);
-                      });
-                      _fetchData();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: AppPalette.bg(isSelected ? pPurple : const Color(0xFFFBFBFE)),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(isSelected ? Icons.check_circle : Icons.circle_outlined, color: AppPalette.fg(isSelected ? Colors.white : Colors.grey), size: 14),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text(levelName, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(isSelected ? Colors.white : Colors.black87)))),
-                          if (isSelected) Icon(Icons.arrow_drop_down, color: AppPalette.fg(Colors.white), size: 16),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (isSelected)
-                  _buildCascadingPicker(levelName),
-              ],
-            );
+          const SizedBox(height: 6),
+          _navDropdown(_hierarchy, _hierarchy.contains(_currentLevel) ? _currentLevel : null, (levelName) {
+            setState(() {
+              _currentLevel = levelName;
+              _updateGroupByFromLevel(levelName);
+            });
+            _fetchData();
           }),
+          const SizedBox(height: 8),
+          if (_hierarchy.contains(_currentLevel)) _buildCascadingPicker(_currentLevel),
         ],
       ),
     );
@@ -3268,29 +3284,40 @@ class _CompilationEngineState extends State<CompilationEngine> {
         ),
       );
 
+  /// A labelled dropdown (less crowded than the old list of options).
   Widget _bentoNavCard(String t, List<String> items, String cur, Function(String) onS) => Container(
     margin: const EdgeInsets.only(bottom: 2),
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
     decoration: BoxDecoration(
-      color: AppPalette.bg(Colors.white), 
-      borderRadius: BorderRadius.circular(15), 
-      border: Border.all(color: AppPalette.line(Colors.black), width: 1.0),
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3))]
+      color: AppPalette.bg(Colors.white),
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: AppPalette.line(Colors.black12)),
+      boxShadow: AppPalette.cardShadow,
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(t, style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: AppPalette.fg(Colors.black87))),
-      Divider(height: 16, color: AppPalette.bg(Colors.black26)),
-      ...items.map((i) => Padding(padding: const EdgeInsets.only(bottom: 3), child: InkWell(onTap: () => onS(i), child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: AppPalette.bg(cur == i ? pPurple : const Color(0xFFFBFBFE)), borderRadius: BorderRadius.circular(10)),
-        child: Row(children: [
-          Icon(cur == i ? Icons.check_circle : Icons.circle_outlined, color: AppPalette.fg(cur == i ? Colors.white : Colors.grey), size: 14),
-          const SizedBox(width: 8),
-          Expanded(child: Text(_navLabel(i), style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(cur == i ? Colors.white : Colors.black87)))),
-        ]),
-      ))))
+      Text(t, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
+      const SizedBox(height: 6),
+      _navDropdown(items, items.contains(cur) ? cur : null, (v) => onS(v)),
     ]),
   );
+
+  Widget _navDropdown(List<String> items, String? cur, ValueChanged<String> onS) => DropdownButtonFormField<String>(
+        isExpanded: true,
+        initialValue: cur,
+        key: ValueKey('${items.join('|')}#$cur'),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: AppPalette.bg(const Color(0xFFFBFBFE)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppPalette.line(Colors.black26))),
+        ),
+        style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)),
+        items: [for (final i in items) DropdownMenuItem(value: i, child: Text(_navLabel(i), maxLines: 1, overflow: TextOverflow.ellipsis))],
+        onChanged: (v) {
+          if (v != null) onS(v);
+        },
+      );
 
   Widget _buildAnalysisBox() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), 

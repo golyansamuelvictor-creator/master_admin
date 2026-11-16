@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/notice_permissions.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../core/friendly_error.dart';
 
 class CalendarScreen extends StatefulWidget {
   final double s;
@@ -95,7 +96,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           content: SizedBox(
             width: 380,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: title, autofocus: true, decoration: InputDecoration(labelText: tr("What"), border: const OutlineInputBorder(), isDense: true)),
+              TextField(controller: title, autofocus: true, decoration: InputDecoration(labelText: tr("What"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
               const SizedBox(height: 10),
               Row(children: [
                 Expanded(
@@ -121,7 +122,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: repeat,
-                decoration: InputDecoration(labelText: tr("Repeat"), border: const OutlineInputBorder(), isDense: true),
+                decoration: InputDecoration(labelText: tr("Repeat"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
                 items: const [
                   DropdownMenuItem(value: 'none', child: Text("Does not repeat")),
                   DropdownMenuItem(value: 'daily', child: Text("Every day")),
@@ -157,7 +158,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
               ],
               const SizedBox(height: 10),
-              TextField(controller: notes, maxLines: 3, decoration: InputDecoration(labelText: tr("Notes (optional)"), border: const OutlineInputBorder(), isDense: true)),
+              TextField(controller: notes, maxLines: 3, decoration: InputDecoration(labelText: tr("Notes (optional)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
               const SizedBox(height: 6),
               Text("Only you can see your schedule.", style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade600))),
             ]),
@@ -194,7 +195,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("Couldn't save (run 23_round22.sql): ${e is PostgrestException ? e.message : e}"),
+          content: Text("Couldn't save${friendlyTail(e)}"),
           backgroundColor: Colors.red.shade700,
         ));
       }
@@ -1001,7 +1002,7 @@ class _AddEventFormState extends State<AddEventForm> {
                 DropdownButtonFormField<String>(
                   initialValue: category,
                   isExpanded: true,
-                  decoration: InputDecoration(labelText: tr("Category"), border: OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: tr("Category"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                   items: cats.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                   onChanged: (v) => setState(() => category = v),
                 ),
@@ -1059,6 +1060,6 @@ class _AddEventFormState extends State<AddEventForm> {
 
   Widget _input(String label, TextEditingController ctrl, IconData icon, {int lines = 1}) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
-    child: TextField(controller: ctrl, minLines: lines, maxLines: lines, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: const OutlineInputBorder())),
+    child: TextField(controller: ctrl, minLines: lines, maxLines: lines, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
   );
 }

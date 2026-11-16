@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 /// A toolbar line that never gets cut off: fills the width on wide screens
 /// and scrolls sideways on small ones.

@@ -1,6 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, unused_element
 import 'dart:math' as math;
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -8,6 +8,8 @@ import '../core/compilation_rules.dart';
 import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
+import '../core/security.dart';
+import '../widgets/zoom_box.dart';
 
 class _EvangelismUnitStat {
   final String unitName;
@@ -868,11 +870,11 @@ class _EvangelismModuleState extends State<EvangelismModule> {
                   ),
                 ),
                 if (onPdf != null)
-                  IconButton(
+                  ExportOnly(child: IconButton(
                     icon: Icon(Icons.download_rounded, size: 20, color: AppPalette.fg(pPurple)),
                     tooltip: tr('Excel / PDF / Print'),
                     onPressed: onPdf,
-                  ),
+                  )),
                 IconButton(
                   icon: Icon(Icons.open_in_full_rounded, size: 19, color: AppPalette.fg(Colors.blueGrey)),
                   tooltip: tr('Fullscreen View'),
@@ -881,7 +883,7 @@ class _EvangelismModuleState extends State<EvangelismModule> {
               ],
             ),
           ),
-          content,
+          ZoomBox(child: content),
         ],
       ),
     );
@@ -902,10 +904,61 @@ class _EvangelismModuleState extends State<EvangelismModule> {
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: content,
+            child: ZoomBox(child: content),
           ),
         ),
       ),
+    );
+  }
+
+  /// How members took part (Table, Street, Teaching …): reports per way,
+  /// "Nothing" / empty left out. One way per member per day.
+  Widget _buildWaysTable(List<dynamic> logs) {
+    final counts = <String, int>{};
+    final people = <String, Set<String>>{};
+    for (final l in logs) {
+      if (l is! Map) continue;
+      final v = (l['status_detail'] ?? '').toString().trim();
+      if (!_isEvangelised(v)) continue;
+      counts[v] = (counts[v] ?? 0) + 1;
+      (people[v] ??= <String>{}).add((l['member_id'] ?? '').toString());
+    }
+    if (counts.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text("No participation recorded in this period.", style: TextStyle(color: AppPalette.fg(Colors.grey.shade600))),
+      );
+    }
+    final total = counts.values.fold<int>(0, (a, b) => a + b);
+    final rows = counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      child: Column(children: [
+        for (final e in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              SizedBox(width: 150, child: Text(e.key, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold))),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: e.value / total,
+                    minHeight: 12,
+                    backgroundColor: AppPalette.bg(const Color(0xFFF1F5F9)),
+                    color: pPurple,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 120,
+                child: Text("${e.value} (${(e.value * 100 / total).toStringAsFixed(0)}%) · ${people[e.key]!.length} ppl",
+                    textAlign: TextAlign.right, style: GoogleFonts.merriweather(fontSize: 11)),
+              ),
+            ]),
+          ),
+      ]),
     );
   }
 
@@ -944,6 +997,12 @@ class _EvangelismModuleState extends State<EvangelismModule> {
           _section(
             "7-day breakdown (%)",
             _buildEvangelismChart(unitStats, totalStat),
+            context,
+          ),
+          const SizedBox(height: 10),
+          _section(
+            "Ways of participation",
+            _buildWaysTable(cascadedLogs),
             context,
           ),
         ],

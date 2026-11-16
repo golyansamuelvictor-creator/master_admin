@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/app_lock_manager.dart';
@@ -130,7 +130,7 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                           width: 140,
                           height: 140,
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(34),
                             boxShadow: [
                               BoxShadow(
                                 color: pPurple.withValues(alpha: 0.45),
@@ -140,10 +140,11 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                             ],
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(70),
+                            borderRadius: BorderRadius.circular(34),
                             child: Image.asset(
-                              'assets/images/app_logo.png',
-                              fit: BoxFit.cover,
+                'assets/brand/logo.webp', // the app icon
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.medium,
                               errorBuilder: (ctx, err, stack) => Icon(
                                 Icons.admin_panel_settings_rounded,
                                 size: 80,
@@ -217,7 +218,7 @@ class _CinematicLockScreenState extends State<CinematicLockScreen> with TickerPr
                             border: Border.all(
                               color: AppPalette.line(_isWrongPin ? Colors.redAccent : pPurple.withValues(alpha: 0.35)),
                               width: 1.5,
-                            ),
+                            ), boxShadow: AppPalette.cardShadow
                           ),
                           child: Column(
                             children: [

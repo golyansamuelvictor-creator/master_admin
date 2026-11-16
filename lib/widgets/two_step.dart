@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -216,7 +216,7 @@ class _TwoStepSettingsPanelState extends State<TwoStepSettingsPanel> {
                 keyboardType: TextInputType.number,
                 maxLength: 6,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(isDense: true, counterText: '', border: OutlineInputBorder(), hintText: "123456"),
+                decoration: const InputDecoration(isDense: true, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), hintText: "123456"),
                 onSubmitted: (_) => _confirm(),
               ),
             ),

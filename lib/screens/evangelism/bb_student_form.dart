@@ -1,11 +1,12 @@
 // ignore_for_file: use_build_context_synchronously
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/app_palette.dart';
 import '../../core/i18n.dart';
 import 'bb_workspace_screen.dart' show BbSettings;
+import '../../core/friendly_error.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -73,7 +74,7 @@ class _BbStudentFormState extends State<BbStudentForm> {
         }
       });
     } catch (e) {
-      setState(() => _lookupNote = "Couldn't look up $name (run 21_round20.sql): $e");
+      setState(() => _lookupNote = "Couldn't look up $name${friendlyTail(e)}");
     }
   }
 
@@ -161,7 +162,7 @@ class _BbStudentFormState extends State<BbStudentForm> {
           controller: _c(key),
           readOnly: widget.readOnly,
           keyboardType: type,
-          decoration: InputDecoration(labelText: tr(label), hintText: hint == null ? null : tr(hint), isDense: true, border: const OutlineInputBorder()),
+          decoration: InputDecoration(labelText: tr(label), hintText: hint == null ? null : tr(hint), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
         ),
       );
 
@@ -173,7 +174,7 @@ class _BbStudentFormState extends State<BbStudentForm> {
       child: DropdownButtonFormField<String>(
         initialValue: cur.isEmpty ? null : cur,
         isExpanded: true,
-        decoration: InputDecoration(labelText: tr(label), isDense: true, border: const OutlineInputBorder()),
+        decoration: InputDecoration(labelText: tr(label), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
         items: [for (final o in opts) DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis))],
         onChanged: widget.readOnly ? null : (v) => setState(() => _v[key] = v),
       ),
@@ -201,7 +202,7 @@ class _BbStudentFormState extends State<BbStudentForm> {
                 labelText: tr("Center student's name"),
                 helperText: tr("Guided by a center student: the units come from Theology › Students"),
                 isDense: true,
-                border: const OutlineInputBorder(),
+                border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                 suffixIcon: widget.readOnly ? null : IconButton(tooltip: tr("Find in Theology › Students"), icon: const Icon(Icons.search_rounded, size: 18), onPressed: _lookupCenterStudent),
               ),
               onSubmitted: (_) => _lookupCenterStudent(),
@@ -217,7 +218,7 @@ class _BbStudentFormState extends State<BbStudentForm> {
               labelText: tr("Scj_id"),
               helperText: tr("The rest is filled from the members list"),
               isDense: true,
-              border: const OutlineInputBorder(),
+              border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
               suffixIcon: widget.readOnly ? null : IconButton(tooltip: tr("Fill from member list"), icon: const Icon(Icons.search_rounded, size: 18), onPressed: () => _lookup(who)),
             ),
             onSubmitted: (_) => _lookup(who),

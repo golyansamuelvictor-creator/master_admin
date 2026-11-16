@@ -1,5 +1,5 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -121,7 +121,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                   DropdownButtonFormField<String>(
                     initialValue: category,
                     isExpanded: true,
-                    decoration: InputDecoration(labelText: tr("Category"), border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: tr("Category"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                     items: cats.map((c) => DropdownMenuItem(value: c, child: Text(_catLabel(c)))).toList(),
                     onChanged: (v) => setD(() => category = v ?? category),
                   ),
@@ -133,10 +133,10 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                   controller: textC,
                   minLines: 3,
                   maxLines: 6,
-                  decoration: InputDecoration(labelText: tr("Intention / directive"), border: OutlineInputBorder()),
+                  decoration: InputDecoration(labelText: tr("Intention / directive"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 ),
                 const SizedBox(height: 10),
-                TextField(controller: subjectC, decoration: InputDecoration(labelText: tr("Subject (optional)"), border: OutlineInputBorder())),
+                TextField(controller: subjectC, decoration: InputDecoration(labelText: tr("Subject (optional)"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))),
                 const SizedBox(height: 10),
                 Row(children: [
                   Expanded(
@@ -163,7 +163,7 @@ class _IntentionsScreenState extends State<IntentionsScreen> {
                   child: TextField(
                     controller: orderC,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(labelText: tr("Order"), border: OutlineInputBorder()),
+                    decoration: InputDecoration(labelText: tr("Order"), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                   ),
                 ),
                 if (error != null) ...[

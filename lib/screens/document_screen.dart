@@ -1,7 +1,7 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 import 'dart:async';
 
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
@@ -612,9 +612,9 @@ class _DocumentScreenState extends State<DocumentScreen> {
           content: SizedBox(
             width: 380,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              TextField(controller: findC, autofocus: true, decoration: InputDecoration(labelText: tr("Find"), border: const OutlineInputBorder(), isDense: true)),
+              TextField(controller: findC, autofocus: true, decoration: InputDecoration(labelText: tr("Find"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
               const SizedBox(height: 10),
-              TextField(controller: repC, decoration: InputDecoration(labelText: tr("Replace with"), border: const OutlineInputBorder(), isDense: true)),
+              TextField(controller: repC, decoration: InputDecoration(labelText: tr("Replace with"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true)),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 dense: true,

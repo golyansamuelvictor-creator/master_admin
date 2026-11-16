@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/app_palette.dart';
 import 'admin/approval_inbox.dart';
+import '../widgets/role_change_inbox.dart';
 import '../services/app_sounds.dart';
 import '../services/media_playback.dart' show appNavigatorKey;
 
@@ -187,7 +188,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't load your notifications. Ask the admin to run 09_round8.sql.";
+          _error = "Couldn't load your notifications. Check your internet connection and refresh.";
         });
       }
     }
@@ -269,6 +270,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
   Widget _notesTab() {
     final unread = _notes.where((n) => n['read_at'] == null).length;
     return _wrap([
+      // Location Leaders: role changes their secretary asked for
+      const RoleChangeInboxTile(),
       Row(children: [
         Expanded(child: Text(unread == 0 ? "All caught up" : "$unread unread", style: const TextStyle(fontWeight: FontWeight.bold))),
         if (unread > 0) TextButton.icon(onPressed: _markAllRead, icon: const Icon(Icons.done_all_rounded, size: 18), label: const Text("Mark all read")),

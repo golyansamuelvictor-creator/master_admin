@@ -145,7 +145,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
         setState(() {
           _loading = false;
           _loadingMore = false;
-          _error = "Couldn't load accounts. Ask the admin to run 11_round10.sql.";
+          _error = "Couldn't load accounts. Check your internet connection and refresh.";
         });
       }
     }
@@ -178,7 +178,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
               controller: c,
               autofocus: true,
               maxLines: 3,
-              decoration: InputDecoration(labelText: tr("Reason (shown to the person)"), border: const OutlineInputBorder()),
+              decoration: InputDecoration(labelText: tr("Reason (shown to the person)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
             ),
           ),
           actions: [
@@ -334,7 +334,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
           ..sort((a, b) => name(a).compareTo(name(b)));
         final current = _appRoles.firstWhere((r) => r['role_key'] == roleKey, orElse: () => <String, dynamic>{});
         Widget label(String t) => Padding(padding: const EdgeInsets.only(top: 10, bottom: 4), child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)));
-        InputDecoration deco([String? hint]) => InputDecoration(border: const OutlineInputBorder(), isDense: true, hintText: hint, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10));
+        InputDecoration deco([String? hint]) => InputDecoration(border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true, hintText: hint, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10));
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text("Category & role: ${_name(user)}", maxLines: 2, overflow: TextOverflow.ellipsis,
@@ -488,24 +488,23 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
                   : () async {
                       set(() => saving = true);
                       try {
-                        if (category != category0) {
-                          await _db.rpc('set_account_category', params: {
-                            'p_user': user['id'],
-                            'p_category': category,
-                            'p_location': newLocation,
-                          });
-                        }
-                        await _db.rpc('change_user_role', params: {
+                        // administrators: applied at once; Location
+                        // Secretaries: sent to the Location Leader to approve
+                        final res = await _db.rpc('request_role_change', params: {
                           'p_user': user['id'],
                           'p_role': roleKey,
                           'p_secondary': secondKey,
                           'p_sec_department': secDept,
                           'p_sec_team': secTeam,
                           'p_sec_cell': secCell,
+                          'p_category': category != category0 ? category : null,
+                          'p_location': newLocation,
                         });
                         if (ctx.mounted) Navigator.pop(ctx);
                         _load();
-                        _snack("Role changed. The administrators${_userIsChurchWorker(user) ? '' : ' and the location leader and general secretary'} were notified.");
+                        _snack(res == 'requested'
+                            ? "Sent for approval. The Location Leader approves it; then the role changes automatically."
+                            : "Role changed. The person and their leaders were notified.");
                       } catch (e) {
                         set(() => saving = false);
                         _snack("Couldn't change the role: ${e is PostgrestException ? e.message : e}", error: true);

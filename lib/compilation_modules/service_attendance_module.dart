@@ -1,6 +1,6 @@
 // ignore_for_file: unused_element, curly_braces_in_flow_control_structures
 import 'dart:math';
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -10,6 +10,8 @@ import '../core/table_export.dart';
 import '../core/compilation_style.dart';
 import 'package:master_admin/core/app_palette.dart';
 import '../widgets/h_scroll.dart';
+import '../core/chart_kit.dart';
+import '../widgets/zoom_box.dart';
 
 class ServiceAttendanceModule extends StatefulWidget {
   final List<dynamic> logs;
@@ -358,38 +360,20 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
       Row(mainAxisSize: MainAxisSize.min, children: [
         TableExport.buttons(context, _exportTable),
         const SizedBox(width: 8),
-        // the summary tables and charts switch between the two checks
-        Container(
-          height: 28,
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: AppPalette.bg(const Color(0xFFE3F2FD)),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppPalette.line(Colors.blue.shade200)),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            _sourceTab(false, "Real time"),
-            _sourceTab(true, "Pre-attendance"),
-          ]),
+        // the summary tables and charts: which check, which service
+        _miniDropdown<bool>(
+          value: _pre,
+          items: const {false: "Real-time attendance", true: "Pre-attendance"},
+          icon: Icons.fact_check_outlined,
+          onChanged: (v) => setState(() => _pre = v),
         ),
         const SizedBox(width: 8),
-
         if (widget.timePeriod != "Current status")
-          Container(
-            height: 28,
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: AppPalette.bg(const Color(0xFFF3E5F5)),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _serviceDayTab("Sun", "Sun"),
-                _serviceDayTab("Wed", "Wed"),
-              ],
-            ),
+          _miniDropdown<String>(
+            value: _selectedServiceDay,
+            items: const {"Sun": "Sunday service", "Wed": "Wednesday service"},
+            icon: Icons.event_rounded,
+            onChanged: (v) => setState(() => _selectedServiceDay = v),
           ),
       ]),
       TextButton.icon(
@@ -402,47 +386,34 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
     ],
   ));
 
-  Widget _sourceTab(bool pre, String label) {
-    final isSel = _pre == pre;
-    return InkWell(
-      onTap: () {
-        if (_pre != pre) setState(() => _pre = pre);
-      },
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-        decoration: BoxDecoration(color: AppPalette.bg(isSel ? Colors.blue.shade700 : Colors.transparent), borderRadius: BorderRadius.circular(6)),
-        child: Text(label, style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(isSel ? Colors.white : Colors.black87))),
-      ),
-    );
-  }
-
-  Widget _serviceDayTab(String key, String label) {
-    final isSel = _selectedServiceDay == key;
-    return InkWell(
-      onTap: () {
-        if (_selectedServiceDay != key) {
-          setState(() => _selectedServiceDay = key);
-        }
-      },
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+  /// A small dropdown for the toolbar (instead of a row of toggle buttons).
+  Widget _miniDropdown<T>({required T value, required Map<T, String> items, required IconData icon, required ValueChanged<T> onChanged}) => Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: AppPalette.bg(isSel ? pPurple : Colors.transparent),
-          borderRadius: BorderRadius.circular(6),
+          color: AppPalette.bg(Colors.white),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppPalette.line(pPurple.withValues(alpha: 0.35))),
         ),
-        child: Text(
-          label,
-          style: GoogleFonts.merriweather(
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            color: AppPalette.fg(isSel ? Colors.white : Colors.black87),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            value: value,
+            isDense: true,
+            icon: const Icon(Icons.expand_more_rounded, size: 18),
+            style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)),
+            items: [
+              for (final e in items.entries)
+                DropdownMenuItem<T>(
+                  value: e.key,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: AppPalette.fg(pPurple)), const SizedBox(width: 6), Text(e.value)]),
+                ),
+            ],
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
           ),
         ),
-      ),
-    );
-  }
+      );
 
   Widget _buildExcelGrid(Map<String, dynamic> hq, Map<String, dynamic> en, Map<String, dynamic> tot) {
     Widget? childRows = _buildDynamicHierarchicalRows();
@@ -762,7 +733,7 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
           height: 360,
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-          child: _barChart(xName, keys, cgLogs, cgMembers, dynamicMaxY),
+          child: chartScroll(bars: keys.length, slot: 34, child: _barChart(xName, keys, cgLogs, cgMembers, dynamicMaxY)),
         ),
         Padding(padding: const EdgeInsets.only(top: 10, bottom: 5), child: _buildBarLegend()),
       ]);
@@ -918,15 +889,12 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
               axisNameSize: 22,
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 32,
+                reservedSize: 46,
                 interval: 1.0,
                 getTitlesWidget: (v, m) {
                   int idx = v.toInt();
                   if (idx < 0 || idx >= periodLabels.length || v != idx.toDouble()) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(periodLabels[idx], textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold)),
-                  );
+                  return axisLabel(periodLabels[idx], m, count: periodLabels.length, style: GoogleFonts.merriweather(fontSize: 8.5, fontWeight: FontWeight.bold));
                 },
               ),
             ),
@@ -983,19 +951,12 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
         axisNameSize: 32, 
         sideTitles: SideTitles(
           showTitles: true, 
-          reservedSize: 50,
+          reservedSize: kTiltedAxisReserve,
           interval: 1.0,
           getTitlesWidget: (v, m) {
             int index = v.toInt();
             if (index < 0 || index >= ks.length || v != index.toDouble()) return const SizedBox.shrink();
-            return Transform.rotate(
-              angle: -0.45,
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(ks[index], style: GoogleFonts.merriweather(fontSize: 9, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)), overflow: TextOverflow.ellipsis),
-              ),
-            );
+            return axisLabel(ks[index], m, count: ks.length, style: GoogleFonts.merriweather(fontSize: 9, fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)));
           }
         )
       ),
@@ -1059,13 +1020,13 @@ class _ServiceAttendanceModuleState extends State<ServiceAttendanceModule> {
           onPressed: () => Navigator.push(context, MaterialPageRoute(
             builder: (c) => Scaffold(
               appBar: AppBar(title: Text(title, style: GoogleFonts.merriweather())), 
-              body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(8), child: content))
+              body: SingleChildScrollView(child: Padding(padding: const EdgeInsets.all(8), child: ZoomBox(child: content)))
             )
           ))
         ),
       ),
       Divider(height: 1, color: AppPalette.bg(Colors.black26)),
-      content,
+      ZoomBox(child: content),
     ]),
   );
 }

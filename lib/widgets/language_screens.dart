@@ -1,4 +1,4 @@
-import 'package:material_ui/material_ui.dart' hide Text;
+import 'package:flutter/material.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -46,7 +46,7 @@ class _LanguagePanelState extends State<LanguagePanel> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Languages aren't set up yet (run 10_round9.sql). English stays on.";
+          _error = "Languages couldn't be loaded. English stays on.";
         });
       }
     }
@@ -403,7 +403,7 @@ class _AddLanguageSheetState extends State<_AddLanguageSheet> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
-              decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search languages"), isDense: true, border: const OutlineInputBorder()),
+              decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search languages"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
               onChanged: (v) => setState(() => _q = v),
             ),
           ),
@@ -502,7 +502,7 @@ class _TranslationEditorScreenState extends State<TranslationEditorScreen> {
           child: Row(children: [
             Expanded(
               child: TextField(
-                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search English or translation"), isDense: true, border: const OutlineInputBorder()),
+                decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr("Search English or translation"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
                 onSubmitted: (v) {
                   _search = v.trim();
                   _load();
