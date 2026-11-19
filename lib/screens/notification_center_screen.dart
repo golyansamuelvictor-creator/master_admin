@@ -114,6 +114,8 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
   bool _loading = true;
   String? _error;
   String _reportFilter = 'All';
+  String _cat = 'all'; // Notifications tab: the topic shown
+  int _roleChanges = 0; // role changes waiting for me (role_change_inbox)
   int _days = 30;
 
   @override
@@ -125,6 +127,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
     }, onError: (_) {});
     _loadTabs();
     _load();
+    _loadRoleChanges();
     NotificationCount.unread.addListener(_onLive);
   }
 
@@ -146,7 +149,62 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
     }
   }
 
-  void _onLive() => _loadNotes();
+  void _onLive() {
+    _loadNotes();
+    _loadRoleChanges();
+  }
+
+  Future<void> _loadRoleChanges() async {
+    try {
+      final r = await _db.rpc('role_change_inbox');
+      if (mounted) setState(() => _roleChanges = (r as List).length);
+    } catch (_) {}
+  }
+
+  // ------------------------------------------------------------ topics
+
+  /// Topics of the Notifications tab: key, name, icon.
+  static const List<(String, String, IconData)> _cats = [
+    ('reports', 'Reports', Icons.assignment_rounded),
+    ('transfers', 'Transfers', Icons.move_up_rounded),
+    ('accounts', 'Accounts & roles', Icons.manage_accounts_rounded),
+    ('members', 'Member profiles', Icons.badge_rounded),
+    ('evangelism', 'Evangelism', Icons.campaign_rounded),
+    ('activities', 'Tasks & activities', Icons.event_note_rounded),
+    ('education', 'Education', Icons.menu_book_rounded),
+    ('other', 'Feedback & other', Icons.notifications_rounded),
+  ];
+
+  /// The topic of a notification, from its kind (and where it links to).
+  static String catOf(Map n) {
+    final k = (n['kind'] ?? '').toString().toLowerCase();
+    final l = (n['link_type'] ?? '').toString().toLowerCase();
+    if (k == 'report' || l.startsWith('logs_')) return 'reports';
+    if (k == 'transfer' || l.contains('transfer')) return 'transfers';
+    if (k == 'account' || k == 'security' || k == 'role' || l == 'profiles') return 'accounts';
+    if (k == 'member' || l.contains('member')) return 'members';
+    if (k == 'evangelism' || k.startsWith('bb') || l.startsWith('bb_')) return 'evangelism';
+    if (k == 'task' || k == 'activity' || k == 'asmis' || k == 'calendar' || l.contains('activity') || l.contains('task')) return 'activities';
+    if (k == 'education' || l.startsWith('edu')) return 'education';
+    return 'other';
+  }
+
+  (String, String, IconData) _catInfo(String key) => _cats.firstWhere((c) => c.$1 == key, orElse: () => _cats.last);
+
+  Future<void> _markCatRead(String cat) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final ids = [for (final n in _notes) if (n['read_at'] == null && catOf(n) == cat) n['id']];
+    if (ids.isEmpty) return;
+    setState(() {
+      for (final n in _notes) {
+        if (n['read_at'] == null && catOf(n) == cat) n['read_at'] = now;
+      }
+    });
+    try {
+      await _db.from('app_notifications').update({'read_at': now}).inFilter('id', ids);
+    } catch (_) {}
+    NotificationCount.refresh();
+  }
 
   Future<void> _loadNotes() async {
     final uid = _db.auth.currentUser?.id;
@@ -158,6 +216,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
   }
 
   Future<void> _load() async {
+    _loadRoleChanges();
     setState(() {
       _loading = true;
       _error = null;
@@ -269,31 +328,99 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
 
   Widget _notesTab() {
     final unread = _notes.where((n) => n['read_at'] == null).length;
+    final byCat = <String, List<Map<String, dynamic>>>{};
+    for (final n in _notes) {
+      byCat.putIfAbsent(catOf(n), () => []).add(n);
+    }
+    int unreadOf(String c) => (byCat[c] ?? const []).where((n) => n['read_at'] == null).length + (c == 'accounts' ? _roleChanges : 0);
+    final present = [for (final c in _cats) if ((byCat[c.$1]?.isNotEmpty ?? false) || (c.$1 == 'accounts' && _roleChanges > 0)) c];
+    if (_cat != 'all' && !present.any((c) => c.$1 == _cat)) _cat = 'all';
+
+    Widget chip(String key, String label, IconData icon, int count) {
+      final on = _cat == key;
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: ChoiceChip(
+          avatar: Icon(icon, size: 16, color: on ? Colors.white : AppPalette.fg(_purple)),
+          label: Text.rich(TextSpan(text: count > 0 ? "${tr(label)} ($count)" : tr(label)),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: on ? Colors.white : AppPalette.fg(_purple))),
+          selected: on,
+          showCheckmark: false,
+          selectedColor: _purple,
+          onSelected: (_) => setState(() => _cat = key),
+        ),
+      );
+    }
+
+    Widget header(String key, {bool showAll = false}) {
+      final (_, name, icon) = _catInfo(key);
+      final u = unreadOf(key);
+      final total = (byCat[key]?.length ?? 0);
+      return Padding(
+        padding: const EdgeInsets.only(top: 10, bottom: 6),
+        child: Row(children: [
+          CircleAvatar(radius: 14, backgroundColor: AppPalette.bg(_purple.withValues(alpha: 0.1)), child: Icon(icon, size: 16, color: AppPalette.fg(_purple))),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text.rich(TextSpan(text: u > 0 ? "${tr(name)} · $u ${tr('unread')}" : tr(name)),
+                style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13.5, color: AppPalette.fg(_purple))),
+          ),
+          if (showAll && total > 3) TextButton(onPressed: () => setState(() => _cat = key), child: Text.rich(TextSpan(text: "${tr('See all')} ($total)"))),
+          if (!showAll && u > 0) TextButton.icon(onPressed: () => _markCatRead(key), icon: const Icon(Icons.done_all_rounded, size: 16), label: const Text("Mark read")),
+        ]),
+      );
+    }
+
+    Widget tile(Map<String, dynamic> n) => Dismissible(
+          key: ValueKey(n['id']),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(color: AppPalette.bg(Colors.red.shade50), borderRadius: BorderRadius.circular(14)),
+            child: Icon(Icons.delete_outline, color: AppPalette.fg(Colors.red.shade700)),
+          ),
+          onDismissed: (_) => _delete(n),
+          child: _noteTile(n),
+        );
+
+    final body = <Widget>[];
+    if (_cat == 'all') {
+      for (final c in present) {
+        body.add(header(c.$1, showAll: true));
+        if (c.$1 == 'accounts') body.add(const RoleChangeInboxTile());
+        // unread first, then the newest; 3 per topic here
+        final list = [...(byCat[c.$1] ?? const <Map<String, dynamic>>[])]..sort((a, b) => (a['read_at'] == null ? 0 : 1).compareTo(b['read_at'] == null ? 0 : 1));
+        for (final n in list.take(3)) {
+          body.add(tile(n));
+        }
+      }
+    } else {
+      body.add(header(_cat));
+      if (_cat == 'accounts') body.add(const RoleChangeInboxTile());
+      for (final n in byCat[_cat] ?? const <Map<String, dynamic>>[]) {
+        body.add(tile(n));
+      }
+    }
+
     return _wrap([
-      // Location Leaders: role changes their secretary asked for
-      const RoleChangeInboxTile(),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          chip('all', 'All', Icons.inbox_rounded, unread + _roleChanges),
+          for (final c in present) chip(c.$1, c.$2, c.$3, unreadOf(c.$1)),
+        ]),
+      ),
+      const SizedBox(height: 6),
       Row(children: [
         Expanded(child: Text(unread == 0 ? "All caught up" : "$unread unread", style: const TextStyle(fontWeight: FontWeight.bold))),
-        if (unread > 0) TextButton.icon(onPressed: _markAllRead, icon: const Icon(Icons.done_all_rounded, size: 18), label: const Text("Mark all read")),
+        if (unread > 0 && _cat == 'all') TextButton.icon(onPressed: _markAllRead, icon: const Icon(Icons.done_all_rounded, size: 18), label: const Text("Mark all read")),
       ]),
-      const SizedBox(height: 6),
-      if (_notes.isEmpty)
+      if (_notes.isEmpty && _roleChanges == 0)
         _empty(Icons.notifications_none_rounded, "No notifications yet. You'll be told here when your reports or transfers are approved or returned.")
       else
-        for (final n in _notes)
-          Dismissible(
-            key: ValueKey(n['id']),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 20),
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(color: AppPalette.bg(Colors.red.shade50), borderRadius: BorderRadius.circular(14)),
-              child: Icon(Icons.delete_outline, color: AppPalette.fg(Colors.red.shade700)),
-            ),
-            onDismissed: (_) => _delete(n),
-            child: _noteTile(n),
-          ),
+        ...body,
     ]);
   }
 
@@ -304,7 +431,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
         ? 'Rejected'
         : (title.contains('approved') || title.contains('complete') ? 'Approved' : 'Pending');
     final (c, _) = _statusLook(status);
-    final icon = switch (n['kind']) { 'transfer' => Icons.move_up_rounded, 'account' => Icons.person_rounded, 'report' => Icons.assignment_rounded, _ => Icons.notifications_rounded };
+    final icon = _catInfo(catOf(n)).$3;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: unread ? 2 : 0.5,

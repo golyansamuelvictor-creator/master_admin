@@ -9,6 +9,7 @@ import '../core/app_sizes.dart';
 import '../core/i18n.dart';
 import 'admin/target_setter_screen.dart';
 import 'asmis_screens.dart';
+import 'evangelism/center_reports_screen.dart';
 import '../widgets/note_card.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
@@ -76,14 +77,16 @@ class _DutyPanelScreenState extends State<DutyPanelScreen> {
       // cascade: Evangelism Department → locations → … → cell groups); the
       // one-by-one goals list stays for the other duties
       ("Goals", Icons.flag_rounded,
-          _isEvangelism || _duty.startsWith('Service Attendance')
-              ? TargetSetterScreen(initialDuty: _duty, embedded: true, userLoc: '', userSub: '', userDept: '')
-              : GoalsView(duty: _duty, canManage: widget.canManage)),
+          _isEvangelism && widget.canManage
+              ? const _EvangelismGoals()
+              : _isEvangelism || _duty.startsWith('Service Attendance')
+                  ? TargetSetterScreen(initialDuty: _duty, embedded: true, userLoc: '', userSub: '', userDept: '')
+                  : GoalsView(duty: _duty, canManage: widget.canManage)),
       // Service Attendance: the All Saints Mobilised In-Person Service schedule
       if (_duty.startsWith('Service Attendance'))
         ("All Saints Mobilised (ASMIS)", Icons.groups_3_rounded, const AsmisScheduleView()),
       if (_isEvangelism && widget.canManage) ...[
-        ("Opening months", Icons.calendar_month_rounded, const _OpeningMonthsView()),
+        ("Opening months", Icons.calendar_month_rounded, const CenterReportsScreen(view: CenterView.months, embedded: true)),
         ("Centers", Icons.location_city_rounded, const _CentersView()),
         ("Stages", Icons.stairs_rounded, const _StagesView()),
       ],
@@ -415,6 +418,51 @@ class _PoliciesViewState extends State<PoliciesView> {
 // ---------------------------------------------------------------------------
 // Goals
 
+/// Evangelism Department › Goals: goals by unit (the cascade table), goals
+/// per center place and opening month, and the 24 departments' goals.
+class _EvangelismGoals extends StatefulWidget {
+  const _EvangelismGoals();
+  @override
+  State<_EvangelismGoals> createState() => _EvangelismGoalsState();
+}
+
+class _EvangelismGoalsState extends State<_EvangelismGoals> {
+  int _view = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip(int i, String label) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: ChoiceChip(
+            label: Text(label, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: _view == i ? FontWeight.w900 : FontWeight.w600, color: AppPalette.fg(_kPurple))),
+            selected: _view == i,
+            showCheckmark: false,
+            backgroundColor: AppPalette.bg(Colors.white),
+            selectedColor: AppPalette.bg(const Color(0xFFEDE4FA)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            onSelected: (_) => setState(() => _view = i),
+          ),
+        );
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 4),
+        child: Wrap(alignment: WrapAlignment.center, children: [
+          chip(0, "By unit"),
+          chip(1, "By center place"),
+          chip(2, "24 Departments"),
+        ]),
+      ),
+      Expanded(
+        child: IndexedStack(index: _view, children: const [
+          TargetSetterScreen(initialDuty: 'Evangelism', embedded: true, userLoc: '', userSub: '', userDept: ''),
+          CenterReportsScreen(view: CenterView.centerGoals, embedded: true),
+          CenterReportsScreen(view: CenterView.deptGoals, embedded: true),
+        ]),
+      ),
+    ]);
+  }
+}
+
 class GoalsView extends StatefulWidget {
   final String duty;
   final bool canManage;
@@ -649,73 +697,6 @@ class _GoalsViewState extends State<GoalsView> {
 // ---------------------------------------------------------------------------
 // Evangelism settings
 
-class _OpeningMonthsView extends StatefulWidget {
-  const _OpeningMonthsView();
-  @override
-  State<_OpeningMonthsView> createState() => _OpeningMonthsViewState();
-}
-
-class _OpeningMonthsViewState extends State<_OpeningMonthsView> {
-  final _db = Supabase.instance.client;
-  List<Map<String, dynamic>> _rows = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final r = await _db.from('evangelism_opening_months').select().order('month_start', ascending: true);
-    if (mounted) setState(() => _rows = List<Map<String, dynamic>>.from(r));
-  }
-
-  Future<void> _add() async {
-    final d = await showDatePicker(context: context, firstDate: DateTime(2024), lastDate: DateTime(2035), initialDate: DateTime.now(), helpText: tr("Pick any day of the opening month"));
-    if (d == null) return;
-    final start = DateTime(d.year, d.month, 1);
-    try {
-      await _db.from('evangelism_opening_months').insert({'label': DateFormat('MMMM').format(start), 'month_start': DateFormat('yyyy-MM-dd').format(start), 'is_open': true});
-      _load();
-    } catch (e) {
-      _snack(context, "Couldn't add: ${_err(e)}", error: true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(padding: AppSizes.page, children: [
-      Text("Opening months decide the months students are counted under in the BB File and the Summary. Switch a month off when it closes.",
-          textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: AppPalette.fg(Colors.grey.shade700))),
-      const SizedBox(height: 8),
-      Center(child: ElevatedButton.icon(onPressed: _add, icon: const Icon(Icons.add_rounded), label: const Text("Add opening month"))),
-      const SizedBox(height: 8),
-      for (final m in _rows)
-        Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: Card(
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          child: SwitchListTile(
-            contentPadding: const EdgeInsets.only(left: 4, right: 8),
-            value: m['is_open'] == true,
-            title: Text("${m['label']} ${DateTime.tryParse(m['month_start'].toString())?.year ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(m['is_open'] == true ? "Open" : "Closed"),
-            secondary: IconButton(
-              tooltip: tr("Remove"),
-              icon: Icon(Icons.delete_outline_rounded, color: AppPalette.fg(Colors.red.shade700)),
-              onPressed: () async {
-                await _db.from('evangelism_opening_months').delete().eq('id', m['id']);
-                _load();
-              },
-            ),
-            onChanged: (v) async {
-              await _db.from('evangelism_opening_months').update({'is_open': v}).eq('id', m['id']);
-              _load();
-            },
-          ),
-        ))),
-    ]);
-  }
-}
-
 class _CentersView extends StatefulWidget {
   const _CentersView();
   @override
@@ -830,6 +811,19 @@ class _CentersViewState extends State<_CentersView> {
   /// the church's locations.
   Future<void> _edit([Map<String, dynamic>? c]) async {
     final name = TextEditingController(text: (c?['name'] ?? '').toString());
+    // a new center: its opening month, goal and online / in-person (the
+    // center place goals of the Center reports)
+    List<String> months = [];
+    if (c == null) {
+      try {
+        final r = await _db.from('evangelism_opening_months').select('label').order('month_start', ascending: true);
+        months = [for (final m in r) m['label'].toString()];
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    String? month;
+    final goal = TextEditingController();
+    bool online = false;
     String? loc = (c?['location'] ?? '').toString().isEmpty ? null : c!['location'].toString();
     String? sub = (c?['sub_location'] ?? '').toString().isEmpty ? null : c!['sub_location'].toString();
     final ok = await showDialog<bool>(
@@ -863,6 +857,25 @@ class _CentersViewState extends State<_CentersView> {
                 items: [for (final s in subs) DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))],
                 onChanged: loc == null ? null : (v) => set(() => sub = v),
               ),
+              if (c == null && months.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: month,
+                  isExpanded: true,
+                  decoration: InputDecoration(labelText: tr("Opening month (optional)"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
+                  items: [for (final m in months) DropdownMenuItem(value: m, child: Text.rich(TextSpan(text: m)))],
+                  onChanged: (v) => set(() => month = v),
+                ),
+                if (month != null) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: goal,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(labelText: tr("Goal"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
+                  ),
+                  SwitchListTile(contentPadding: EdgeInsets.zero, value: online, onChanged: (v) => set(() => online = v), title: const Text("Online center")),
+                ],
+              ],
             ]),
           ),
           actions: [
@@ -880,6 +893,17 @@ class _CentersViewState extends State<_CentersView> {
     try {
       if (c == null) {
         await _db.from('evangelism_centers').insert({'name': name.text.trim(), 'location': loc, 'sub_location': sub, 'sort_order': _rows.length + 1});
+        if (month != null) {
+          await _db.from('evangelism_center_goals').insert({
+            'region': loc,
+            'center_place': name.text.trim(),
+            'month_label': month,
+            'goal': int.tryParse(goal.text.trim()) ?? 0,
+            'is_online': online,
+            'sort_order': 500 + _rows.length,
+          });
+        }
+        if (!mounted) return;
         _snack(context, "Center added");
       } else {
         await _db.from('evangelism_centers').update({'location': loc, 'sub_location': sub}).eq('name', c['name']);

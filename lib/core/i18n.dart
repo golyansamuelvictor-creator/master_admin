@@ -44,7 +44,8 @@ class I18n {
   static SupabaseClient get _db => Supabase.instance.client;
 
   static String tr(String s) {
-    if (_map.isEmpty || s.isEmpty) return s;
+    if (s.isEmpty) return s;
+    if (_map.isEmpty) return term(s);
     final exact = _map[s];
     if (exact != null) return exact;
     if (_prefixLens.isEmpty && _suffixLens.isEmpty) return s;
@@ -54,6 +55,62 @@ class I18n {
     if (_cache.length > 6000) _cache.clear();
     _cache[s] = out;
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Church wording: units are "Regions" and "Sub Regions" (they used to be
+  // called Locations). The code and the database keep the old names; every
+  // English text drawn on screen is shown with the new words. Sentences about
+  // a phone's own position (sharing where you are in chats) are left alone.
+  static final RegExp _termHit = RegExp(r'[Ll]ocation|LOCATION|Rubaga|RUBAGA');
+  static final RegExp _gps = RegExp(r'(your|my|their) (current )?location|Location in My Home|Finding your|Share location|location permission|GPS', caseSensitive: false);
+  static final Map<String, String> _termCache = {};
+
+  static String term(String s) {
+    if (s.isEmpty || !_termHit.hasMatch(s)) return s;
+    final hit = _termCache[s];
+    if (hit != null) return hit;
+    String out = s;
+    if (!_gps.hasMatch(s)) {
+      out = out
+          .replaceAllMapped(RegExp(r'\b(Sub|sub|SUB)([- _]?)(Location|location|LOCATION)(s?)\b'), (m) {
+            final upper = m[1] == 'SUB';
+            final cap = m[1] == 'Sub' || m[3] == 'Location';
+            final sub = upper ? 'SUB' : (cap ? 'Sub' : 'sub');
+            final reg = upper ? 'REGION' : (cap ? 'Region' : 'region');
+            return '$sub $reg${m[4]}';
+          })
+          .replaceAllMapped(RegExp(r'\bLocation(s?)\b'), (m) => 'Region${m[1]}')
+          .replaceAllMapped(RegExp(r'\blocation(s?)\b'), (m) => 'region${m[1]}')
+          .replaceAllMapped(RegExp(r'\bLOCATION(S?)\b'), (m) => 'REGION${m[1]}');
+    }
+    out = out.replaceAll('Rubaga', 'Lubaga').replaceAll('RUBAGA', 'LUBAGA');
+    if (_termCache.length > 4000) _termCache.clear();
+    _termCache[s] = out;
+    return out;
+  }
+
+  /// [term] on every piece of a rich text (English only).
+  static w.InlineSpan termSpan(w.InlineSpan span) {
+    if (code != english || span is! w.TextSpan) return span;
+    final t = span.text;
+    final kids = span.children;
+    final nt = t == null ? null : term(t);
+    final nk = kids?.map(termSpan).toList();
+    final changed = nt != t || (kids != null && nk != null && Iterable<int>.generate(kids.length).any((i) => !identical(kids[i], nk[i])));
+    if (!changed) return span;
+    return w.TextSpan(
+      text: nt,
+      children: nk,
+      style: span.style,
+      recognizer: span.recognizer,
+      mouseCursor: span.mouseCursor,
+      onEnter: span.onEnter,
+      onExit: span.onExit,
+      semanticsLabel: span.semanticsLabel,
+      locale: span.locale,
+      spellOut: span.spellOut,
+    );
   }
 
   static String? _matchTemplate(String s) {
@@ -392,7 +449,7 @@ class Text extends w.StatelessWidget {
   w.Widget build(w.BuildContext context) {
     if (data == null) {
       return w.Text.rich(
-        textSpan!,
+        I18n.termSpan(textSpan!),
         style: style,
         strutStyle: strutStyle,
         textAlign: textAlign,

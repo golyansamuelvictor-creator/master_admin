@@ -21,7 +21,10 @@ class ExportTable {
   final List<String> headers;
   final List<List<String>> rows;
 
-  const ExportTable({required this.title, this.subtitle = '', required this.headers, required this.rows});
+  ExportTable({required String title, String subtitle = '', required List<String> headers, required this.rows})
+      : title = I18n.term(title),
+        subtitle = I18n.term(subtitle),
+        headers = headers.map(I18n.term).toList();
 
   bool get isEmpty => rows.isEmpty;
 

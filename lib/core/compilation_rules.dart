@@ -25,7 +25,7 @@ class CompLevel {
 
   static const List<String> orderedBOLGroups = ["교역자", "자문회", "장년회", "부녀회", "청년회"];
   static const List<String> orderedLocations = [
-    "24Dept", "MOU", "New Location", "Wakiso", "Lubaga", "Busega",
+    "24Dept", "MOU", "New Region", "New Location", "Wakiso", "Lubaga", "Busega",
     "Kawempe", "Makerere", "Makindye", "Nakawa", "Mukono", "Entebbe", "UAE"
   ];
   static const List<String> orderedDepartments = ["장년회", "부녀회", "청년회", "신학부", "새신자"];

@@ -620,3 +620,108 @@ class _HomeGrowthCardState extends State<HomeGrowthCard> {
     );
   }
 }
+
+/// Home › Star of the Week: the best region, department (24 departments),
+/// group, team and cell group of last week across the whole church
+/// (Service Attendance, real time: share of members who attended).
+/// Server: star_of_the_week (35_round34.sql).
+class HomeStarCard extends StatefulWidget {
+  const HomeStarCard({super.key});
+  @override
+  State<HomeStarCard> createState() => _HomeStarCardState();
+}
+
+class _HomeStarCardState extends State<HomeStarCard> {
+  Map<String, dynamic>? _data;
+  bool _loading = true;
+
+  static const _kinds = <(String, String, IconData)>[
+    ('region', 'Region', Icons.public_rounded),
+    ('department', 'Department', Icons.apartment_rounded),
+    ('group', 'Group', Icons.groups_rounded),
+    ('team', 'Team', Icons.diversity_3_rounded),
+    ('cell', 'Cell group', Icons.hub_outlined),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final r = await Supabase.instance.client.rpc('star_of_the_week');
+      if (mounted) {
+        setState(() {
+          _data = Map<String, dynamic>.from(r as Map);
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _groupName(String u) => switch (u) {
+        '장년회' => "Men's Group (장년회)",
+        '부녀회' => "Women's Group (부녀회)",
+        '청년회' => 'Young Adults (청년회)',
+        '새신자' => 'New Saints (새신자)',
+        '신학부' => 'Theology (신학부)',
+        _ => u,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFB8860B);
+    final d = _data ?? const {};
+    final winners = [for (final k in _kinds) if (d[k.$1] is Map) (k, Map<String, dynamic>.from(d[k.$1] as Map))];
+    String week = '';
+    final ws = DateTime.tryParse((d['week_start'] ?? '').toString());
+    final we = DateTime.tryParse((d['week_end'] ?? '').toString());
+    if (ws != null && we != null) week = "${DateFormat('d MMM').format(ws)} – ${DateFormat('d MMM').format(we)}";
+    return _cardFrame(
+      context,
+      icon: Icons.emoji_events_rounded,
+      color: gold,
+      title: "Star of the Week",
+      child: _loading
+          ? const SizedBox(height: 120, child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+          : winners.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  child: Text("No stars yet: last week's service attendance isn't in.", textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.grey))),
+                )
+              : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  if (week.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text.rich(TextSpan(text: "${tr('Service attendance')} · $week"),
+                          textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 10.5, color: AppPalette.fg(Colors.grey.shade700))),
+                    ),
+                  AutoTicker(
+                    count: winners.length,
+                    styles: const [TickerStyle.slideLeft, TickerStyle.fade],
+                    every: const Duration(milliseconds: 3800),
+                    itemBuilder: (_, i) {
+                      final (k, w) = winners[i];
+                      final unit = k.$1 == 'group' ? _groupName((w['unit'] ?? '').toString()) : (w['unit'] ?? '').toString();
+                      final parent = (w['parent'] ?? '').toString();
+                      final rate = ((w['rate'] ?? 0) as num).toDouble();
+                      return _row(
+                        leading: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(color: AppPalette.bg(const Color(0xFFFFF4D6)), shape: BoxShape.circle, border: Border.all(color: const Color(0x66B8860B))),
+                          child: Icon(k.$3, size: 18, color: AppPalette.fg(gold)),
+                        ),
+                        title: "${tr('Best')} ${tr(k.$2).toLowerCase()}: $unit",
+                        flash: "${rate.toStringAsFixed(rate == rate.roundToDouble() ? 0 : 1)}% ${tr('attended')}${parent.isEmpty ? '' : ' · $parent'} · ${w['members']} ${tr('members')}",
+                      );
+                    },
+                  ),
+                ]),
+    );
+  }
+}

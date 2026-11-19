@@ -17,11 +17,17 @@ class CompilationResultsList extends StatefulWidget {
   final String selectedDuty;
   final String role;
 
+  /// Service Attendance for the Internal Affairs / Administration
+  /// Departments: the columns of the church's SERVICE sheet (Country, REG
+  /// status, Korean name, SCJ ID, Book of Life, Residence, Status …).
+  final bool wide;
+
   const CompilationResultsList({
     super.key,
     required this.logs,
     required this.selectedDuty,
     required this.role,
+    this.wide = false,
   });
 
   @override
@@ -151,6 +157,19 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
         return m['english_name'] ?? m['full_name'] ?? m['name'] ?? log['english_name'] ?? "";
       case "duty":
         return m['duty'] ?? log['duty'] ?? "";
+      case "member_status":
+        {
+          final st = (m['member_status'] ?? '').toString().trim();
+          return st.isEmpty ? 'Active' : st;
+        }
+      case "book_of_life":
+        return m['book_of_life'] ?? m['bol_dept'] ?? "";
+      case "reg_status":
+      case "geo_category":
+      case "country":
+      case "korean_name":
+      case "scj_id":
+        return m[key] ?? log[key] ?? "";
       // who filled in the report and who approved it (for the leader above)
       case "stamp_entered":
         return _stamp(log['entered_by'] ?? log['leader_id'], log['created_at']);
@@ -165,7 +184,7 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     Map<String, String> mapping = {
       "location": "Location",
       "sub_location": "Sub-Location",
-      "department": "Department",
+      "department": widget.wide ? "Dept (current)" : "Department",
       "current_dept": "Department",
       "team": "Team",
       "team_number": "Team",
@@ -199,6 +218,13 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
       "thu_part": "Thu",
       "fri_part": "Fri",
       "place": "Place",
+      "country": "Country",
+      "reg_status": "REG status",
+      "korean_name": "Korean Name",
+      "scj_id": "SCJ ID",
+      "book_of_life": "Dept (Book of Life)",
+      "geo_category": "Residence",
+      "member_status": "Status",
       "stamp_entered": "Entered by",
       "stamp_approved": "Approved by",
     };
@@ -225,6 +251,9 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
     if (["location", "sub_location", "department", "current_dept"].contains(key)) return 115;
     if (["team", "team_number", "cell_group", "cell_number"].contains(key)) return 95;
     if (key == "duty") return 115;
+    if (key == "korean_name") return 130;
+    if (key == "scj_id") return 125;
+    if (["country", "reg_status", "book_of_life", "geo_category", "member_status"].contains(key)) return 100;
     if (key == "place") return 170;
     if (key.startsWith("stamp_")) return 190;
     return 105;
@@ -233,6 +262,15 @@ class _CompilationResultsListState extends State<CompilationResultsList> {
   List<String> _getAllDutyKeys() {
     List<String> base = ["location", "sub_location", "department", "team", "cell_group", "english_name", "duty"];
     String d = widget.selectedDuty;
+    if (d == 'Service Attendance Status' && widget.wide) {
+      // the church's SERVICE sheet, column by column
+      return [
+        "location", "sub_location", "country", "department", "team", "cell_group", "duty", "reg_status",
+        "english_name", "korean_name", "scj_id", "book_of_life", "geo_category", "member_status",
+        "attendance_pre", "attendance_realtime", "attendance_makeup", "place", "situation_notes", "strategy_notes",
+        "stamp_entered", "stamp_approved",
+      ];
+    }
     if (d == 'Service Attendance Status') {
       // Place: where the member offered service (evidence)
       base.addAll(["attendance_pre", "attendance_realtime", "attendance_makeup", "place", "situation_notes", "strategy_notes"]);

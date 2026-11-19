@@ -1751,7 +1751,7 @@ class _ConversationViewState extends State<_ConversationView> {
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'photo', child: Row(children: [Icon(Icons.photo_rounded, size: 18, color: Color(0xFF2563EB)), SizedBox(width: 10), Text("Photo")])),
                     PopupMenuItem(value: 'file', child: Row(children: [Icon(Icons.insert_drive_file_rounded, size: 18, color: Color(0xFF7C3AED)), SizedBox(width: 10), Text("Document or file")])),
-                    PopupMenuItem(value: 'location', child: Row(children: [Icon(Icons.location_on_rounded, size: 18, color: Color(0xFF16A34A)), SizedBox(width: 10), Text("Location")])),
+                    PopupMenuItem(value: 'location', child: Row(children: [Icon(Icons.location_on_rounded, size: 18, color: Color(0xFF16A34A)), SizedBox(width: 10), Text("Share location")])),
                     PopupMenuItem(value: 'poll', child: Row(children: [Icon(Icons.poll_rounded, size: 18, color: Color(0xFFF59E0B)), SizedBox(width: 10), Text("Poll")])),
                     PopupMenuItem(value: 'video_note', child: Row(children: [Icon(Icons.videocam_rounded, size: 18, color: Color(0xFFE11D48)), SizedBox(width: 10), Text("Video message")])),
                   ],

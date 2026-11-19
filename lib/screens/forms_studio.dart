@@ -129,10 +129,15 @@ class FormLink {
   FormLink._();
   static String of(String id) => '${Uri.base.origin}/?form=$id';
 
+  /// A form link opened by someone not signed in: the public page shows it
+  /// when the form allows answers without signing in (see [FormFillScreen]).
+  static final ValueNotifier<String?> publicId = ValueNotifier(null);
+
   /// main(): the app was opened from a form link, keep it until signed in
   static Future<void> rememberFromUrl() async {
     final id = Uri.base.queryParameters['form'];
     if (id == null || id.isEmpty) return;
+    publicId.value = id;
     try {
       final p = await SharedPreferences.getInstance();
       await p.setString('pending_form', id);
@@ -144,6 +149,7 @@ class FormLink {
     try {
       final p = await SharedPreferences.getInstance();
       final id = p.getString('pending_form');
+      publicId.value = null;
       if (id == null) return;
       await p.remove('pending_form');
       await Future.delayed(const Duration(seconds: 2));
@@ -182,7 +188,11 @@ class FormLink {
       builder: (c) => AlertDialog(
         title: Row(children: [const Icon(Icons.link_rounded), const SizedBox(width: 8), Expanded(child: Text("Share \"$title\"", maxLines: 2, overflow: TextOverflow.ellipsis))]),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text("Anyone with this link opens the form to fill it in (they sign in first; the form's audience still applies).", style: TextStyle(fontSize: 12.5)),
+          Text(
+              (form['settings'] is Map && (form['settings'] as Map)['public'] == true)
+                  ? "Anyone with this link can fill in the form, without signing in."
+                  : "Anyone with this link opens the form to fill it in (they sign in first; the form's audience still applies). To let people answer without signing in, turn on Settings › \"Anyone with the link (no sign-in)\".",
+              style: const TextStyle(fontSize: 12.5)),
           const SizedBox(height: 10),
           Container(
             width: double.infinity,
@@ -1530,6 +1540,17 @@ class _FormBuilderScreenState extends State<FormBuilderScreen> with SingleTicker
             },
           ),
           SwitchListTile(
+            secondary: const Icon(Icons.public_rounded),
+            title: const Text("Anyone with the link (no sign-in)"),
+            subtitle: const Text("People without an account can open the share link and answer. Not signed-in answers ask for a name (unless anonymous)."),
+            value: settings['public'] == true,
+            onChanged: (v) {
+              settings['public'] = v;
+              setState(() => _form['settings'] = settings);
+              _dirty();
+            },
+          ),
+          SwitchListTile(
             secondary: const Icon(Icons.looks_one_outlined),
             title: const Text("One response per person"),
             subtitle: const Text("Not available for anonymous forms"),
@@ -1835,7 +1856,13 @@ class _FormQuestionInputState extends State<FormQuestionInput> {
 class FormFillScreen extends StatefulWidget {
   final String formId;
   final bool preview;
-  const FormFillScreen({super.key, required this.formId, this.preview = false});
+
+  /// Opened from a share link by someone not signed in (public form).
+  final bool public;
+
+  /// Public page: leave it (go to the sign-in screen).
+  final VoidCallback? onClose;
+  const FormFillScreen({super.key, required this.formId, this.preview = false, this.public = false, this.onClose});
   @override
   State<FormFillScreen> createState() => _FormFillScreenState();
 }
@@ -1850,6 +1877,16 @@ class _FormFillScreenState extends State<FormFillScreen> {
   int _page = 0;
   final Set<String> _errors = {};
   final _scroll = ScrollController();
+  final _name = TextEditingController();
+  String? _loadError;
+
+  void _close() {
+    if (widget.public) {
+      widget.onClose?.call();
+    } else {
+      Navigator.pop(context);
+    }
+  }
 
   Color get _color => _hexColor(_form['theme_hex']?.toString());
   Map<String, dynamic> get _settings => _form['settings'] is Map ? Map<String, dynamic>.from(_form['settings'] as Map) : const {};
@@ -1863,10 +1900,31 @@ class _FormFillScreenState extends State<FormFillScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    _name.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    if (widget.public) {
+      try {
+        final r = Map<String, dynamic>.from(await Supabase.instance.client.rpc('public_form_get', params: {'p_form': widget.formId}) as Map);
+        if (mounted) {
+          setState(() {
+            _form = Map<String, dynamic>.from(r['form'] as Map);
+            _qs = (r['fields'] as List? ?? []).map((m) => FormQ.fromRow(m as Map)).toList();
+            _loading = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _loadError = e is PostgrestException ? e.message : "Couldn't open the form. Check your connection.";
+          });
+        }
+      }
+      return;
+    }
     try {
       final f = await FormsService.form(widget.formId);
       final q = await FormsService.questions(widget.formId);
@@ -1940,7 +1998,15 @@ class _FormFillScreenState extends State<FormFillScreen> {
         for (final q in _qs)
           if (_isInput(q.type) && _visible(q) && _answers[q.key] != null) q.key: _answers[q.key],
       };
-      await FormsService.submit(widget.formId, data);
+      if (widget.public) {
+        await Supabase.instance.client.rpc('public_form_submit', params: {'p_form': widget.formId, 'p_data': data, 'p_name': _name.text.trim()});
+        try {
+          final p = await SharedPreferences.getInstance();
+          await p.remove('pending_form');
+        } catch (_) {}
+      } else {
+        await FormsService.submit(widget.formId, data);
+      }
       setState(() => _done = true);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e is PostgrestException ? e.message : "Couldn't send your answers. Check your connection.")));
@@ -1952,6 +2018,22 @@ class _FormFillScreenState extends State<FormFillScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (widget.public && _loadError != null) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.lock_outline_rounded, size: 52, color: AppPalette.fg(const Color(0xFF4A148C))),
+              const SizedBox(height: 12),
+              Text.rich(TextSpan(text: _loadError), textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 15)),
+              const SizedBox(height: 16),
+              FilledButton.icon(onPressed: widget.onClose, icon: const Icon(Icons.login_rounded), label: const Text("Sign in to answer")),
+            ]),
+          ),
+        ),
+      );
+    }
     final pages = _pages;
     final closed = !widget.preview &&
         (_form['is_published'] != true || _form['accepting'] == false || (DateTime.tryParse((_form['closes_at'] ?? '').toString())?.isBefore(DateTime.now()) ?? false));
@@ -1980,6 +2062,18 @@ class _FormFillScreenState extends State<FormFillScreen> {
           ].join(' · '),
           style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade600)),
         ),
+        if (widget.public && _form['anonymous'] != true && !_done) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _name,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: tr("Your name"),
+              prefixIcon: const Icon(Icons.person_outline_rounded),
+              border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+            ),
+          ),
+        ],
       ]),
       top: true,
     );
@@ -2001,7 +2095,7 @@ class _FormFillScreenState extends State<FormFillScreen> {
               }),
               child: const Text("Submit another response"),
             ),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(_color), foregroundColor: Colors.white), onPressed: () => Navigator.pop(context), child: const Text("Close")),
+          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppPalette.bg(_color), foregroundColor: Colors.white), onPressed: _close, child: Text(widget.public ? "Done" : "Close")),
         ]),
       ]));
     } else if (closed) {
@@ -2107,7 +2201,11 @@ class _FormFillScreenState extends State<FormFillScreen> {
       appBar: AppBar(
         backgroundColor: AppPalette.bg(Colors.white),
         elevation: 0.5,
+        automaticallyImplyLeading: !widget.public,
         title: Text(widget.preview ? "Preview" : "Answer", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 16)),
+        actions: [
+          if (widget.public) TextButton.icon(onPressed: widget.onClose, icon: const Icon(Icons.login_rounded, size: 18), label: const Text("Sign in")),
+        ],
         bottom: pages.length > 1 && _settings['progress'] != false && !_done
             ? PreferredSize(
                 preferredSize: const Size.fromHeight(4),

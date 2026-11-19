@@ -54,6 +54,7 @@ dependencies:
   livekit_client: ^2.6.0    # My Home live voice / video chats (Telegram-style, LiveKit server)
   material_ui: ^1.11.0
 
+  image_picker: any
 dev_dependencies:
   flutter_test:
     sdk: flutter

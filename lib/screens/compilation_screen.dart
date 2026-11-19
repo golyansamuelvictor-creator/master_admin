@@ -14,6 +14,8 @@ import 'dart:convert';
 import '../core/compilation_style.dart';
 
 import '../compilation_modules/service_attendance_module.dart';
+import '../compilation_modules/attendance_reports.dart';
+import 'evangelism/center_reports_screen.dart';
 import '../compilation_modules/cell_service_module.dart';
 import '../compilation_modules/workers_education_module.dart';
 import '../compilation_modules/all_saints_education_module.dart';
@@ -123,6 +125,10 @@ class _CompilationEngineState extends State<CompilationEngine> {
     final d = widget.selectedDuty.trim();
     return !_isWorkerDuty && !const {'BB File', 'Evangelism', 'Evangelism Part', 'Evangelism Results', 'Growth Tracking', 'Evangelism Goals'}.contains(d);
   }
+
+  /// The General / Workers switch: not for the church's 24 departments, whose
+  /// members are all workers.
+  bool get _showWorkersToggle => _isAllSaintsDuty && !_is24DeptWorker;
 
   /// A department leader of the main sub-location (named like its location,
   /// e.g. Mukono › Mukono) oversees the department in every sub-location.
@@ -378,7 +384,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   Future<void> _initHierarchyAndData() async {
-    await Future.wait([_fetchRoleMetadata(), _loadUIConfig()]);
+    await Future.wait([_fetchRoleMetadata(), _loadUIConfig(), _checkMemberCols()]);
     _setHierarchy();
     await _fetchInitialLocations();
     await _fetchData();
@@ -424,6 +430,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
       _hierarchy = ['Church status', 'Group status', 'Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     }
 
+    if (_hasCurrentDeptStatus) {
+      _hierarchy = List<String>.from(_hierarchy);
+      final g = _hierarchy.indexOf('Group status');
+      _hierarchy.insert(g >= 0 ? g + 1 : _hierarchy.length, 'Current dept status');
+    }
+
     if (!_hierarchy.contains(_currentLevel)) {
       _currentLevel = _hierarchy.first;
     }
@@ -431,7 +443,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   void _updateGroupByFromLevel(String level) {
-    if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
+    if (level == 'Current dept status') {
+      _groupBy = _isGroupLeader ? 'Group' : 'Church';
+    } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
       _groupBy = 'Church';
     } else if (_isDeptLeader && level == 'Dept status') {
       _groupBy = 'Dept';
@@ -731,8 +745,35 @@ class _CompilationEngineState extends State<CompilationEngine> {
   // Columns are taken from the live tables. Asking for a column that does not
   // exist makes Supabase reject the whole query, which is why most duties
   // used to load nothing. `*` returns whatever columns each log table has.
-  static const String _memberJoin =
-      'members!inner(id, english_name, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id, is_worker, duty)';
+  /// members.member_status / center_code exist after 33_round32.sql.
+  static bool _newMemberCols = false;
+  static bool _newMemberColsChecked = false;
+  static String get _memberCols =>
+      'id, english_name, korean_name, scj_id, country, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id, is_worker, duty'
+      '${_newMemberCols ? ', member_status, center_code' : ''}';
+  static String get _memberJoin => 'members!inner($_memberCols)';
+
+  Future<void> _checkMemberCols() async {
+    if (_newMemberColsChecked) return;
+    try {
+      await _supabase.from('members').select('member_status, center_code').limit(1);
+      _newMemberCols = true;
+    } catch (_) {
+      _newMemberCols = false;
+    }
+    _newMemberColsChecked = true;
+  }
+
+  /// Service Attendance tables of the Internal Affairs Department and the
+  /// Administration Department (church scope).
+  bool get _isAttendanceAnalyst =>
+      widget.selectedDuty.trim() == 'Service Attendance Status' &&
+      _isChurchWideCompiler &&
+      (_isInternalAffairs || _isAdministrationDept || widget.role == 'admin');
+
+  /// "Current dept status": the analysts above, and each group's leaders.
+  bool get _hasCurrentDeptStatus =>
+      widget.selectedDuty.trim() == 'Service Attendance Status' && (_isAttendanceAnalyst || _isGroupLeader);
 
   String _getSelectColumnsForDuty() {
     final String d = widget.selectedDuty.trim();
@@ -972,7 +1013,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
           } else if (_official == 'exclude') {
             q = q.not(col, 'is', true);
           } // 'all': Total (Dubai and Dubai Official together)
-          if (_workersOnly && _isAllSaintsDuty) q = q.eq(isMembersTable ? 'is_worker' : 'members.is_worker', true);
+          if (_workersOnly && _showWorkersToggle) q = q.eq(isMembersTable ? 'is_worker' : 'members.is_worker', true);
         }
 
         // Picker selections (only the pickers visible at this level)
@@ -1055,9 +1096,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     final Set<String> pickers = _pickersFor(CompLevel.of(_currentLevel));
 
     dynamic build() {
-      dynamic mQuery = _supabase.from('members').select(
-        'id, english_name, location, sub_location, department, team, cell_group, reg_status, geo_category, book_of_life, bol_dept, official_dept_id, is_worker, duty'
-      );
+      dynamic mQuery = _supabase.from('members').select(_memberCols);
 
       if (_isGroupLeader) {
         final deptTarget = _groupLeaderCleanDept;
@@ -1093,7 +1132,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       } else if (_official == 'exclude') {
         mQuery = mQuery.not('official', 'is', true);
       }
-      if (_workersOnly && _isAllSaintsDuty) mQuery = mQuery.eq('is_worker', true);
+      if (_workersOnly && _showWorkersToggle) mQuery = mQuery.eq('is_worker', true);
 
       if (pickers.contains('loc') && _sel('loc').isNotEmpty) {
         mQuery = _sel('loc') == CompLevel.mou ? mQuery.eq('department', CompLevel.mou) : mQuery.eq('location', _sel('loc'));
@@ -1308,6 +1347,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
         ),
       ),
     );
+  }
+
+    /// Evangelism Participation of the Evangelism Department (church level):
+  /// participation by group (members as guide / BB teacher, weekly member
+  /// summary) under the usual tables. The center results are in
+  /// Evangelism results › Center reports.
+  bool get _showEvangParticipation {
+    final d = widget.selectedDuty.trim();
+    if (!const ['Evangelism', 'Evangelism Part'].contains(d)) return false;
+    return widget.role == 'admin' || (_isEvangelismDept && _dualModeIsChurch);
   }
 
   Widget _buildMainContent() {
@@ -2217,7 +2266,45 @@ class _CompilationEngineState extends State<CompilationEngine> {
   Widget _buildSelectedModule() {
     String d = widget.selectedDuty;
     
-    if (d == 'Service Attendance Status') {
+    if (d == 'Service Attendance Status' && _currentLevel == 'Current dept status' && _hasCurrentDeptStatus) {
+      return AttendanceReports(
+        key: ValueKey('cds|${_isGroupLeader ? _groupLeaderCleanDept : ''}'),
+        kind: AttReportKind.currentDept,
+        logs: _logs,
+        members: _masterMembers,
+        timePeriod: _modulePeriod,
+        periodLabel: _navLabel(_timePeriod),
+        lockedGroup: _isGroupLeader ? _groupLeaderCleanDept : null,
+      );
+    }
+    if (d == 'Service Attendance Status' && _isAttendanceAnalyst) {
+      final lv = CompLevel.of(_currentLevel);
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _serviceAttendanceModule(),
+        if (lv == CompLevel.group)
+          AttendanceReports(kind: AttReportKind.bookOfLife, logs: _logs, members: _masterMembers, timePeriod: _modulePeriod, periodLabel: _navLabel(_timePeriod)),
+        if (lv == CompLevel.location)
+          AttendanceReports(
+            kind: AttReportKind.region,
+            logs: _logs,
+            members: _masterMembers,
+            timePeriod: _modulePeriod,
+            periodLabel: _navLabel(_timePeriod),
+            region: _sel('loc').isEmpty ? null : _sel('loc'),
+          ),
+      ]);
+    }
+    if (d == 'Service Attendance Status') return _serviceAttendanceModule();
+    if (_showEvangParticipation) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _buildOtherModule(d),
+        const CenterReportsScreen(view: CenterView.participation, embedded: true),
+      ]);
+    }
+    return _buildOtherModule(d);
+  }
+
+  Widget _serviceAttendanceModule() {
       return ServiceAttendanceModule(
         logs: _logs, 
         masterMembers: _masterMembers,
@@ -2243,7 +2330,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
         userLoc: widget.loc,
         userTeam: widget.team,
       );
-    }
+  }
+
+  Widget _buildOtherModule(String d) {
     if (d == 'Cell Group Service') {
       return CellServiceModule(
         logs: _logs, 
@@ -2568,10 +2657,12 @@ class _CompilationEngineState extends State<CompilationEngine> {
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: AppPalette.line(Colors.black), width: 1.0), boxShadow: AppPalette.cardShadow
+        border: Border.all(color: AppPalette.line(Colors.black12)), boxShadow: AppPalette.cardShadow
       ),
       child: SwitchListTile(
         dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         title: Text("Include pending reports", style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900)),
         subtitle: Text(
           _includePending ? "Counting approved + pending" : "Counting approved reports only",
@@ -2867,66 +2958,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
             padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
             child: Column(children: [
               if (_hasOfficialView) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppPalette.bg(Colors.purple.shade50),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppPalette.line(Colors.purple.shade200)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_hasDualModeForCurrentDuty ? _getDualModeTitle() : (_isDubaiLeader ? "Dubai" : "Reports"),
-                          style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
-                      const SizedBox(height: 6),
-                      Row(children: [
-                        if (_hasDualModeForCurrentDuty) ...[
-                          _modeBtn(_isTheologyDept ? "Across locations" : "Uganda Church", _dualModeIsChurch && _official == 'exclude', () {
-                            _dualModeIsChurch = true;
-                            _official = 'exclude';
-                          }),
-                          const SizedBox(width: 6),
-                          _modeBtn(_isTheologyDept ? "Church level" : "Church (24 Depts)", !_dualModeIsChurch, () {
-                            _dualModeIsChurch = false;
-                            _official = 'exclude';
-                          }),
-                        ] else ...[
-                          // UAE leaders: their units mix both; Total = everyone
-                          if (_isDubaiLeader) ...[
-                            _modeBtn("Total", _official == 'all', () => _official = 'all'),
-                            const SizedBox(width: 6),
-                          ],
-                          _modeBtn(_isDubaiLeader ? "Dubai" : "Uganda Church", _official == 'exclude', () => _official = 'exclude'),
-                        ],
-                        const SizedBox(width: 6),
-                        _modeBtn("Dubai Official", _official == 'only', () {
-                          _dualModeIsChurch = true;
-                          _official = 'only';
-                        }),
-                      ]),
-                    ],
-                  ),
-                ),
+                _reportsCard(),
                 const SizedBox(height: 10),
               ],
 
-              if (_isAllSaintsDuty) ...[
-                Center(
-                  child: FittedBox(fit: BoxFit.scaleDown, child: SegmentedButton<bool>(
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                    segments: const [
-                      ButtonSegment(value: false, icon: Icon(Icons.groups_rounded, size: 16), label: Text("General (Workers & Saints)")),
-                      ButtonSegment(value: true, icon: Icon(Icons.badge_rounded, size: 16), label: Text("Workers")),
-                    ],
-                    selected: {_workersOnly},
-                    onSelectionChanged: (v) {
-                      setState(() => _workersOnly = v.first);
-                      _fetchData();
-                    },
-                  )),
-                ),
+              if (_showWorkersToggle) ...[
+                _sideCard("Report category", Icons.groups_rounded, _navDropdown(
+                  const ['General (Workers & Saints)', 'Workers'],
+                  _workersOnly ? 'Workers' : 'General (Workers & Saints)',
+                  (v) {
+                    setState(() => _workersOnly = v == 'Workers');
+                    _fetchData();
+                    if (isMobile) Navigator.pop(context);
+                  },
+                )),
                 const SizedBox(height: 10),
               ],
               _bentoNavCard("Data category", _timeOptionsShown, _isOneDay ? 'One day' : _timePeriod, (v) async {
@@ -2968,9 +3013,28 @@ class _CompilationEngineState extends State<CompilationEngine> {
                 padding: const EdgeInsets.symmetric(vertical: 16), 
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
               ),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => CompilationResultsList(logs: _logs, selectedDuty: widget.selectedDuty, role: widget.role))), 
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => CompilationResultsList(logs: _logs, selectedDuty: widget.selectedDuty, role: widget.role, wide: _isAttendanceAnalyst))), 
               icon: const Icon(Icons.list_alt_rounded), 
               label: Text("Detailed results", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 13))
+            ),
+          ),
+        ),
+        // 보예: members not registered yet, with their attendance
+        if (_isAttendanceAnalyst)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(15, 0, 15, 15),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppPalette.fg(pPurple),
+                side: BorderSide(color: AppPalette.line(pPurple), width: 1.0),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              ),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => NonRegisteredListScreen(logs: _logs, members: _masterMembers, periodLabel: _navLabel(_timePeriod)))),
+              icon: const Icon(Icons.person_search_rounded),
+              label: Text("Non-registered members (보예)", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12.5)),
             ),
           ),
         ),
@@ -2979,37 +3043,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   Widget _buildUnitNavigationCard() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 2),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppPalette.bg(Colors.white), 
-        borderRadius: BorderRadius.circular(15), 
-        border: Border.all(color: AppPalette.line(Colors.black12)),
-        boxShadow: AppPalette.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("Unit navigation", style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
-              Icon(Icons.tune_rounded, size: 16, color: AppPalette.fg(pPurple)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          _navDropdown(_hierarchy, _hierarchy.contains(_currentLevel) ? _currentLevel : null, (levelName) {
-            setState(() {
-              _currentLevel = levelName;
-              _updateGroupByFromLevel(levelName);
-            });
-            _fetchData();
-          }),
-          const SizedBox(height: 8),
-          if (_hierarchy.contains(_currentLevel)) _buildCascadingPicker(_currentLevel),
-        ],
-      ),
+    return _sideCard(
+      "Unit navigation",
+      Icons.tune_rounded,
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _navDropdown(_hierarchy, _hierarchy.contains(_currentLevel) ? _currentLevel : null, (levelName) {
+          setState(() {
+            _currentLevel = levelName;
+            _updateGroupByFromLevel(levelName);
+          });
+          _fetchData();
+        }),
+        const SizedBox(height: 8),
+        if (_hierarchy.contains(_currentLevel)) _buildCascadingPicker(_currentLevel),
+      ]),
     );
   }
 
@@ -3261,45 +3308,67 @@ class _CompilationEngineState extends State<CompilationEngine> {
     );
   }
 
-  /// One button of the report views (Uganda Church / Church (24 Depts) /
-  /// Dubai Official …).
-  Widget _modeBtn(String label, bool on, VoidCallback pick) => Expanded(
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              pick();
-              _setHierarchy();
-            });
-            _fetchData();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            decoration: BoxDecoration(
-              color: AppPalette.bg(on ? pPurple : Colors.white),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            alignment: Alignment.center,
-            child: Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(on ? Colors.white : Colors.black87))),
-          ),
-        ),
+  Widget _bentoNavCard(String t, List<String> items, String cur, Function(String) onS) => _sideCard(
+        t,
+        t == 'Data category' ? Icons.date_range_rounded : Icons.insights_rounded,
+        _navDropdown(items, items.contains(cur) ? cur : null, (v) => onS(v)),
       );
 
-  /// A labelled dropdown (less crowded than the old list of options).
-  Widget _bentoNavCard(String t, List<String> items, String cur, Function(String) onS) => Container(
-    margin: const EdgeInsets.only(bottom: 2),
-    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-    decoration: BoxDecoration(
-      color: AppPalette.bg(Colors.white),
-      borderRadius: BorderRadius.circular(15),
-      border: Border.all(color: AppPalette.line(Colors.black12)),
-      boxShadow: AppPalette.cardShadow,
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(t, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple))),
-      const SizedBox(height: 6),
-      _navDropdown(items, items.contains(cur) ? cur : null, (v) => onS(v)),
-    ]),
-  );
+  /// Every card of the side bar looks the same: white, rounded, a thin
+  /// border, a soft shadow, the title with its icon, then the content.
+  Widget _sideCard(String title, IconData icon, Widget child) => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        decoration: BoxDecoration(
+          color: AppPalette.bg(Colors.white),
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: AppPalette.line(Colors.black12)),
+          boxShadow: AppPalette.cardShadow,
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text(title, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w900, color: AppPalette.fg(pPurple)))),
+            Icon(icon, size: 16, color: AppPalette.fg(pPurple)),
+          ]),
+          const SizedBox(height: 6),
+          child,
+        ]),
+      );
+
+  /// Reports: which members the results cover (Uganda Church, Church (24
+  /// Depts), Dubai, Total, Dubai Official …), as the person may see them.
+  Widget _reportsCard() {
+    final opts = <(String, bool, VoidCallback)>[];
+    if (_hasDualModeForCurrentDuty) {
+      opts.add((_isTheologyDept ? "Across locations" : "Uganda Church", _dualModeIsChurch && _official == 'exclude', () {
+        _dualModeIsChurch = true;
+        _official = 'exclude';
+      }));
+      opts.add((_isTheologyDept ? "Church level" : "Church (24 Depts)", !_dualModeIsChurch, () {
+        _dualModeIsChurch = false;
+        _official = 'exclude';
+      }));
+    } else {
+      if (_isDubaiLeader) opts.add(("Total", _official == 'all', () => _official = 'all'));
+      opts.add((_isDubaiLeader ? "Dubai" : "Uganda Church", _official == 'exclude', () => _official = 'exclude'));
+    }
+    opts.add(("Dubai Official", _official == 'only', () {
+      _dualModeIsChurch = true;
+      _official = 'only';
+    }));
+    final on = opts.where((o) => o.$2).toList();
+    final cur = on.isEmpty ? opts.first.$1 : on.first.$1;
+    final title = _hasDualModeForCurrentDuty ? _getDualModeTitle() : (_isDubaiLeader ? "Dubai" : "Reports");
+    return _sideCard(title, Icons.public_rounded, _navDropdown([for (final o in opts) o.$1], cur, (v) {
+      final o = opts.firstWhere((x) => x.$1 == v);
+      setState(() {
+        o.$3();
+        _setHierarchy();
+      });
+      _fetchData();
+    }));
+  }
 
   Widget _navDropdown(List<String> items, String? cur, ValueChanged<String> onS) => DropdownButtonFormField<String>(
         isExpanded: true,

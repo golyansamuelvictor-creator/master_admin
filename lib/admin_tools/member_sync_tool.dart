@@ -88,8 +88,30 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
   static String _fieldName(String k) => const {'english_name': 'name', 'sub_location': 'sub-location', 'dob': 'date of birth'}[k] ?? k;
   static const Set<String> _uuidCols = {'sub_location_id', 'dept_id', 'team_id', 'cell_id', 'introduced_by_id', 'official_dept_id'};
 
-  static String _headerKey(String s) =>
-      s.trim().toLowerCase().replaceAll(RegExp(r'[\s\-./]+'), '_').replaceAll(RegExp(r'[^a-z0-9_]'), '');
+  static String _headerKey(String s) {
+    final k = s.trim().toLowerCase().replaceAll(RegExp(r'[\s\-./]+'), '_').replaceAll(RegExp(r'[^a-z0-9_]'), '');
+    return _aliases[k] ?? k;
+  }
+
+  /// Header names of the church's sheets (SERVICE, 보예 …) → members columns.
+  static const Map<String, String> _aliases = {
+    'region': 'location',
+    'sub_region': 'sub_location',
+    'subregion': 'sub_location',
+    'deptcurrent': 'department',
+    'dept_current': 'department',
+    'deptbook_of_life': 'book_of_life',
+    'dept_book_of_life': 'book_of_life',
+    'cell': 'cell_group',
+    'reg_status': 'reg_status',
+    'residence': 'geo_category',
+    'status': 'member_status',
+    'member_status': 'member_status',
+    'center_code': 'center_code',
+    'center_transfer': 'center_code',
+    'eng_name': 'english_name',
+    'english_name': 'english_name',
+  };
 
   /// Same value in the file and in the database? (dates compared by day,
   /// numbers and lists as text, extra spaces ignored)
@@ -205,7 +227,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
       if (rows.length <= 1) throw Exception("The uploaded spreadsheet contains no data rows.");
 
       // The members table's columns (from one stored row; the known list if empty)
-      final known = <String>{..._sqlOrder, 'official_dept_id', 'geo_category', 'country', 'mou_church', 'course_completion_date', 'enrollment_year', 'official'};
+      final known = <String>{..._sqlOrder, 'official_dept_id', 'geo_category', 'country', 'mou_church', 'course_completion_date', 'enrollment_year', 'official', 'member_status', 'center_code'};
       try {
         final one = await _supabase.from('members').select().limit(1);
         if (one.isNotEmpty) known
@@ -655,7 +677,7 @@ class _MemberSyncToolState extends State<MemberSyncTool> {
                   _buildColumnBadge(41, "introduced_by_id", "Optional Foreign Key"),
                   const SizedBox(height: 8),
                   Text(
-                    "Also matched by header name: country, mou_church, geo_category, course_completion_date, enrollment_year, official_dept_id, official (Yes / No: Dubai Official). book_of_life fills bol_dept; is_worker is worked out from duty.",
+                    "Also matched by header name: country, mou_church, geo_category, course_completion_date, enrollment_year, official_dept_id, official (Yes / No: Dubai Official), Status (Active / H-M / LTA), Center code (보예), Residence (Kampala / Village / Abroad). book_of_life fills bol_dept; is_worker is worked out from duty.",
                     style: GoogleFonts.merriweather(fontSize: 13, color: AppPalette.fg(Colors.grey.shade700)),
                   ),
                 ],

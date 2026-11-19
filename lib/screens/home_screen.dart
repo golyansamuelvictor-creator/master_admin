@@ -845,6 +845,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               HomeNotificationsCard(userEmail: email, userRole: selectedRole),
                               const SizedBox(height: 18),
+                              const HomeStarCard(),
+                              const SizedBox(height: 18),
                               HomeGrowthCard(userRole: selectedRole),
                             ],
                           ),
@@ -885,6 +887,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     Column(
                       children: [
                         HomeNotificationsCard(userEmail: email, userRole: selectedRole),
+                        const SizedBox(height: 16),
+                        const HomeStarCard(),
                         const SizedBox(height: 16),
                         HomeGrowthCard(userRole: selectedRole),
                         const SizedBox(height: 16),

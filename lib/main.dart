@@ -18,10 +18,11 @@ import 'services/profile_refresh.dart';
 import 'services/device_accounts.dart';
 import 'services/device_sessions.dart';
 import 'services/call_service.dart';
-import 'screens/forms_studio.dart' show FormLink;
+import 'screens/forms_studio.dart' show FormLink, FormFillScreen;
 import 'services/media_playback.dart';
 import 'services/demo_mode.dart';
 import 'widgets/media_mini_player.dart';
+import 'screens/bible/bible_reader.dart';
 import 'widgets/app_lock_settings.dart';
 import 'widgets/two_step.dart';
 import 'package:master_admin/core/app_palette.dart';
@@ -92,6 +93,7 @@ void main() async {
       }
     }
     if (st.event == AuthChangeEvent.signedOut) {
+      BibleReader.instance.stop();
       CallService.stop();
       AppSecurity.stop();
     }
@@ -351,6 +353,12 @@ class _AppShellState extends State<_AppShell> with WidgetsBindingObserver {
               Positioned.fill(
                 child: Overlay(initialEntries: [OverlayEntry(builder: (_) => const MediaMiniPlayer())]),
               ),
+              // Bible read aloud in the background: "now reading" bar
+              Positioned.fill(
+                child: Overlay(initialEntries: [
+                  OverlayEntry(builder: (_) => const Align(alignment: Alignment.bottomCenter, child: BibleReaderBar())),
+                ]),
+              ),
               // signed in, lock not checked yet (first moments after a
               // reload): cover the app so nothing shows before the PIN
               if (!AppLockManager.instance.isInitialized && Supabase.instance.client.auth.currentSession != null)
@@ -382,7 +390,14 @@ class _SessionGate extends StatelessWidget {
       builder: (context, reset, _) {
         final hasSession = Supabase.instance.client.auth.currentSession != null;
         if (hasSession && reset) return const NewPasswordScreen();
-        return hasSession ? child : const AuthScreen();
+        if (hasSession) return child;
+        // a form's share link opened without signing in: the public form page
+        return ValueListenableBuilder<String?>(
+          valueListenable: FormLink.publicId,
+          builder: (context, formId, _) => formId == null
+              ? const AuthScreen()
+              : FormFillScreen(key: ValueKey('public-$formId'), formId: formId, public: true, onClose: () => FormLink.publicId.value = null),
+        );
       },
     );
   }

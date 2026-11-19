@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/app_palette.dart';
 import '../../core/i18n.dart';
 import 'bb_workspace_screen.dart';
+import 'center_reports_screen.dart';
 import '../../core/friendly_error.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
@@ -48,10 +49,21 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
     'checker': 'Checker',
   };
 
+  /// The Evangelism Department (church level): Center reports.
+  bool _canCenter = false;
+
   @override
   void initState() {
     super.initState();
     _init();
+    if (!widget.studentsOnly) _checkCenterReports();
+  }
+
+  Future<void> _checkCenterReports() async {
+    try {
+      final ok = await Supabase.instance.client.rpc('can_manage_duty', params: {'p_duty': 'Evangelism'});
+      if (mounted && ok == true) setState(() => _canCenter = true);
+    } catch (_) {}
   }
 
   Future<void> _init() async {
@@ -170,6 +182,21 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
         centerTitle: true,
         title: Text(widget.studentsOnly ? "Students' evangelism results" : "Evangelism results", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(_kPurple))),
         actions: [
+          if (_canCenter)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppPalette.fg(const Color(0xFF4A148C)),
+                  backgroundColor: AppPalette.bg(const Color(0xFFF3ECFC)),
+                  side: BorderSide(color: AppPalette.line(const Color(0x554A148C))),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                ),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const CenterReportsScreen())),
+                child: Text("Center reports", style: GoogleFonts.merriweather(fontWeight: FontWeight.w800, fontSize: 12.5)),
+              ),
+            ),
           if (!wide && cfg != null)
             IconButton(
               tooltip: tr("Filters"),
