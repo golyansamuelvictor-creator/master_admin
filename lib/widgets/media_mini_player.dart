@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart' hide Text;
+import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:video_player/video_player.dart';
 
 import '../screens/media_full_player.dart';
 import '../services/media_playback.dart';
-import '../services/media_service.dart';
+import '../services/media_service.dart';
+
 import '../services/media_session.dart';
 
 /// Shown above every screen while something plays and the full player is

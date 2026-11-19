@@ -722,9 +722,12 @@ class _BibleScreenState extends State<BibleScreen> {
   final Map<int, LongPressGestureRecognizer> _recs = {};
   LongPressGestureRecognizer _recognizer(int v) => _recs.putIfAbsent(
         v,
-        () => LongPressGestureRecognizer()
-          ..onLongPress = () => _verseMenu(v)
-          ..onSecondaryLongPress = () => _verseMenu(v),
+        () {
+          final r = LongPressGestureRecognizer();
+          r.onLongPress = () => _verseMenu(v);
+          r.onSecondaryLongPress = () => _verseMenu(v);
+          return r;
+        },
       );
 
   void _clearRecognizers() {

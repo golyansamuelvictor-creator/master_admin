@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart' show PointerScrollEvent, PointerSignalEvent;
-import 'package:flutter/material.dart' hide Text;
+import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:flutter/services.dart';
 
 import '../core/app_palette.dart';

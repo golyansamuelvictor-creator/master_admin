@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' hide Text;
+import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/app_palette.dart';
