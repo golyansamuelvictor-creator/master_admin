@@ -48,6 +48,8 @@ class CenterReportsScreen extends StatefulWidget {
 class _Stu {
   final String center, month, stage, bb, gLoc, gDept, gOdept;
   final bool q, g24, byStudent;
+  /// the guide's department is 24부서 (a region's 24-department worker)
+  final bool dept24;
   final String region; // guide's region bucket (Wakiso … / MOU / 24Dept)
   _Stu(List r)
       : center = (r[0] ?? '').toString().trim(),
@@ -60,6 +62,7 @@ class _Stu {
         g24 = r[7] == true,
         gOdept = (r[8] ?? '').toString().trim(),
         byStudent = r.length > 9 && r[9] == true,
+        dept24 = r.length > 11 && r[11] == true,
         region = CompLevel.locationBucket({'location': (r[5] ?? '').toString(), 'department': (r[6] ?? '').toString()});
 }
 
@@ -215,7 +218,7 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
 
   bool _inGroup(_Stu s, String key) {
     if (key.isEmpty) return true;
-    if (key == '24') return s.g24;
+    if (key == '24') return s.dept24 && s.region != '24Dept' && s.region != CompLevel.mou;
     if (key == 'MOU') return s.region == CompLevel.mou;
     return _n(s.gDept) == _n(key) && s.region != CompLevel.mou;
   }
@@ -231,17 +234,33 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
 
   // ------------------------------------------------------------------ UI bits
 
-  Widget _chip(String label, bool on, VoidCallback tap) => Padding(
-        padding: const EdgeInsets.only(right: 6, bottom: 6),
-        child: ChoiceChip(
-          label: Text.rich(TextSpan(text: tr(label)), style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: on ? FontWeight.w900 : FontWeight.w600, color: AppPalette.fg(_kPurple))),
-          selected: on,
-          showCheckmark: false,
-          backgroundColor: AppPalette.bg(Colors.white),
-          selectedColor: AppPalette.bg(_kLight),
-          side: BorderSide(color: AppPalette.line(on ? const Color(0x664A148C) : const Color(0x224A148C))),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          onSelected: (_) => tap(),
+  /// A small labelled dropdown (instead of a row of chips).
+  Widget _pick(String label, List<String> items, String value, ValueChanged<String> on, {String Function(String)? labelOf, bool translate = false}) => Padding(
+        padding: const EdgeInsets.only(right: 8, bottom: 6),
+        child: SizedBox(
+          width: 210,
+          child: DropdownButtonFormField<String>(
+            initialValue: items.contains(value) ? value : (items.isEmpty ? null : items.first),
+            isExpanded: true,
+            decoration: InputDecoration(
+              label: Text(label),
+              isDense: true,
+              filled: true,
+              fillColor: AppPalette.bg(Colors.white),
+              border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+            ),
+            items: [
+              for (final i in items)
+                DropdownMenuItem(
+                  value: i,
+                  child: Text.rich(TextSpan(text: labelOf != null ? labelOf(i) : (translate ? tr(i) : i)),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                ),
+            ],
+            onChanged: (v) {
+              if (v != null) on(v);
+            },
+          ),
         ),
       );
 
@@ -279,16 +298,53 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [ZoomBox(child: _rep(b)), ...below]),
       );
 
-  Widget _rep(RepBlock b) => RepTable(block: b, sectionW: 96, labelW: 176, cellW: 64, maxCell: 130, fill: true, fontSize: 12, rowH: 30, headH: 38);
+  Widget _rep(RepBlock b) => RepTable(block: b, sectionW: 96, labelW: 176, cellW: 64, maxCell: 130, fill: true, fontSize: 12, rowH: 24, headH: 30);
 
   /// The page of a section: centred, at most 1400 wide; inside another
   /// screen it is a plain column.
   Widget _page(List<Widget> children) {
     final body = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
     if (widget.embedded && widget.view == CenterView.participation) return body;
-    return ListView(padding: const EdgeInsets.fromLTRB(12, 14, 12, 24), children: [
+    return ListView(padding: const EdgeInsets.fromLTRB(12, 8, 12, 24), children: [
       Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1400), child: body)),
     ]);
+  }
+
+  /// One line on top of a section: choices on the left, the section's
+  /// title (big) in the middle, the data date and Excel on the right.
+  /// Narrow screens: the three parts wrap, centred.
+  Widget _topLine(String title, {List<Widget> left = const [], List<Widget> right = const []}) {
+    final t = Text.rich(TextSpan(text: tr(title)),
+        textAlign: TextAlign.center,
+        style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 18, color: AppPalette.fg(_kPurple)));
+    final stamp = _stamp();
+    final r = [
+      if (stamp.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(right: 8, bottom: 6),
+          child: Text.rich(TextSpan(text: stamp), style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
+        ),
+      ...right,
+    ];
+    return LayoutBuilder(builder: (_, bc) {
+      if (bc.maxWidth < 760) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Column(children: [
+            Padding(padding: const EdgeInsets.only(bottom: 6), child: t),
+            Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [...left, ...r]),
+          ]),
+        );
+      }
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(child: Wrap(alignment: WrapAlignment.start, crossAxisAlignment: WrapCrossAlignment.center, children: left)),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Padding(padding: const EdgeInsets.only(bottom: 6), child: t)),
+          Expanded(child: Wrap(alignment: WrapAlignment.end, crossAxisAlignment: WrapCrossAlignment.center, children: r)),
+        ]),
+      );
+    });
   }
 
   /// A centred row of chips / buttons.
@@ -297,31 +353,23 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
         child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: items),
       );
 
-  Widget _copyBox(String title, String text) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppPalette.bg(const Color(0xFFF1F8FF)),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppPalette.line(const Color(0x331E3A8A))),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Icon(Icons.send_rounded, size: 16, color: Color(0xFF1E3A8A)),
-            const SizedBox(width: 6),
-            Expanded(child: Text.rich(TextSpan(text: tr(title)), style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12.5))),
-            TextButton.icon(
+  /// Telegram: one small button that copies the text (no big box).
+  Widget _copyBox(String title, String text) => Center(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Tooltip(
+            message: text.length > 600 ? '${text.substring(0, 600)}…' : text,
+            child: OutlinedButton.icon(
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: text));
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Copied. Paste it in Telegram."), behavior: SnackBarBehavior.floating));
               },
-              icon: const Icon(Icons.copy_rounded, size: 16),
-              label: const Text("Copy"),
+              icon: const Icon(Icons.send_rounded, size: 16),
+              label: const Text("Copy for Telegram"),
             ),
-          ]),
-          SelectableText(text, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.4)),
-        ]),
+          ),
+        ),
       );
 
   Widget _goalChart(String title, List<(String, int, int)> rows) {
@@ -376,10 +424,8 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
   /// Results By Center: the current status, or a week day by day.
   bool _weekView = false;
 
-  Widget _centerSwitch() => _bar([
-        _chip('Current status', !_weekView, () => setState(() => _weekView = false)),
-        _chip('Week by day', _weekView, () => setState(() => _weekView = true)),
-      ]);
+  Widget _centerSwitch() =>
+      _pick('View', const ['Current status', 'Week by day'], _weekView ? 'Week by day' : 'Current status', (v) => setState(() => _weekView = v == 'Week by day'), translate: true);
 
   Widget _note(String t) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
@@ -390,8 +436,7 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
     if (_weekView) return _weeklyTab();
     final b = _centersBlock();
     return _page([
-      _centerSwitch(),
-      _bar([
+      _topLine('Results By Center', left: [_centerSwitch()], right: [
         _excelButton(() async {
           final book = RepBook();
           final s = book.sheet('General');
@@ -402,10 +447,6 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
           s.widths(14, 26, 10, b.cols.length + 2);
           await book.save(context, 'Center_Status_${DateFormat('yyyy-MM-dd').format(DateTime.now())}');
         }),
-        Padding(
-          padding: const EdgeInsets.only(left: 6, bottom: 6),
-          child: Text.rich(TextSpan(text: _stamp()), style: TextStyle(fontSize: 11.5, color: AppPalette.fg(Colors.grey.shade700))),
-        ),
       ]),
       _table(b, below: [
         _goalChart('Goal and Overall by center place', [
@@ -524,8 +565,9 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
     final blocks = _monthBlocks(m);
     final cs = _centers.where((c) => _n(c.month) == _n(m)).toList();
     return _page([
-      _bar([
-        for (final x in months) _chip(x, x == m, () => setState(() => _month = x)),
+      _topLine('Results By Opening Month', left: [
+        _pick('Month', months, m, (x) => setState(() => _month = x)),
+      ], right: [
         _excelButton(() async {
           final book = RepBook();
           for (final mo in months) {
@@ -613,9 +655,9 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
     final m = months.contains(_groupsMonth) ? _groupsMonth : 'General';
     final blocks = [for (final g in _kGroups) _groupBlock(m, g)];
     return _page([
-      _note("Students count under their guide's current department and region."),
-      _bar([
-        for (final x in months) _chip(x, x == m, () => setState(() => _groupsMonth = x)),
+      _topLine('Results By Groups', left: [
+        _pick('Month', months, m, (x) => setState(() => _groupsMonth = x)),
+      ], right: [
         _excelButton(() async {
           final book = RepBook();
           for (final mo in months) {
@@ -630,6 +672,7 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
           await book.save(context, 'Evangelism_Groups_${DateFormat('yyyy-MM-dd').format(DateTime.now())}');
         }),
       ]),
+      _note("Students count under their guide's current department and region."),
       for (final b in blocks) ...[
         _table(b),
       ],
@@ -671,8 +714,9 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
     final months = ['General', ..._goalMonths];
     final m = months.contains(_deptMonth) ? _deptMonth : 'General';
     return _page([
-      _bar([
-        for (final x in months) _chip(x, x == m, () => setState(() => _deptMonth = x)),
+      _topLine('24 Depts Results', left: [
+        _pick('Month', months, m, (x) => setState(() => _deptMonth = x)),
+      ], right: [
         _excelButton(() async {
           final book = RepBook();
           for (final mo in months) {
@@ -693,54 +737,111 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
 
   // ------------------------------------------------------------------ 5. Participation
 
-  /// [region, department, is24, members, guides, teachers, either]
-  List<RepBlock> _participationBlocks() {
-    final cols = const [
-      RepCol('Total'),
-      RepCol('As Guide', 'Num'),
-      RepCol('As Guide', '%', '', true),
-      RepCol('As BB Teacher', 'Num'),
-      RepCol('As BB Teacher', '%', '', true),
-      RepCol('General', 'Num'),
-      RepCol('General', '%', '', true),
-    ];
-    String regionOf(List m) => CompLevel.locationBucket({'location': (m[0] ?? '').toString(), 'department': (m[1] ?? '').toString()});
-    bool inGroup(List m, String key) {
-      if (key.isEmpty) return true;
-      if (key == '24') return m[2] == true;
-      if (key == 'MOU') return regionOf(m) == CompLevel.mou;
-      return _n((m[1] ?? '').toString()) == _n(key) && regionOf(m) != CompLevel.mou;
-    }
+  /// Participation: one table, chosen with two dropdowns.
+  ///  · Region status: the rows are the regions of one group (Church: its
+  ///    departments, MOU: its sub-regions)
+  ///  · Group status: the rows are the groups of one region (or all)
+  static const List<(String, String)> _kPartGroups = [
+    ('General', ''),
+    ('24 Depts', '24'),
+    ('장년회', '장년회'),
+    ('부녀회', '부녀회'),
+    ('청년회', '청년회'),
+    ('신학부', '신학부'),
+    ('새신자', '새신자'),
+    ('MOU', 'MOU'),
+    ('Church', 'Church'),
+  ];
+  String _partView = 'Region status';
+  String _partGroup = '';
+  String _partRegion = '';
 
-    List<num?> vals(Iterable<List> l) {
-      int n = 0, g = 0, t = 0, e = 0;
-      for (final m in l) {
-        n += (m[3] as num?)?.toInt() ?? 0;
-        g += (m[4] as num?)?.toInt() ?? 0;
-        t += (m[5] as num?)?.toInt() ?? 0;
-        e += (m[6] as num?)?.toInt() ?? 0;
-      }
-      double p(int x) => n > 0 ? x / n * 100 : 0;
-      return [n, g, p(g), t, p(t), e, p(e)];
-    }
+  static const List<RepCol> _partCols = [
+    RepCol('Total'),
+    RepCol('As Guide', 'Num'),
+    RepCol('As Guide', '%', '', true),
+    RepCol('As BB Teacher', 'Num'),
+    RepCol('As BB Teacher', '%', '', true),
+    RepCol('General', 'Num'),
+    RepCol('General', '%', '', true),
+  ];
 
-    return [
-      for (final grp in _kGroups)
-        () {
-          final l = _members.where((m) => inGroup(m, grp.$2)).toList();
-          final order = _regionOrder(l.map(regionOf).toSet());
-          return RepBlock(
-            title: "Participation — ${grp.$1}",
-            corner: grp.$1,
-            cols: cols,
-            rows: [
-              RepRow('', 'Total', vals(l), total: true),
-              for (final r in order) RepRow('', _regionLabel(r), vals(l.where((m) => regionOf(m) == r))),
-            ],
-          );
-        }(),
-    ];
+  /// members row: [location, department, 24부서, members, guides, teachers, either, sub-region]
+  String _mRegion(List m) => CompLevel.locationBucket({'location': (m[0] ?? '').toString(), 'department': (m[1] ?? '').toString()});
+
+  bool _mInGroup(List m, String key) {
+    final r = _mRegion(m);
+    switch (key) {
+      case '':
+        return true;
+      case '24': // 24부서 workers of the regions
+        return m[2] == true && r != '24Dept' && r != CompLevel.mou;
+      case 'MOU':
+        return r == CompLevel.mou;
+      case 'Church':
+        return r == '24Dept';
+      default:
+        return _n((m[1] ?? '').toString()) == _n(key) && r != CompLevel.mou && r != '24Dept';
+    }
   }
+
+  List<num?> _partVals(Iterable<List> l) {
+    int n = 0, g = 0, t = 0, e = 0;
+    for (final m in l) {
+      n += (m[3] as num?)?.toInt() ?? 0;
+      g += (m[4] as num?)?.toInt() ?? 0;
+      t += (m[5] as num?)?.toInt() ?? 0;
+      e += (m[6] as num?)?.toInt() ?? 0;
+    }
+    double p(int x) => n > 0 ? x / n * 100 : 0;
+    return [n, g, p(g), t, p(t), e, p(e)];
+  }
+
+  String _partName(String key) => _kPartGroups.firstWhere((g) => g.$2 == key, orElse: () => (key, key)).$1;
+
+  /// The regions in the standard order (24Dept, MOU, New Region, Wakiso … UAE).
+  List<String> _partRegions() => CompLevel.orderNames(_members.map(_mRegion).where((r) => r != 'Other').toSet(), 'Location status');
+
+  RepBlock _partRegionBlock(String key) {
+    final l = _members.where((m) => _mInGroup(m, key)).toList();
+    String rowOf(List m) => key == 'Church'
+        ? ((m[1] ?? '').toString().trim().isEmpty ? 'Other' : (m[1] ?? '').toString().trim())
+        : key == 'MOU'
+            ? ((m.length > 7 ? (m[7] ?? '') : '').toString().trim().isEmpty ? 'MOU' : (m[7] ?? '').toString().trim())
+            : _mRegion(m);
+    final keys = l.map(rowOf).toSet();
+    final order = key == 'Church' || key == 'MOU' ? CompLevel.naturalSort(keys) : CompLevel.orderNames(keys, 'Location status');
+    return RepBlock(
+      title: "Participation — ${_partName(key)}",
+      corner: key == 'Church' ? 'Departments' : (key == 'MOU' ? 'Sub-regions' : 'Regions'),
+      cols: _partCols,
+      rows: [
+        RepRow('', 'Total', _partVals(l), total: true),
+        for (final r in order) RepRow('', r, _partVals(l.where((m) => rowOf(m) == r))),
+      ],
+    );
+  }
+
+  RepBlock _partGroupBlock(String region) {
+    final l = region.isEmpty ? _members : _members.where((m) => _mRegion(m) == region).toList();
+    return RepBlock(
+      title: "Participation by group — ${region.isEmpty ? tr('All regions') : region}",
+      corner: 'Groups',
+      cols: _partCols,
+      rows: [
+        RepRow('', 'Total', _partVals(l), total: true),
+        for (final g in _kPartGroups.skip(1))
+          if (l.any((m) => _mInGroup(m, g.$2))) RepRow('', g.$1, _partVals(l.where((m) => _mInGroup(m, g.$2)))),
+      ],
+    );
+  }
+
+  /// Every table (for Excel).
+  List<RepBlock> _participationBlocks() => [
+        for (final g in _kPartGroups) _partRegionBlock(g.$2),
+        _partGroupBlock(''),
+        for (final r in _partRegions()) _partGroupBlock(r),
+      ];
 
   /// Weekly member: per group, members, Overall reached by their guides,
   /// the guides, and the stages.
@@ -753,7 +854,6 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
       const RepCol('Guide', '%', '', true),
       for (final s in _stages) RepCol('Status by stage', s),
     ];
-    String regionOf(List m) => CompLevel.locationBucket({'location': (m[0] ?? '').toString(), 'department': (m[1] ?? '').toString()});
     RepRow row(String label, Iterable<List> mem, Iterable<_Stu> stu, {bool total = false}) {
       final n = mem.fold<int>(0, (a, m) => a + ((m[3] as num?)?.toInt() ?? 0));
       final g = mem.fold<int>(0, (a, m) => a + ((m[4] as num?)?.toInt() ?? 0));
@@ -763,31 +863,33 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
 
     final rows = <RepRow>[row('All Saints', _members, _students.where((s) => !s.byStudent), total: true)];
     for (final grp in _kGroups.skip(1)) {
-      bool inG(List m) {
-        if (grp.$2 == '24') return m[2] == true;
-        if (grp.$2 == 'MOU') return regionOf(m) == CompLevel.mou;
-        return _n((m[1] ?? '').toString()) == _n(grp.$2) && regionOf(m) != CompLevel.mou;
-      }
-
-      rows.add(row(grp.$1, _members.where(inG), _students.where((s) => !s.byStudent && _inGroup(s, grp.$2))));
+      rows.add(row(grp.$1, _members.where((m) => _mInGroup(m, grp.$2)), _students.where((s) => !s.byStudent && _inGroup(s, grp.$2))));
     }
     rows.add(row('Guided by students', const [], _students.where((s) => s.byStudent)));
     return RepBlock(title: 'Weekly member summary', corner: 'Dept', cols: cols, rows: rows);
   }
 
   Widget _participationTab() {
-    final blocks = _participationBlocks();
     final weekly = _weeklyMemberBlock();
+    final regions = _partRegions();
+    if (_partRegion.isNotEmpty && !regions.contains(_partRegion)) _partRegion = '';
+    final byRegion = _partView == 'Region status';
+    final table = byRegion ? _partRegionBlock(_partGroup) : _partGroupBlock(_partRegion);
     return _page([
       _note("Members who are the guide or the BB teacher of at least one BB student (registered members only)."),
       _bar([
+        _pick('Level', const ['Region status', 'Group status'], _partView, (v) => setState(() => _partView = v), translate: true),
+        if (byRegion)
+          _pick('Group', [for (final g in _kPartGroups) g.$2], _partGroup, (v) => setState(() => _partGroup = v), labelOf: _partName)
+        else
+          _pick('Region', ['', ...regions], _partRegion, (v) => setState(() => _partRegion = v), labelOf: (r) => r.isEmpty ? tr('All regions') : r),
         _excelButton(() async {
           final book = RepBook();
           final s = book.sheet('Participation');
           s.title(tr('Participation'));
           s.title(_stamp(), size: 10);
           s.gap();
-          for (final b in blocks) {
+          for (final b in _participationBlocks()) {
             s.block(b);
           }
           s.widths(4, 18, 11, 9);
@@ -799,8 +901,8 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
           await book.save(context, 'Evangelism_Participation_${DateFormat('yyyy-MM-dd').format(DateTime.now())}');
         }),
       ]),
+      _table(table),
       _table(weekly),
-      for (final b in blocks) _table(b),
     ]);
   }
 
@@ -913,7 +1015,7 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
     }
     final days = [for (int i = 0; i < 7; i++) _week.add(Duration(days: i))];
     return _page([
-      _centerSwitch(),
+      _topLine('Results By Center', left: [_centerSwitch()]),
       _bar([
         IconButton(
           tooltip: tr('Previous week'),
@@ -958,7 +1060,9 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
         const Padding(padding: EdgeInsets.all(30), child: Center(child: CircularProgressIndicator()))
       else ...[
         _table(_weekSummary()),
-        _bar([for (int i = 0; i < 7; i++) _chip(DateFormat('EEE').format(days[i]), _day == i, () => setState(() => _day = i))]),
+        _bar([
+          _pick('Day', [for (int i = 0; i < 7; i++) '$i'], '$_day', (v) => setState(() => _day = int.parse(v)), labelOf: (v) => DateFormat('EEEE d MMM').format(days[int.parse(v)])),
+        ]),
         _table(_dayBlock(days[_day])),
       ],
     ]);
@@ -975,6 +1079,22 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
     final months = [for (final m in _months) m['label'].toString()];
     String month = c?.month ?? (months.isEmpty ? '' : months.first);
     bool online = c?.online ?? false;
+    // the center places of each region (Evangelism policies › Centers)
+    List<Map<String, dynamic>> places = [];
+    try {
+      places = List<Map<String, dynamic>>.from(await _db.from('evangelism_centers').select('name, location, sub_location').eq('is_active', true).order('sort_order').order('name'));
+    } catch (_) {}
+    if (!mounted) return;
+    List<String> placesOf(String r) {
+      final inRegion = [for (final p in places) if (_n((p['location'] ?? '').toString()) == _n(r)) p['name'].toString()];
+      // no center has this region set yet: every center place
+      final list = inRegion.isNotEmpty ? inRegion : [for (final p in places) p['name'].toString()];
+      if (center.text.trim().isNotEmpty && !list.contains(center.text.trim())) list.insert(0, center.text.trim());
+      return list;
+    }
+
+    final regions = <String>[..._stdRegions, ...months];
+    if (region.text.trim().isNotEmpty && !regions.contains(region.text.trim())) regions.insert(0, region.text.trim());
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -983,24 +1103,31 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
           content: SizedBox(
             width: 380,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Autocomplete<String>(
-                initialValue: TextEditingValue(text: region.text),
-                optionsBuilder: (v) => [..._stdRegions, ...months].where((r) => r.toLowerCase().contains(v.text.toLowerCase())),
-                onSelected: (v) => region.text = v,
-                fieldViewBuilder: (ctx, ctrl, focus, submit) => TextField(
-                  controller: ctrl,
-                  focusNode: focus,
-                  onChanged: (v) => region.text = v,
-                  decoration: InputDecoration(
-                    labelText: tr('Region (or the batch month for MOU / online)'),
-                    border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                  ),
+              DropdownButtonFormField<String>(
+                initialValue: regions.contains(region.text) ? region.text : null,
+                isExpanded: true,
+                items: [for (final r in regions) DropdownMenuItem(value: r, child: Text.rich(TextSpan(text: r)))],
+                onChanged: (v) => set(() {
+                  region.text = v ?? '';
+                  if (!placesOf(region.text).contains(center.text)) center.text = '';
+                }),
+                decoration: InputDecoration(
+                  labelText: tr('Region (or the batch month for MOU / online)'),
+                  border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                 ),
               ),
               const SizedBox(height: 10),
-              TextField(
-                controller: center,
-                decoration: InputDecoration(labelText: tr('Center place'), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
+              DropdownButtonFormField<String>(
+                key: ValueKey('cp-${region.text}'),
+                initialValue: placesOf(region.text).contains(center.text) && center.text.isNotEmpty ? center.text : null,
+                isExpanded: true,
+                items: [for (final p in placesOf(region.text)) DropdownMenuItem(value: p, child: Text.rich(TextSpan(text: p)))],
+                onChanged: (v) => set(() => center.text = v ?? ''),
+                decoration: InputDecoration(
+                  labelText: tr('Center place'),
+                  helperText: places.isEmpty ? tr('Add center places in Evangelism policies › Centers first.') : null,
+                  border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                ),
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
@@ -1329,7 +1456,7 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
     );
     return _page([
       _head("Goals of the 24 departments", sub: "Per opening month", action: _lightButton('Set the goals', Icons.edit_rounded, () => _editDeptGoals(m))),
-      _bar([for (final x in months) _chip(x, x == m, () => setState(() => _goalsMonth = x))]),
+      _bar([_pick('Month', months, m, (x) => setState(() => _goalsMonth = x))]),
       Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: _table(block))),
     ]);
   }
@@ -1417,20 +1544,16 @@ class _CenterReportsScreenState extends State<CenterReportsScreen> with SingleTi
       backgroundColor: AppPalette.bg(const Color(0xFFF7F4FC)),
       appBar: AppBar(
         centerTitle: true,
-        toolbarHeight: 64,
+        toolbarHeight: 48,
         backgroundColor: AppPalette.bg(const Color(0xFFF7F4FC)),
         surfaceTintColor: Colors.transparent,
-        title: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text("Center Reports", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 19, color: AppPalette.fg(_kPurple))),
-          const SizedBox(height: 2),
-          Text.rich(TextSpan(text: _stamp().isEmpty ? tr('Evangelism results') : "${tr('Evangelism results')} · ${_stamp()}"),
-              style: GoogleFonts.merriweather(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
-        ]),
+        // the data date is on each section's top line
+        title: Text("Center Reports", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(_kPurple))),
         actions: [IconButton(tooltip: tr('Refresh'), icon: Icon(Icons.refresh_rounded, color: AppPalette.fg(_kPurple)), onPressed: _loading ? null : _load)],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(54),
+          preferredSize: const Size.fromHeight(50),
           child: Container(
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
             padding: const EdgeInsets.all(4),
             constraints: const BoxConstraints(maxWidth: 820),
             decoration: BoxDecoration(

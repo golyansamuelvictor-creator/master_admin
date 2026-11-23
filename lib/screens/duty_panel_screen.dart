@@ -285,8 +285,9 @@ class _PoliciesViewState extends State<PoliciesView> {
     }
     final shown = _rows.where((p) => p['is_active'] != false).length;
     final cats = _rows.map((p) => p['category']).toSet().length;
-    // one compact bar (search, level, counts, add) so the policies get the screen
-    return Column(children: [
+    // one compact bar (search, level, counts, add) so the policies get the
+    // screen; centred, not wider than about 1180
+    return Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1180), child: Column(children: [
       Container(
         padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
         decoration: BoxDecoration(color: AppPalette.bg(Colors.white), border: Border(bottom: BorderSide(color: AppPalette.line(Colors.black12)))),
@@ -411,7 +412,7 @@ class _PoliciesViewState extends State<PoliciesView> {
           ),
       ],
       ])),
-    ]);
+    ])));
   }
 }
 
@@ -431,26 +432,22 @@ class _EvangelismGoalsState extends State<_EvangelismGoals> {
 
   @override
   Widget build(BuildContext context) {
-    Widget chip(int i, String label) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 3),
-          child: ChoiceChip(
-            label: Text(label, style: GoogleFonts.merriweather(fontSize: 12, fontWeight: _view == i ? FontWeight.w900 : FontWeight.w600, color: AppPalette.fg(_kPurple))),
-            selected: _view == i,
-            showCheckmark: false,
-            backgroundColor: AppPalette.bg(Colors.white),
-            selectedColor: AppPalette.bg(const Color(0xFFEDE4FA)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            onSelected: (_) => setState(() => _view = i),
-          ),
-        );
+    const views = ["By unit", "By center place", "24 Departments"];
     return Column(children: [
       Padding(
-        padding: const EdgeInsets.only(top: 8, bottom: 4),
-        child: Wrap(alignment: WrapAlignment.center, children: [
-          chip(0, "By unit"),
-          chip(1, "By center place"),
-          chip(2, "24 Departments"),
-        ]),
+        padding: const EdgeInsets.only(top: 10, bottom: 4),
+        child: Center(
+          child: SizedBox(
+            width: 260,
+            child: DropdownButtonFormField<int>(
+              initialValue: _view,
+              isExpanded: true,
+              decoration: InputDecoration(labelText: tr("Goals"), isDense: true, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
+              items: [for (int i = 0; i < views.length; i++) DropdownMenuItem(value: i, child: Text(views[i], style: GoogleFonts.merriweather(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppPalette.fg(_kPurple))))],
+              onChanged: (v) => setState(() => _view = v ?? 0),
+            ),
+          ),
+        ),
       ),
       Expanded(
         child: IndexedStack(index: _view, children: const [
@@ -527,14 +524,13 @@ class _GoalsViewState extends State<GoalsView> {
             width: 460,
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Wrap(alignment: WrapAlignment.center, spacing: 6, runSpacing: 6, children: [
-                  for (final l in levels)
-                    ChoiceChip(
-                      label: Text(kPolicyLevels[l] ?? l),
-                      selected: level == l,
-                      onSelected: (_) => set(() => level = l),
-                    ),
-                ]),
+                DropdownButtonFormField<String>(
+                  initialValue: level,
+                  isExpanded: true,
+                  decoration: InputDecoration(labelText: tr("Goal for"), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))), isDense: true),
+                  items: [for (final l in levels) DropdownMenuItem(value: l, child: Text(kPolicyLevels[l] ?? l))],
+                  onChanged: (v) => set(() => level = v ?? level),
+                ),
                 for (final (i, c, label) in [(1, loc, "Location"), (2, sub, "Sub-location"), (3, dept, "Department"), (4, team, "Team"), (5, cell, "Cell")])
                   if (depth() >= i) ...[
                     const SizedBox(height: 10),
@@ -941,7 +937,7 @@ class _CentersViewState extends State<_CentersView> {
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center)));
-    const w0 = [40.0, 170.0, 130.0, 140.0, 80.0, 70.0, 56.0];
+    const w0 = [44.0, 200.0, 150.0, 160.0, 92.0, 80.0, 64.0];
     const head = ["No.", "Center place", "Location", "Sub-location", "Opening", "In use", ""];
     final rows = _rows;
     return ListView(padding: AppSizes.page, children: [
@@ -952,11 +948,8 @@ class _CentersViewState extends State<_CentersView> {
       const SizedBox(height: 10),
       LayoutBuilder(
         builder: (context, box) {
-          // stretch the columns over the width, about 2 cm in from each side on wide screens
-          final avail = box.maxWidth >= 900 ? box.maxWidth - 150 : box.maxWidth;
-          final sum = w0.fold<double>(0, (a, b) => a + b);
-          final k = avail > sum ? avail / sum : 1.0;
-          final w = [for (final x in w0) x * k];
+          // compact columns, centred (no stretching over the width)
+          const w = w0;
           return box.maxWidth < 640 ? _phoneList() : SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(

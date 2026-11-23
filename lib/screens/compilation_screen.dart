@@ -109,6 +109,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   String? _selectedLocation;
   String? _selectedSubLocation;
+  /// "All …" in a leader's picker: every unit of that level inside their own unit
+  static const String _kAll = '__all__';
   String? _selectedDepartment;
   String? _selectedTeam;
 
@@ -224,12 +226,20 @@ class _CompilationEngineState extends State<CompilationEngine> {
   /// Level the modules group by. A group leader's "Group status" (Men's,
   /// Women's, Youth ...) is their group from the department column
   /// (장년회, 부녀회 ...), not the Book of Life groups.
-  String get _moduleLevel =>
-      (_isGroupLeader && CompLevel.of(_currentLevel) == CompLevel.group) ? 'Dept status' : _currentLevel;
+  String get _moduleLevel => _currentLevel == 'Current dept status'
+      ? 'Dept status' // the current departments (장년회, 부녀회 … 24부서)
+      : (_isGroupLeader && CompLevel.of(_currentLevel) == CompLevel.group) ? 'Dept status' : _currentLevel;
 
   /// Theology Department: its dashboard toggles between its members at
   /// church level and the Theology department across the locations.
   bool get _isTheologyDept => GroupScope.deptNo(_grouping) == '18' || widget.role.toLowerCase().startsWith('theology_dept');
+
+  /// Theology: "Church level" = the 24-department Theology Department at
+  /// church level only; "Across locations" = every member whose department
+  /// is 신학부 (the church's own included).
+  bool get _theoChurch => _isTheologyDept && !_dualModeIsChurch;
+  bool get _theoAcross => _isTheologyDept && _dualModeIsChurch;
+  static const List<String> _theoNames = ['신학부', 'Theology', 'Theology Dept', 'Theology Department'];
 
   bool get _isGroupLeader {
     if (_isTheologyDept) return _dualModeIsChurch; // across the locations
@@ -420,8 +430,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
     } else if (_isSubLocationLeader) {
       _hierarchy = ['Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isLocationLeader) {
-      // Group status = the location's members by Book of Life group (교역자, 자문회, 장년회 ...)
-      _hierarchy = ['Location status', 'Group status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
+      // the region's members by current department (장년회, 부녀회, 청년회, 신학부, 새신자, 24부서),
+      // not by Book of Life group
+      _hierarchy = ['Location status', 'Current dept status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     } else if (_isGroupLeader) {
       _hierarchy = ['Group status', 'Location status', 'Sub location status', 'Team status', 'Cell status'];
     } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
@@ -430,7 +441,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
       _hierarchy = ['Church status', 'Group status', 'Location status', 'Sub location status', 'Dept status', 'Team status', 'Cell status'];
     }
 
-    if (_hasCurrentDeptStatus) {
+    if (_hasCurrentDeptStatus && !_hierarchy.contains('Current dept status')) {
       _hierarchy = List<String>.from(_hierarchy);
       final g = _hierarchy.indexOf('Group status');
       _hierarchy.insert(g >= 0 ? g + 1 : _hierarchy.length, 'Current dept status');
@@ -444,7 +455,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
 
   void _updateGroupByFromLevel(String level) {
     if (level == 'Current dept status') {
-      _groupBy = _isGroupLeader ? 'Group' : 'Church';
+      _groupBy = _isGroupLeader ? 'Group' : (_isLocationLeader ? 'Dept' : 'Church');
     } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
       _groupBy = 'Church';
     } else if (_isDeptLeader && level == 'Dept status') {
@@ -588,14 +599,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
         _subLocationData = data;
         _subLocations = _subLocationData.map((e) => e['name'].toString()).toSet().toList();
 
-        if (widget.sub.isNotEmpty && _subLocations.contains(widget.sub)) {
+        if (_selectedSubLocation == _kAll) {
+          // keep "All sub regions"
+        } else if (widget.sub.isNotEmpty && _subLocations.contains(widget.sub)) {
           _selectedSubLocation = widget.sub;
         } else if (_selectedSubLocation == null || !_subLocations.contains(_selectedSubLocation)) {
           _selectedSubLocation = _subLocations.isNotEmpty ? _subLocations.first : null;
         }
       });
 
-      if (_selectedSubLocation != null) {
+      if (_selectedSubLocation != null && _selectedSubLocation != _kAll) {
         await _fetchDepartments(_selectedSubLocation!, triggerFetch: false);
       }
       if (triggerFetch) _fetchData();
@@ -638,14 +651,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
         _deptData = data;
         _departments = _deptData.map((e) => e['name'].toString()).toSet().toList();
 
-        if (widget.dept.isNotEmpty && _departments.contains(widget.dept)) {
+        if (_selectedDepartment == _kAll) {
+          // keep "All departments"
+        } else if (widget.dept.isNotEmpty && _departments.contains(widget.dept)) {
           _selectedDepartment = widget.dept;
         } else if (_selectedDepartment == null || !_departments.contains(_selectedDepartment)) {
           _selectedDepartment = _departments.isNotEmpty ? _departments.first : null;
         }
       });
 
-      if (_selectedDepartment != null) {
+      if (_selectedDepartment != null && _selectedDepartment != _kAll) {
         await _fetchTeams(_selectedDepartment!, triggerFetch: false);
       } else if (mounted) {
         setState(() {
@@ -691,7 +706,9 @@ class _CompilationEngineState extends State<CompilationEngine> {
       if (!mounted) return;
       setState(() {
         _teams = CompLevel.naturalSort(names.toSet());
-        if (widget.team.isNotEmpty && _teams.contains(widget.team)) {
+        if (_selectedTeam == _kAll) {
+          // keep "All teams"
+        } else if (widget.team.isNotEmpty && _teams.contains(widget.team)) {
           _selectedTeam = widget.team;
         } else if (_selectedTeam == null || !_teams.contains(_selectedTeam)) {
           _selectedTeam = _teams.isNotEmpty ? _teams.first : null;
@@ -875,7 +892,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
         v = _selectedTeam;
         break;
     }
-    if (v == null || v.isEmpty || v == 'All Locations' || v == 'Church' || v == 'N/A') return '';
+    if (v == null || v.isEmpty || v == _kAll || v == 'All Locations' || v == 'Church' || v == 'N/A') return '';
     return v;
   }
 
@@ -964,14 +981,16 @@ class _CompilationEngineState extends State<CompilationEngine> {
             q = q.eq(deptCol, deptTarget);
             if (deptTarget != 'MOU') q = q.neq(locCol, 'MOU');
             if (deptTarget != '새신자') q = q.neq(locCol, 'New Saints');
-            q = q.neq(locCol, 'Church Workers').neq(locCol, 'Church Main').neq(locCol, 'Church');
+            if (!_theoAcross) q = q.neq(locCol, 'Church Workers').neq(locCol, 'Church Main').neq(locCol, 'Church');
           } else {
             q = q.eq('members.department', deptTarget);
             if (deptTarget != 'MOU') q = q.neq('members.location', 'MOU');
             if (deptTarget != '새신자') q = q.neq('members.location', 'New Saints');
-            q = q.neq('members.location', 'Church Workers')
-                 .neq('members.location', 'Church Main')
-                 .neq('members.location', 'Church');
+            if (!_theoAcross) {
+              q = q.neq('members.location', 'Church Workers')
+                   .neq('members.location', 'Church Main')
+                   .neq('members.location', 'Church');
+            }
           }
         } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
           if (!isBBTable && !isMembersTable) {
@@ -983,6 +1002,8 @@ class _CompilationEngineState extends State<CompilationEngine> {
             final officialDeptId = _roleMetadata?['official_dept_id'];
             if (officialDeptId != null) {
               q = q.eq('members.official_dept_id', officialDeptId);
+            } else if (_theoChurch) {
+              q = q.inFilter('members.department', _theoNames);
             } else if (widget.dept.isNotEmpty && widget.dept != 'N/A' && widget.dept != 'Church') {
               q = q.eq('members.department', widget.dept);
             }
@@ -1103,10 +1124,14 @@ class _CompilationEngineState extends State<CompilationEngine> {
         mQuery = mQuery.eq('department', deptTarget);
         if (deptTarget != 'MOU') mQuery = mQuery.neq('location', 'MOU');
         if (deptTarget != '새신자') mQuery = mQuery.neq('location', 'New Saints');
-        mQuery = mQuery.neq('location', 'Church Workers').neq('location', 'Church Main').neq('location', 'Church');
+        if (!_theoAcross) mQuery = mQuery.neq('location', 'Church Workers').neq('location', 'Church Main').neq('location', 'Church');
       } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
         final officialDeptId = _roleMetadata?['official_dept_id'];
-        if (officialDeptId != null) {
+        // Theology at church level: the church's own members only
+        if (_theoChurch) mQuery = mQuery.or('location.in.(Church,"Church Workers","Church Main"),location.is.null');
+        if (_theoChurch && officialDeptId == null) {
+          mQuery = mQuery.inFilter('department', _theoNames);
+        } else if (officialDeptId != null) {
           mQuery = mQuery.eq('official_dept_id', officialDeptId);
         } else if (widget.dept.isNotEmpty && widget.dept != 'Church') {
           mQuery = mQuery.eq('department', widget.dept);
@@ -1257,7 +1282,7 @@ class _CompilationEngineState extends State<CompilationEngine> {
     if (lv == CompLevel.team) parent = _selectedDepartment ?? '';
     if (lv == CompLevel.dept) parent = _selectedSubLocation ?? '';
     if (lv == CompLevel.subLocation) parent = _selectedLocation ?? '';
-    if (parent == 'All Locations' || parent == 'N/A') parent = '';
+    if (parent == 'All Locations' || parent == 'N/A' || parent == _kAll) parent = '';
     return parent.isNotEmpty ? "$title · $parent" : title;
   }
 
@@ -1763,14 +1788,18 @@ class _CompilationEngineState extends State<CompilationEngine> {
       eq('department', t);
       if (t != 'MOU') neq('location', 'MOU');
       if (t != '새신자') neq('location', 'New Saints');
-      neq('location', 'Church Workers');
-      neq('location', 'Church Main');
-      neq('location', 'Church');
+      if (!_theoAcross) {
+        neq('location', 'Church Workers');
+        neq('location', 'Church Main');
+        neq('location', 'Church');
+      }
     } else if (_is24DeptWorker || (_hasDualModeForCurrentDuty && !_dualModeIsChurch)) {
       f.add({'col': 'location', 'op': 'in_or_null', 'vals': ['Church', 'Church Workers', 'Church Main']});
       final od = _roleMetadata?['official_dept_id'];
       if (od != null) {
         eq('official_dept_id', od.toString());
+      } else if (_theoChurch) {
+        f.add({'col': 'department', 'op': 'in', 'vals': _theoNames});
       } else if (ok(widget.dept)) {
         eq('department', widget.dept);
       }
@@ -3061,52 +3090,71 @@ class _CompilationEngineState extends State<CompilationEngine> {
   }
 
   Widget _buildCascadingPicker(String levelName) {
+    final lv = CompLevel.of(levelName);
+    final active = _pickersFor(lv);
+    // region, sub-region and department leaders: the first picker also offers
+    // "All …" = every unit of the level inside their own unit (like "All
+    // Locations" for the church administration)
+    final leaderAll = !_isChurchWideCompiler && !_isGroupLeader && (_isLocationLeader || _isSubLocationLeader || _isDeptLeader);
+    final firstPicker = ['loc', 'sub', 'dept', 'team'].firstWhere(active.contains, orElse: () => '');
 
-    Widget pick(String label, List<String> items, String? current, ValueChanged<String> onSelect, {bool allowAll = false}) {
-      final List<String> pickList = allowAll ? ["All Locations", ...items] : items;
+    Widget pick(String key, String label, List<String> items, String? current, ValueChanged<String?> onSelect, {String? allLabel}) {
+      final List<String> pickList = allLabel != null ? [allLabel, ...items] : items;
+      final shown = current == _kAll ? allLabel : current;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(pPurple))),
           const SizedBox(height: 3),
-          _unitDropdown(pickList, current, onSelect),
+          _unitDropdown(pickList, shown, (v) => onSelect(v == allLabel ? _kAll : v)),
           const SizedBox(height: 6),
         ],
       );
     }
 
-    final locPicker = pick("Select location:", _locations, _selectedLocation, (v) {
-      setState(() => _selectedLocation = (v == "All Locations") ? null : v);
+    String? allFor(String key, String text) => leaderAll && key == firstPicker ? text : null;
+
+    final locPicker = pick('loc', "Select location:", _locations, _selectedLocation, (v) {
+      setState(() => _selectedLocation = (v == "All Locations" || v == _kAll) ? null : v);
       if (_selectedLocation != null) _fetchSubLocations(_selectedLocation!, triggerFetch: true);
       else _fetchData();
-    }, allowAll: true);
+    }, allLabel: "All Locations");
 
-    final subPicker = pick("Select sub-location:", _subLocations, _selectedSubLocation, (v) {
+    final subPicker = pick('sub', "Select sub-location:", _subLocations, _selectedSubLocation, (v) {
       setState(() => _selectedSubLocation = v);
-      _fetchDepartments(v, triggerFetch: true);
-    });
+      if (v == _kAll || v == null) {
+        _fetchData();
+      } else {
+        _fetchDepartments(v, triggerFetch: true);
+      }
+    }, allLabel: allFor('sub', "All Sub Regions"));
 
-    final deptPicker = pick("Select department:", _departments, _selectedDepartment, (v) {
+    final deptPicker = pick('dept', "Select department:", _departments, _selectedDepartment, (v) {
       setState(() => _selectedDepartment = v);
-      _fetchTeams(v, triggerFetch: true);
-    });
+      if (v == _kAll || v == null) {
+        _fetchData();
+      } else {
+        _fetchTeams(v, triggerFetch: true);
+      }
+    }, allLabel: allFor('dept', "All Departments"));
 
-    final teamPicker = pick("Select team:", _teams, _selectedTeam, (v) {
+    final teamPicker = pick('team', "Select team:", _teams, _selectedTeam, (v) {
       setState(() => _selectedTeam = v);
       _fetchData();
-    });
+    }, allLabel: allFor('team', "All Teams"));
 
     // Which pickers show is decided by _pickersFor(), the same rule the
     // query and the modules use, so what you pick is what gets filtered.
-    final lv = CompLevel.of(levelName);
-    final active = _pickersFor(lv);
+    // After an "All …" choice the pickers below it are not needed.
     if (active.isNotEmpty) {
-      return _pickerContainer([
-        if (active.contains('loc')) locPicker,
-        if (active.contains('sub')) subPicker,
-        if (active.contains('dept')) deptPicker,
-        if (active.contains('team')) teamPicker,
-      ]);
+      final shown = <Widget>[];
+      for (final k in ['loc', 'sub', 'dept', 'team']) {
+        if (!active.contains(k)) continue;
+        shown.add(switch (k) { 'loc' => locPicker, 'sub' => subPicker, 'dept' => deptPicker, _ => teamPicker });
+        final v = switch (k) { 'loc' => _selectedLocation, 'sub' => _selectedSubLocation, 'dept' => _selectedDepartment, _ => _selectedTeam };
+        if (v == _kAll) break;
+      }
+      return _pickerContainer(shown);
     }
 
     if (_isGroupLeader) {

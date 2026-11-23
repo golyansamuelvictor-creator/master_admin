@@ -1,5 +1,4 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
-import '../../widgets/h_scroll.dart';
 import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:master_admin/core/i18n.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -375,6 +374,8 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
 
   /// About 0.5 cm on each side of the screen
   static const double _side = 19;
+  /// The goals table (and the tiles above it): compact, centred
+  static const double _tableW = 940;
 
   Widget _card({required Widget child}) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
@@ -389,13 +390,13 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
 
   Widget _pick(String label, List<String> items, String? value, ValueChanged<String> onChanged, {String Function(String)? show}) {
     return SizedBox(
-      width: 180,
+      width: 240,
       child: DropdownButtonFormField<String>(
         isExpanded: true,
         initialValue: items.contains(value) ? value : null,
         style: GoogleFonts.merriweather(fontSize: 12, color: AppPalette.fg(Colors.black87)),
-        decoration: InputDecoration(labelText: tr(label), isDense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
-        items: [for (final i in items) DropdownMenuItem(value: i, child: Text(show?.call(i) ?? i, overflow: TextOverflow.ellipsis))],
+        decoration: InputDecoration(labelText: tr(label), isDense: true, contentPadding: const EdgeInsets.fromLTRB(10, 12, 10, 8), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
+        items: [for (final i in items) DropdownMenuItem(value: i, child: Text.rich(TextSpan(text: show?.call(i) ?? i), overflow: TextOverflow.ellipsis))],
         onChanged: (v) {
           if (v != null) onChanged(v);
         },
@@ -408,15 +409,15 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
     final lv = _path.first;
     // everything on one line (scrolls sideways on small screens): half the height
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
         color: AppPalette.bg(Colors.white),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppPalette.line(Colors.grey.shade200)),
         boxShadow: [BoxShadow(color: pPurple.withValues(alpha: 0.10), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 5))],
       ),
-      child: HScroll(
-        child: Row(mainAxisAlignment: MainAxisAlignment.center, spacing: 8, children: [
+      // wraps onto a second line on small screens, so nothing is cut off
+      child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 10, children: [
           Container(
             padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(color: AppPalette.bg(pPurple.withValues(alpha: 0.10)), borderRadius: BorderRadius.circular(8)),
@@ -463,7 +464,6 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
               child: Text(_duty!, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
             ),
         ]),
-      ),
     );
   }
 
@@ -564,8 +564,9 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
     return _card(
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         // summary: the goal of the unit above, what is shared out, what is left
-        Padding(
-          padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+        // (as wide as the table below, centred)
+        Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: _tableW + 8), child: Padding(
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
           child: Row(children: [
             tile(Icons.flag_rounded, _parentRow == null ? "Goal above" : "Goal of ${_parentRow!['label']}",
                 parentMonth == null ? "Not set" : _fmt(_fromMonth(parentMonth, _kind)), pPurple,
@@ -577,21 +578,25 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
                   left.abs() < 0.05 ? "Fully shared" : (left > 0 ? "Still to share" : "Over the goal"),
                   _fmt(_fromMonth(left.abs(), _kind)), leftColor),
           ]),
-        ),
+        ))),
         if (shared != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 0, 6, 10),
+          Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: _tableW), child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(value: shared > 1 ? 1 : shared.toDouble(), minHeight: 6, color: leftColor, backgroundColor: Colors.grey.shade200),
-            ),
+            ),)),
           ),
         // The table fills the card's whole width; on a small phone it
         // scrolls sideways. Lines between every row and column.
+        // compact columns, centred; scrolls sideways on a small phone
         LayoutBuilder(builder: (context, box) => SingleChildScrollView(
           scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: box.maxWidth),
+          child: Center(
           child: Container(
-            width: box.maxWidth < 560 ? 560 : box.maxWidth,
+            width: _tableW,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: line),
@@ -603,12 +608,12 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
                 border: TableBorder(horizontalInside: BorderSide(color: line, width: 0.8), verticalInside: BorderSide(color: line, width: 0.8)),
                 defaultVerticalAlignment: TableCellVerticalAlignment.middle,
                 columnWidths: const {
-                  0: FixedColumnWidth(42),
-                  1: FlexColumnWidth(2.4),
-                  2: FlexColumnWidth(1.6),
-                  3: FlexColumnWidth(1),
-                  4: FlexColumnWidth(1),
-                  5: FlexColumnWidth(1),
+                  0: FixedColumnWidth(40),
+                  1: FixedColumnWidth(340),
+                  2: FixedColumnWidth(200),
+                  3: FixedColumnWidth(120),
+                  4: FixedColumnWidth(120),
+                  5: FixedColumnWidth(120),
                 },
                 children: [
                   TableRow(
@@ -698,6 +703,8 @@ class _TargetSetterScreenState extends State<TargetSetterScreen> {
                 ],
               ),
             ),
+          ),
+          ),
           ),
         )),
         if (left != null)

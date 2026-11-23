@@ -7,6 +7,7 @@ import '../../core/app_palette.dart';
 import '../../core/i18n.dart';
 import 'bb_workspace_screen.dart' show BbSettings;
 import '../../core/friendly_error.dart';
+import '../../widgets/person_search.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -102,6 +103,28 @@ class _BbStudentFormState extends State<BbStudentForm> {
     } catch (e) {
       setState(() => _lookupNote = "Couldn't look up $id: $e");
     }
+  }
+
+  /// Typeahead: find the guide / BB teacher by name, then fill the SCJ ID,
+  /// Korean name and units.
+  Future<void> _findPerson(String who) async {
+    final student = who == 'guide' && _guideIsStudent;
+    final m = await pickBbPerson(context,
+        students: student,
+        initial: _c('${who}_name').text.trim(),
+        title: who == 'guide' ? (student ? "Find the guide (center student)" : "Find the guide") : "Find the BB teacher");
+    if (m == null || !mounted) return;
+    setState(() {
+      _lookupNote = null;
+      _c('${who}_name').text = (m['name'] ?? '').toString();
+      _c('${who}_korean_name').text = (m['korean_name'] ?? '').toString();
+      if (!student) _c('${who}_scj_id').text = (m['scj_id'] ?? '').toString();
+      final keys = who == 'guide' ? _guideUnit : _teacherUnit;
+      final vals = [m['location'], m['sub_location'], m['department'], m['team'], m['cell_group']];
+      for (int i = 0; i < keys.length; i++) {
+        _c(keys[i]).text = (vals[i] ?? '').toString();
+      }
+    });
   }
 
   Future<void> _save() async {
@@ -203,8 +226,9 @@ class _BbStudentFormState extends State<BbStudentForm> {
                 helperText: tr("Guided by a center student: the units come from Theology › Students"),
                 isDense: true,
                 border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-                suffixIcon: widget.readOnly ? null : IconButton(tooltip: tr("Find in Theology › Students"), icon: const Icon(Icons.search_rounded, size: 18), onPressed: _lookupCenterStudent),
+                suffixIcon: widget.readOnly ? null : IconButton(tooltip: tr("Find in Theology › Students"), icon: const Icon(Icons.person_search_rounded, size: 18), onPressed: () => _findPerson('guide')),
               ),
+              onTap: widget.readOnly || _c('guide_name').text.isNotEmpty ? null : () => _findPerson('guide'),
               onSubmitted: (_) => _lookupCenterStudent(),
             ),
           ),
@@ -230,7 +254,22 @@ class _BbStudentFormState extends State<BbStudentForm> {
         _text('${who}_dept', "Department", width: 150),
         _text('${who}_team', "Team", width: 110),
         _text('${who}_cell', "Cell Group", width: 110),
-        if (!(who == 'guide' && _guideIsStudent)) _text('${who}_name', "Name"),
+        if (!(who == 'guide' && _guideIsStudent))
+          SizedBox(
+            width: 230,
+            child: TextField(
+              controller: _c('${who}_name'),
+              readOnly: widget.readOnly,
+              onTap: widget.readOnly || _c('${who}_name').text.isNotEmpty ? null : () => _findPerson(who),
+              decoration: InputDecoration(
+                labelText: tr("Name"),
+                helperText: widget.readOnly ? null : tr("Tap the search to find them by name"),
+                isDense: true,
+                border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                suffixIcon: widget.readOnly ? null : IconButton(tooltip: tr("Find by name"), icon: const Icon(Icons.person_search_rounded, size: 18), onPressed: () => _findPerson(who)),
+              ),
+            ),
+          ),
         _text('${who}_korean_name', "Korean name"),
       ];
 

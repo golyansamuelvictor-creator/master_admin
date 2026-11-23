@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_menus.dart';
 import '../core/group_scope.dart';
+import '../services/member_view_access.dart';
 
 class MemberDirectoryScreen extends StatefulWidget {
   final String userRole, userLoc, userSub, userDept, userTeam, userCell;
@@ -64,6 +65,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     StudentDuties.viewsStudents([widget.userRole]).then((v) {
       if (mounted && v) setState(() => _students = true);
     });
+    _countRequests();
   }
 
   bool _students = false;
@@ -323,10 +325,19 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
     return query.order('english_name').order('id');
   }
 
-  void _openMember(dynamic member) => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (c) => MemberDetailScreen(member: member, userRole: widget.userRole)),
-      );
+  /// Leaders below region level need a one-day permission first.
+  Future<void> _openMember(dynamic member) async {
+    if (!await MemberViewAccess.ensure(context)) return;
+    if (!mounted) return;
+    Navigator.push(context, MaterialPageRoute(builder: (c) => MemberDetailScreen(member: member, userRole: widget.userRole)));
+  }
+
+  /// Requests from the leaders below waiting for this leader.
+  int _viewRequests = 0;
+  Future<void> _countRequests() async {
+    final r = await MemberViewAccess.waiting();
+    if (mounted) setState(() => _viewRequests = r.length);
+  }
 
   void _memberMenu(Offset pos, dynamic member) {
     final name = (member['english_name'] ?? '').toString();
@@ -368,8 +379,78 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
         if (e.key == skip || e.value == null) continue;
         if (_v(m, e.key) != e.value) return false;
       }
+      if (skip != 'duty' && _roles.isNotEmpty && !_roles.contains(_v(m, 'duty'))) return false;
       return true;
     }).toList();
+  }
+
+  /// Role filter: several roles at once.
+  final Set<String> _roles = {};
+
+  Future<void> _pickRoles(List<String> options) async {
+    final picked = Set<String>.of(_roles);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text("Filter by role"),
+          content: SizedBox(
+            width: 360,
+            height: 420,
+            child: Column(children: [
+              Row(children: [
+                TextButton(onPressed: () => set(() => picked.addAll(options)), child: const Text("Select all")),
+                TextButton(onPressed: () => set(picked.clear), child: const Text("Clear")),
+              ]),
+              Expanded(
+                child: ListView(children: [
+                  for (final o in options)
+                    CheckboxListTile(
+                      dense: true,
+                      value: picked.contains(o),
+                      title: Text.rich(TextSpan(text: o)),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      onChanged: (v) => set(() => v == true ? picked.add(o) : picked.remove(o)),
+                    ),
+                ]),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Apply")),
+          ],
+        ),
+      ),
+    );
+    if (ok == true && mounted) {
+      setState(() {
+        _roles
+          ..clear()
+          ..addAll(picked);
+        _page = 0;
+      });
+    }
+  }
+
+  Widget _roleChip(List<dynamic> all) {
+    final options = _apply(all, skip: 'duty').map((m) => _v(m, 'duty')).where((v) => v.isNotEmpty && v.toLowerCase() != 'n/a').toSet().toList()..sort();
+    if (options.length <= 1 && _roles.isEmpty) return const SizedBox.shrink();
+    const purple = Color(0xFF4A148C);
+    final on = _roles.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InputChip(
+        avatar: Icon(on ? Icons.check_circle_rounded : Icons.filter_list_rounded, size: 18, color: AppPalette.fg(on ? Colors.white : purple)),
+        label: Text.rich(TextSpan(text: on ? "${tr('Role')}: ${_roles.length == 1 ? _roles.first : '${_roles.length} ${tr('roles')}'}" : tr('Role')),
+            style: TextStyle(fontWeight: FontWeight.w600, color: AppPalette.fg(on ? Colors.white : purple))),
+        backgroundColor: AppPalette.bg(on ? purple : purple.withValues(alpha: 0.07)),
+        side: BorderSide(color: AppPalette.line(purple.withValues(alpha: 0.25))),
+        onPressed: () => _pickRoles(options),
+        deleteIcon: on ? const Icon(Icons.close, size: 16, color: Colors.white) : null,
+        onDeleted: on ? () => setState(_roles.clear) : null,
+      ),
+    );
   }
 
   Widget _filterChip(String key, List<dynamic> all) {
@@ -421,6 +502,12 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
         foregroundColor: AppPalette.fg(Colors.black),
         elevation: 0.5,
         actions: [
+          if (_viewRequests > 0)
+            IconButton(
+              tooltip: tr("Member details requests"),
+              icon: Badge(label: Text('$_viewRequests'), child: const Icon(Icons.lock_open_rounded)),
+              onPressed: () => MemberViewAccess.showRequests(context).then((_) => _countRequests()),
+            ),
           if (_students)
             TextButton.icon(
               icon: const Icon(Icons.school_rounded, size: 18),
@@ -540,7 +627,7 @@ class _MemberDirectoryScreenState extends State<MemberDirectoryScreen> {
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: AppSizes.gutter),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          for (final k in _filters.keys) _filterChip(k, all),
+                          for (final k in _filters.keys) k == 'duty' ? _roleChip(all) : _filterChip(k, all),
                           if (anyFilter)
                             TextButton.icon(
                               onPressed: () => setState(() => _filters.updateAll((_, __) => null)),

@@ -54,42 +54,27 @@ class StudentDuties {
   static bool _like(String role, String pattern) =>
       RegExp('^${RegExp.escape(pattern).replaceAll('%', '.*').replaceAll('_', '.')}\$').hasMatch(role.toLowerCase());
 
-  /// Does one of these roles see the students? Theology workers (location
-  /// and church), and the location, sub-location, department, team and cell
-  /// leaders and secretaries (app_config.student_viewer_roles) for their own
-  /// units' students. No church (24) department except Theology.
+  /// Does one of these roles see the students? Only the Theology
+  /// Department (location and church level) and administrators; other
+  /// leaders no longer get the Students buttons (v13.0).
   static Future<bool> viewsStudents(List<String?> roles) async {
     final rs = roles.whereType<String>().where((r) => r.isNotEmpty).map((r) => r.toLowerCase()).toList();
     if (rs.isEmpty) return false;
     if (rs.contains('admin')) return true;
     var theology = const ['theo_%', 'theology_dept_%', 'church_head_instructor'];
-    var viewers = const ['loc_%', 'sub_loc_%', 'dept_%', 'team_%', '%cell_leader%', '%cell_sec%'];
-    final grouping = <String, String>{};
     try {
-      final db = Supabase.instance.client;
-      final rows = await db
+      final rows = await Supabase.instance.client
           .from('app_config')
           .select('config_key, config_value')
-          .inFilter('config_key', ['theology_church_roles', 'theology_location_roles', 'student_viewer_roles']);
-      final t = <String>[], v = <String>[];
+          .inFilter('config_key', ['theology_church_roles', 'theology_location_roles']);
+      final t = <String>[];
       for (final r in rows) {
-        final list = List<String>.from((r['config_value'] as List?) ?? const []);
-        (r['config_key'] == 'student_viewer_roles' ? v : t).addAll(list);
+        t.addAll(List<String>.from((r['config_value'] as List?) ?? const []));
       }
       if (t.isNotEmpty) theology = t;
-      if (v.isNotEmpty) viewers = v;
-      final g = await db.from('app_roles').select('role_key, "Grouping"').inFilter('role_key', rs);
-      for (final r in g) {
-        grouping[r['role_key'].toString().toLowerCase()] = (r['Grouping'] ?? '').toString();
-      }
     } catch (_) {}
     if (rs.any((r) => theology.any((p) => _like(r, p)))) return true;
-    // church departments (24-Dept …) and church-level roles never see them
-    bool church(String r) {
-      final g = (grouping[r] ?? '').toLowerCase();
-      return g.startsWith('24-dept') || g.startsWith('church') || r.startsWith('church_');
-    }
-    return rs.any((r) => !church(r) && viewers.any((p) => _like(r, p)));
+    return isTheology();
   }
 }
 

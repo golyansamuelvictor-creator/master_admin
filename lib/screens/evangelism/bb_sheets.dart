@@ -11,6 +11,7 @@ import '../../widgets/h_scroll.dart';
 import 'bb_workspace_screen.dart' show BbSettings;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/security.dart';
+import '../../widgets/person_search.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -374,6 +375,29 @@ class _BbSheetState extends State<BbSheet> {
     } catch (_) {}
   }
 
+  Future<void> _findPerson(Map<String, dynamic> s, String who, String editKey) async {
+    final id = s['id'].toString();
+    final student = who == 'guide' && (_dirty[id]?['guided_by_type'] ?? s['guided_by_type'] ?? '').toString().toLowerCase().contains('student');
+    final m = await pickBbPerson(context, students: student, initial: (_dirty[id]?['${who}_name'] ?? s['${who}_name'] ?? '').toString(),
+        title: who == 'guide' ? "Find the guide" : "Find the BB teacher");
+    if (!mounted) return;
+    if (m == null) {
+      setState(() => _editing = editKey); // type by hand
+      return;
+    }
+    setState(() {
+      final d = _dirty.putIfAbsent(id, () => {});
+      d['${who}_name'] = m['name'];
+      d['${who}_korean_name'] = m['korean_name'];
+      if (!student) d['${who}_scj_id'] = m['scj_id'];
+      d['${who}_location'] = m['location'];
+      d['${who}_sub_location'] = m['sub_location'];
+      d['${who}_dept'] = m['department'];
+      d['${who}_team'] = m['team'];
+      d['${who}_cell'] = m['cell_group'];
+    });
+  }
+
   Future<void> _mark(Map<String, dynamic> s, DateTime d) async {
     if (!widget.canEdit) return;
     final id = s['id'].toString(), k = _f.format(d);
@@ -508,9 +532,11 @@ class _BbSheetState extends State<BbSheet> {
     // sideways drag, so the sheet stuck and scrolled slowly on phones.
     final editKey = '$id|${c.key}';
     if (_editing != editKey) {
+      final person = c.key == 'guide_name' || c.key == 'teacher_name';
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _editing = editKey),
+        // guide / BB teacher: find them by name (cancel = type by hand)
+        onTap: person && widget.canEdit ? () => _findPerson(s, c.key == 'guide_name' ? 'guide' : 'teacher', editKey) : () => setState(() => _editing = editKey),
         child: _box(val, c.width, _rowH, bg: changed ? const Color(0xFFFFF8E1) : bg, bold: c.key == 'student_name'),
       );
     }

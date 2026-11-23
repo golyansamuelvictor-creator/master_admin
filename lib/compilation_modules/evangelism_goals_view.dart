@@ -65,6 +65,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   Map<String, dynamic>? _data;
   List<Map<String, dynamic>> _series = [];
   String? _error;
+  String? _errorDetail; // the database's own message, under "Details"
   bool _loading = true;
 
   /// The unit opened by tapping a row: its full path (location, sub-location,
@@ -191,6 +192,7 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
     setState(() {
       _loading = true;
       _error = null;
+      _errorDetail = null;
       if (cached != null) {
         _data = cached.$1;
         _series = cached.$2;
@@ -218,7 +220,11 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = "Couldn't compile the results${friendlyTail(e)}";
+          final raw = e.toString();
+          _errorDetail = raw;
+          _error = raw.contains('57014') || raw.toLowerCase().contains('statement timeout')
+              ? tr("The results took too long to compile. Choose a shorter period or a smaller unit, or ask the administrator to run 40_round36.sql.")
+              : "Couldn't compile the results${friendlyTail(e)}";
         });
       }
     }
@@ -244,6 +250,23 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
     String name(Map r) => (r['unit'] ?? '').toString();
     // Group status: 장년회, 부녀회, 청년회, 신학부, 새신자, Mou
     const groupOrder = ['장년회', '부녀회', '청년회', '신학부', '새신자', 'Mou'];
+    // the standard units are always listed, with 0 when nothing is in the BB File
+    // (regions for the whole church, the groups in Group status)
+    final standard = _isGroup
+        ? groupOrder
+        : (_depth == 1 && _fixed.every((x) => x == null) ? CompLevel.orderedLocations.where((n) => n != 'New Location').toList() : const <String>[]);
+    String k(String v) => v.toLowerCase().replaceAll(RegExp(r'[^a-z0-9가-힣]'), '');
+    final have = rows.map((r) => k(name(r))).toSet();
+    for (final u in standard) {
+      if (have.contains(k(u))) continue;
+      rows.add({
+        'unit': u,
+        'keys': [u],
+        'stages': {for (final st in _stages) st['stage'].toString(): {'goal': null, 'prev': 0, 'new': 0, 'moved': 0, 'total': 0, 'now': 0}},
+        'offline': {'goal': null, 'total': 0},
+        'online': {'goal': null, 'total': 0},
+      });
+    }
     final order = _isGroup
         ? [...groupOrder, ...rows.map(name).where((n) => !groupOrder.contains(n))]
         : CompLevel.orderNames(rows.map(name), const ['Church', 'Location', 'Sub-location', 'Dept', 'Team', 'Cell'][_depth]);
@@ -497,8 +520,9 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
             BarChartData(
               maxY: maxY,
               alignment: BarChartAlignment.spaceAround,
-              gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: Colors.black12, strokeWidth: 1)),
-              borderData: FlBorderData(show: false),
+              // axis lines, no grid
+              gridData: const FlGridData(show: false),
+              borderData: FlBorderData(show: true, border: Border(left: BorderSide(color: AppPalette.line(Colors.black45)), bottom: BorderSide(color: AppPalette.line(Colors.black45)))),
               barTouchData: BarTouchData(
                 touchTooltipData: BarTouchTooltipData(
                   getTooltipItem: (g, gi, rod, ri) => BarTooltipItem(
@@ -615,8 +639,9 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
               minY: 0,
               maxY: (maxV * 1.2).ceilToDouble(),
               lineBarsData: lines,
-              gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (_) => FlLine(color: Colors.black12, strokeWidth: 1)),
-              borderData: FlBorderData(show: false),
+              // axis lines, no grid
+              gridData: const FlGridData(show: false),
+              borderData: FlBorderData(show: true, border: Border(left: BorderSide(color: AppPalette.line(Colors.black45)), bottom: BorderSide(color: AppPalette.line(Colors.black45)))),
               titlesData: FlTitlesData(
                 topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -645,7 +670,30 @@ class _EvangelismGoalsViewState extends State<EvangelismGoalsView> {
   @override
   Widget build(BuildContext context) {
     if (_loading && _data == null) return const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()));
-    if (_error != null) return Padding(padding: const EdgeInsets.all(24), child: Center(child: Text(_error!, textAlign: TextAlign.center)));
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text.rich(TextSpan(text: _error), textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          Wrap(alignment: WrapAlignment.center, spacing: 8, children: [
+            OutlinedButton.icon(onPressed: _load, icon: const Icon(Icons.refresh_rounded, size: 18), label: const Text("Try again")),
+            if (_errorDetail != null)
+              TextButton(
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (c) => AlertDialog(
+                    title: const Text("Details"),
+                    content: SelectableText(_errorDetail!),
+                    actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text("Close"))],
+                  ),
+                ),
+                child: const Text("Details"),
+              ),
+          ]),
+        ]),
+      );
+    }
     final period = "${DateFormat('d MMM').format(widget.from)} – ${DateFormat('d MMM yyyy').format(widget.to)}";
     final b = _bucket;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

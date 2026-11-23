@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/app_palette.dart';
 import '../core/i18n.dart';
@@ -13,6 +14,27 @@ class Bar3DSeries {
   final List<double> values;
   final bool pct;
   const Bar3DSeries(this.name, this.color, this.values, {this.pct = false});
+}
+
+/// The user's chart style: 3D (default) or flat 2D. Kept on the device and
+/// used by every [Bar3DChart].
+class ChartPrefs {
+  static final ValueNotifier<bool> flat = ValueNotifier<bool>(false);
+  static bool _loaded = false;
+
+  static void load() {
+    if (_loaded) return;
+    _loaded = true;
+    SharedPreferences.getInstance().then((p) => flat.value = p.getBool('chart_flat') ?? false).catchError((_) => false);
+  }
+
+  static Future<void> set(bool v) async {
+    flat.value = v;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool('chart_flat', v);
+    } catch (_) {}
+  }
 }
 
 /// A plain 3D column chart: light coloured bars with a top and a side,
@@ -29,6 +51,11 @@ class Bar3DChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (labels.isEmpty || series.isEmpty) return const SizedBox.shrink();
+    ChartPrefs.load();
+    return ValueListenableBuilder<bool>(valueListenable: ChartPrefs.flat, builder: (ctx, flat, _) => _chart(flat));
+  }
+
+  Widget _chart(bool flat) {
     final n = labels.length;
     final perGroup = series.length * 30.0 + 26; // the least room a group needs
     return Column(children: [
@@ -39,7 +66,7 @@ class Bar3DChart extends StatelessWidget {
         final chart = SizedBox(
           width: w,
           height: height,
-          child: CustomPaint(painter: _Bar3DPainter(labels: labels, series: series, slot: slot, dark: AppPalette.isDark)),
+          child: CustomPaint(painter: _Bar3DPainter(labels: labels, series: series, slot: slot, dark: AppPalette.isDark, flat: flat)),
         );
         if (w <= avail + 0.5) return chart;
         return Scrollbar(
@@ -48,13 +75,34 @@ class Bar3DChart extends StatelessWidget {
         );
       }),
       const SizedBox(height: 6),
-      Wrap(alignment: WrapAlignment.center, spacing: 16, runSpacing: 4, children: [
+      Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 16, runSpacing: 4, children: [
         for (final s in series)
           Row(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 12, height: 12, decoration: BoxDecoration(color: s.color, borderRadius: BorderRadius.circular(3))),
             const SizedBox(width: 5),
             Text(s.name, style: GoogleFonts.merriweather(fontSize: 11.5, color: AppPalette.fg(Colors.black87))),
           ]),
+        // 3D or flat, for every chart
+        Tooltip(
+          message: tr("Chart style"),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => ChartPrefs.set(!flat),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppPalette.bg(const Color(0xFFF3ECFC)),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppPalette.line(const Color(0x334A148C))),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(flat ? Icons.bar_chart_rounded : Icons.view_in_ar_rounded, size: 14, color: AppPalette.fg(const Color(0xFF4A148C))),
+                const SizedBox(width: 4),
+                Text(flat ? "2D" : "3D", style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.w800, color: AppPalette.fg(const Color(0xFF4A148C)))),
+              ]),
+            ),
+          ),
+        ),
       ]),
     ]);
   }
@@ -64,8 +112,8 @@ class _Bar3DPainter extends CustomPainter {
   final List<String> labels;
   final List<Bar3DSeries> series;
   final double slot;
-  final bool dark;
-  _Bar3DPainter({required this.labels, required this.series, required this.slot, required this.dark});
+  final bool dark, flat;
+  _Bar3DPainter({required this.labels, required this.series, required this.slot, required this.dark, this.flat = false});
 
   String _fmt(double v, bool pct) {
     final r = (v * 10).round() / 10;
@@ -103,13 +151,15 @@ class _Bar3DPainter extends CustomPainter {
 
     final groupInner = slot - 18;
     final barW = math.min(30.0, groupInner / s * 0.72);
-    final depth = barW * 0.35;
+    final depth = flat ? 0.0 : barW * 0.35;
     final gap = (groupInner - barW * s - depth) / math.max(1, s);
 
-    // floor line
-    canvas.drawLine(Offset(4, baseY), Offset(size.width - 4, baseY), Paint()
-      ..color = (dark ? Colors.white24 : const Color(0x33000000))
-      ..strokeWidth = 1);
+    // the two axis lines (no grid)
+    final axis = Paint()
+      ..color = (dark ? Colors.white38 : const Color(0x66000000))
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(4, baseY), Offset(size.width - 4, baseY), axis);
+    canvas.drawLine(Offset(4, top - 6), Offset(4, baseY), axis);
 
     for (int g = 0; g < n; g++) {
       final gx = 4 + slot * g + 9;
@@ -123,6 +173,7 @@ class _Bar3DPainter extends CustomPainter {
         // shadow, front, top, side
         canvas.drawRect(Rect.fromLTWH(x + depth * 0.5, baseY - 2, barW, 3), Paint()..color = const Color(0x14000000));
         canvas.drawRRect(RRect.fromRectAndCorners(Rect.fromLTWH(x, yTop, barW, h)), Paint()..color = c);
+        if (!flat) {
         final topFace = Path()
           ..moveTo(x, yTop)
           ..lineTo(x + depth, yTop - depth)
@@ -137,6 +188,7 @@ class _Bar3DPainter extends CustomPainter {
           ..lineTo(x + barW, baseY)
           ..close();
         canvas.drawPath(side, Paint()..color = Color.lerp(c, Colors.black, 0.18)!);
+        }
         // value above the bar
         final tp = _tp(_fmt(v, ser.pct), 10, ink, bold: true, maxW: barW + depth + gap + 12);
         tp.paint(canvas, Offset(x + (barW + depth) / 2 - tp.width / 2, yTop - depth - tp.height - 1));
@@ -158,7 +210,7 @@ class _Bar3DPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _Bar3DPainter old) => old.labels != labels || old.series != series || old.slot != slot || old.dark != dark;
+  bool shouldRepaint(covariant _Bar3DPainter old) => old.labels != labels || old.series != series || old.slot != slot || old.dark != dark || old.flat != flat;
 }
 
 /// Light colours for chart series (purple, blue, rose, teal, amber).

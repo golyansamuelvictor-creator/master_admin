@@ -706,6 +706,65 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
     );
   }
 
+  /// Role: several at once (sent as role keys joined by "|").
+  Widget _roleFilter() {
+    final opts = _facets['role'] ?? const [];
+    final chosen = (_role ?? '').split('|').where((x) => x.isNotEmpty).toSet();
+    String labelOf(String v) => (opts.firstWhere((o) => o['value'] == v, orElse: () => {'label': v})['label'] ?? v).toString();
+    final text = chosen.isEmpty ? tr("Role") : (chosen.length == 1 ? labelOf(chosen.first) : "${chosen.length} ${tr('roles')}");
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: ActionChip(
+        avatar: Icon(chosen.isEmpty ? Icons.filter_list_rounded : Icons.check_rounded, size: 16),
+        label: Text.rich(TextSpan(text: text), overflow: TextOverflow.ellipsis),
+        backgroundColor: AppPalette.bg(chosen.isEmpty ? Colors.white : const Color(0xFFEDE3F8)),
+        side: BorderSide(color: AppPalette.line(chosen.isEmpty ? Colors.black12 : pPurple)),
+        onPressed: opts.isEmpty
+            ? null
+            : () async {
+                final picked = Set<String>.of(chosen);
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => StatefulBuilder(
+                    builder: (ctx, set) => AlertDialog(
+                      title: const Text("Filter by role"),
+                      content: SizedBox(
+                        width: 380,
+                        height: 440,
+                        child: Column(children: [
+                          Row(children: [
+                            TextButton(onPressed: () => set(() => picked.addAll(opts.map((o) => o['value'].toString()))), child: const Text("Select all")),
+                            TextButton(onPressed: () => set(picked.clear), child: const Text("Clear")),
+                          ]),
+                          Expanded(
+                            child: ListView(children: [
+                              for (final o in opts)
+                                CheckboxListTile(
+                                  dense: true,
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                  value: picked.contains(o['value'].toString()),
+                                  title: Text.rich(TextSpan(text: "${o['label']}  (${o['n']})")),
+                                  onChanged: (v) => set(() => v == true ? picked.add(o['value'].toString()) : picked.remove(o['value'].toString())),
+                                ),
+                            ]),
+                          ),
+                        ]),
+                      ),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+                        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Apply")),
+                      ],
+                    ),
+                  ),
+                );
+                if (ok != true || !mounted) return;
+                setState(() => _role = picked.isEmpty ? null : picked.join('|'));
+                _load();
+              },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scopeText = switch (_scope) {
@@ -783,7 +842,7 @@ class _AdminUserManagementScreenState extends State<AdminUserManagementScreen> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  _filter('role', "Role", _role, (v) => _role = v),
+                  _roleFilter(),
                   _filter('location', "Location", _location, (v) => _location = v),
                   _filter('sub_location', "Sub-location", _subLocation, (v) => _subLocation = v),
                   _filter('department', "Department", _department, (v) => _department = v),

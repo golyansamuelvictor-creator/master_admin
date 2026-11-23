@@ -11,6 +11,7 @@ import 'admin/approval_inbox.dart';
 import '../widgets/role_change_inbox.dart';
 import '../services/app_sounds.dart';
 import '../services/media_playback.dart' show appNavigatorKey;
+import '../services/member_view_access.dart';
 
 /// Unread notifications for the signed-in user, live (for the bell badge).
 class NotificationCount {
@@ -439,7 +440,11 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> wit
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => _markRead(n),
+        onTap: () {
+          _markRead(n);
+          // a leader asked to view member details: answer it here
+          if ((n['link_type'] ?? '').toString() == 'member_view_request') MemberViewAccess.showRequests(context);
+        },
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

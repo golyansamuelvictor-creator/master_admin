@@ -7,6 +7,7 @@ import '../../core/i18n.dart';
 import 'bb_workspace_screen.dart';
 import 'center_reports_screen.dart';
 import '../../core/friendly_error.dart';
+import 'member_tracing_screen.dart';
 
 const Color _kPurple = Color(0xFF4A148C);
 
@@ -115,8 +116,22 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
           const SizedBox(width: 8),
           Text("Results filters", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, color: AppPalette.fg(_kPurple), fontSize: 15)),
         ]),
-        if (widget.onOpenClassic != null) ...[
+        if (_canCenter) ...[
           const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const CenterReportsScreen())),
+            icon: const Icon(Icons.store_mall_directory_rounded, size: 18),
+            label: const Text("Center reports"),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppPalette.fg(const Color(0xFF4A148C)),
+              backgroundColor: AppPalette.bg(const Color(0xFFF3ECFC)),
+              side: BorderSide(color: AppPalette.line(const Color(0x554A148C))),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ],
+        if (widget.onOpenClassic != null) ...[
+          const SizedBox(height: 8),
           ElevatedButton.icon(
             onPressed: widget.onOpenClassic,
             icon: const Icon(Icons.table_view_rounded, size: 18),
@@ -127,18 +142,35 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
           Text("Goals vs current results by unit, down to the cell group, with charts.",
               textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
         ],
+        if (!widget.studentsOnly) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => openMemberTracing(context),
+            icon: const Icon(Icons.account_tree_rounded, size: 18),
+            label: const Text("Member tracing"),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppPalette.fg(const Color(0xFF4A148C)),
+              side: BorderSide(color: AppPalette.line(const Color(0x554A148C))),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text("Each member with the students they guided and taught, and how far each got.",
+              textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
+        ],
         if (_officialView) ...[
           _label("Results of"),
-          SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: 'all', label: Text("Total")),
-              ButtonSegment(value: 'exclude', label: Text("Without Official")),
-              ButtonSegment(value: 'only', label: Text("Dubai Official")),
+          DropdownButtonFormField<String>(
+            initialValue: _official,
+            isExpanded: true,
+            decoration: const InputDecoration(isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
+            items: const [
+              DropdownMenuItem(value: 'all', child: Text("Total")),
+              DropdownMenuItem(value: 'exclude', child: Text("Without Official")),
+              DropdownMenuItem(value: 'only', child: Text("Dubai Official")),
             ],
-            selected: {_official},
-            onSelectionChanged: (v) => _upd(() {
-              _official = v.first;
+            onChanged: (v) => _upd(() {
+              _official = v ?? 'all';
               _rev++;
             }),
           ),
@@ -182,21 +214,6 @@ class _EvangelismResultsScreenState extends State<EvangelismResultsScreen> {
         centerTitle: true,
         title: Text(widget.studentsOnly ? "Students' evangelism results" : "Evangelism results", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 17, color: AppPalette.fg(_kPurple))),
         actions: [
-          if (_canCenter)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-              child: OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppPalette.fg(const Color(0xFF4A148C)),
-                  backgroundColor: AppPalette.bg(const Color(0xFFF3ECFC)),
-                  side: BorderSide(color: AppPalette.line(const Color(0x554A148C))),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                ),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const CenterReportsScreen())),
-                child: Text("Center reports", style: GoogleFonts.merriweather(fontWeight: FontWeight.w800, fontSize: 12.5)),
-              ),
-            ),
           if (!wide && cfg != null)
             IconButton(
               tooltip: tr("Filters"),

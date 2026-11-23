@@ -230,12 +230,21 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
 
     final prof = await _supabase
         .from('profiles')
-        .select('role, location, sub_location, department, team, official_dept_id')
+        .select('role, secondary_role, location, sub_location, department, team, official_dept_id')
         .eq('id', user.id)
         .maybeSingle();
     _deptId = prof?['official_dept_id']?.toString();
 
-    final roleKey = (prof?['role'] ?? widget.role).toString().toLowerCase();
+    var roleKey = (prof?['role'] ?? widget.role).toString().toLowerCase();
+    // a second role that approves (e.g. Team Secretary) counts when the first does not
+    final second = (prof?['secondary_role'] ?? '').toString().toLowerCase();
+    if (second.isNotEmpty && second != roleKey) {
+      try {
+        final rows = await _supabase.from('app_roles').select('role_key, approval_level').inFilter('role_key', [roleKey, second]);
+        int lv(String k) => ((rows as List).firstWhere((r) => r['role_key'].toString().toLowerCase() == k, orElse: () => const {})['approval_level'] as num?)?.toInt() ?? 0;
+        if (lv(roleKey) == 0 && lv(second) > 0) roleKey = second;
+      } catch (_) {}
+    }
     _unit = {
       'location': _clean(prof?['location']),
       'sub_location': _clean(prof?['sub_location']),
@@ -394,6 +403,8 @@ class _ApprovalCockpitState extends State<ApprovalCockpit> {
   bool _inScope(Map<String, dynamic> m) {
     if (_byDeptId && (m['official_dept_id'] ?? '').toString() != _deptId) return false;
     for (final c in _unitCols) {
+      // a profile without a sub-location still reviews its location's units
+      if (c == 'sub_location' && (_unit[c] ?? '').isEmpty) continue;
       if (_clean(m[c]) != _unit[c]) return false;
     }
     if (widget.dualTitle != null && _deptOnly) {

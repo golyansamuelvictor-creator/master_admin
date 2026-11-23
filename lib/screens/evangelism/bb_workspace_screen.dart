@@ -268,7 +268,7 @@ Widget _section(BuildContext context, String title, Widget child, {ExportTable F
 }
 
 /// A centred table that scrolls sideways when it doesn't fit.
-Widget _grid(List<String> headers, List<List<String>> rows, {Set<int> boldRows = const {}, List<Color?>? headerColors, double first = 130, double col = 74}) {
+Widget _grid(List<String> headers, List<List<String>> rows, {Set<int> boldRows = const {}, List<Color?>? headerColors, double first = 130, double col = 74, int lead = 1}) {
   Widget cell(String t, double w, {bool head = false, bool bold = false, Color? bg, Color? fg}) => Container(
         width: w,
         height: head ? 34 : 26,
@@ -292,13 +292,13 @@ Widget _grid(List<String> headers, List<List<String>> rows, {Set<int> boldRows =
             child: Column(children: [
               Row(mainAxisSize: MainAxisSize.min, children: [
                 for (int i = 0; i < headers.length; i++)
-                  cell(headers[i], i == 0 ? first : col, head: true, bg: (headerColors != null && i < headerColors.length ? headerColors[i] : null) ?? const Color(0xFF1E293B)),
+                  cell(headers[i], i < lead ? first : col, head: true, bg: (headerColors != null && i < headerColors.length ? headerColors[i] : null) ?? const Color(0xFF1E293B)),
               ]),
               for (int r = 0; r < rows.length; r++)
                 Row(mainAxisSize: MainAxisSize.min, children: [
                   for (int i = 0; i < rows[r].length; i++)
-                    cell(rows[r][i], i == 0 ? first : col,
-                        bold: boldRows.contains(r) || i == 0, bg: boldRows.contains(r) ? const Color(0xFFF1E8FB) : (r.isEven ? Colors.white : const Color(0xFFF8FAFC))),
+                    cell(rows[r][i], i < lead ? first : col,
+                        bold: boldRows.contains(r) || i < lead, bg: boldRows.contains(r) ? const Color(0xFFF1E8FB) : (r.isEven ? Colors.white : const Color(0xFFF8FAFC))),
                 ]),
             ]),
           ),
@@ -551,12 +551,25 @@ class _SummaryTabState extends State<BbSummaryView> {
     int t(Map? m) => (m?['total'] as num?)?.toInt() ?? 0;
     String num0(double? v) => v == null ? '–' : (v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1));
     String pct(int a, double? goal) => goal == null || goal == 0 ? '–' : '${(a * 100 / goal).round()}%';
+    final depth = _goalDepth;
     List<String> row(String label, Map r) {
       final off = r['offline'] as Map?, on = r['online'] as Map?;
       final go = g(off), gn = g(on);
       final tot = go == null && gn == null ? null : (go ?? 0) + (gn ?? 0);
       final a = t(off) + t(on);
-      return [label, num0(tot), '$a', pct(a, tot), num0(go), '${t(off)}', pct(t(off), go), num0(gn), '${t(on)}', pct(t(on), gn)];
+      // one column per unit level (Region, Sub Region …), the same name repeated when it repeats
+      final keys = [for (final k in (r['keys'] as List? ?? const [])) (k ?? '').toString()];
+      final units = <String>[
+        for (int i = 0; i < depth; i++)
+          r.isEmpty ? '' : (i < keys.length && keys[i].isNotEmpty ? keys[i] : (i == depth - 1 ? label : '')),
+      ];
+      if (r.isEmpty || label == "General total") {
+        units
+          ..clear()
+          ..add(label)
+          ..addAll(List.filled(depth - 1, ''));
+      }
+      return [...units, num0(tot), '$a', pct(a, tot), num0(go), '${t(off)}', pct(t(off), go), num0(gn), '${t(on)}', pct(t(on), gn)];
     }
     final rows = List<Map<String, dynamic>>.from((ev['rows'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)));
     final level = const ['Location', 'Sub-location', 'Dept', 'Team', 'Cell'][_gLevel < 0 ? 0 : _gLevel];
@@ -568,7 +581,10 @@ class _SummaryTabState extends State<BbSummaryView> {
     ];
   }
 
-  static const _goalHeaders = ["Units", "Total Goal", "Achieved", "%", "Offline", "Achieved", "%", "Online", "Achieved", "%"];
+  /// How many unit columns: Region, then Sub Region … down to the level shown.
+  int get _goalDepth => (_gLevel < 0 ? 0 : _gLevel).clamp(0, 4) + 1;
+  static const _unitHeads = ["Region", "Sub Region", "Department", "Team", "Cell"];
+  List<String> get _goalHeaders => [..._unitHeads.take(_goalDepth), "Total Goal", "Achieved", "%", "Offline", "Achieved", "%", "Online", "Achieved", "%"];
 
   int _n(dynamic v) => (v as num?)?.toInt() ?? 0;
 
@@ -659,46 +675,32 @@ class _SummaryTabState extends State<BbSummaryView> {
             if (_gLevel > _gMin) _goalPickers(),
             _ev == null
                 ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
-                : _grid(_goalHeaders, _goalRows(), boldRows: {0}, col: 70, headerColors: const [
-                    null, Color(0xFF4A148C), Color(0xFF4A148C), Color(0xFF4A148C),
-                    Color(0xFF00695C), Color(0xFF00695C), Color(0xFF00695C),
-                    Color(0xFF1565C0), Color(0xFF1565C0), Color(0xFF1565C0),
+                : _grid(_goalHeaders, _goalRows(), boldRows: {0}, col: 70, first: 110, lead: _goalDepth, headerColors: [
+                    for (int i = 0; i < _goalDepth; i++) null,
+                    const Color(0xFF4A148C), const Color(0xFF4A148C), const Color(0xFF4A148C),
+                    const Color(0xFF00695C), const Color(0xFF00695C), const Color(0xFF00695C),
+                    const Color(0xFF1565C0), const Color(0xFF1565C0), const Color(0xFF1565C0),
                   ]),
           ]),
           export: () => ExportTable(title: "Goals this month", subtitle: "Evangelism results", headers: _goalHeaders, rows: _ev == null ? const [] : _goalRows()),
         )
       else if (sec.contains('goals') && goals.isNotEmpty)
-        _section(
-          context,
-          "Goals this month",
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 10, children: [
-              for (final g in goals)
-                SizedBox(
-                  width: 220,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Column(children: [
-                        Text("${g['metric']}", style: GoogleFonts.merriweather(fontWeight: FontWeight.w900, fontSize: 12.5)),
-                        Text(g['level'] == 'church' ? 'Whole church' : [g['location'], g['sub_location']].where((x) => (x ?? '').toString().isNotEmpty).join(' › '),
-                            style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700))),
-                        const SizedBox(height: 6),
-                        LinearProgressIndicator(
-                          value: ((_n(g['actual'])) / ((g['target'] as num?)?.toDouble() ?? 1)).clamp(0.0, 1.0),
-                          minHeight: 7,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        const SizedBox(height: 4),
-                        Text("${g['actual']} of ${g['target']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      ]),
-                    ),
-                  ),
-                ),
-            ]),
-          ),
-        ),
+        // the unit table couldn't load: the goals as a table all the same
+        () {
+          const h = ["Goal", "Unit", "Target", "Achieved", "%"];
+          final rows = [
+            for (final g in goals)
+              [
+                "${g['metric']}",
+                g['level'] == 'church' ? 'Whole church' : [g['location'], g['sub_location']].where((x) => (x ?? '').toString().isNotEmpty).join(' › '),
+                "${g['target'] ?? ''}",
+                "${g['actual'] ?? ''}",
+                ((g['target'] as num?) ?? 0) > 0 ? "${(_n(g['actual']) / (g['target'] as num).toDouble() * 100).round()}%" : '',
+              ],
+          ];
+          return _section(context, "Goals this month", _grid(h, rows, first: 170, col: 90),
+              export: () => ExportTable(title: "Goals this month", subtitle: "Evangelism results", headers: h, rows: rows));
+        }(),
       if (sec.contains('months'))
       _section(context, "Worthy Prospect + Spirit Creation", _grid(monthHeaders, byMonth, boldRows: {0}, headerColors: monthColors),
           subtitle: "Students counted only when their details are complete and they attended at least once${dropCol ? ' · Dropped: the students of that opening month who dropped' : ''}",

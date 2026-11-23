@@ -861,7 +861,9 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     _dragFrom = null;
     _dragCell = null;
     _pendingSel = null;
-    if (sm == null || e.kind != PointerDeviceKind.mouse || e.buttons != kPrimaryMouseButton) return;
+    _downAt = e.position;
+    final touch = e.kind == PointerDeviceKind.touch || e.kind == PointerDeviceKind.stylus;
+    if (sm == null || (e.kind != PointerDeviceKind.mouse && !touch) || e.buttons != kPrimaryMouseButton) return;
     final c = _colAt(e.position.dx);
     if (c == null) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
@@ -896,8 +898,64 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
       }
       return;
     }
+    if (touch) return; // fingers: tap and scroll as usual; long-press then drag selects
     _dragFrom = e.position;
     _dragCell = (r, c);
+  }
+
+  // ---- touch: long-press a cell, then drag to select; long-press a column
+  //      letter or row number to select from the current cell to it
+  Offset? _downAt;
+  bool _touchSel = false;
+
+  void _touchSelStart(LongPressStartDetails d) {
+    final sm = _sm;
+    _pendingSel = null;
+    if (sm == null || sm.refRows.isEmpty) return;
+    final c = _colAt(d.globalPosition.dx);
+    if (c == null) return;
+    final body = sm.bodyTopOffset;
+    final headTop = body - sm.columnFilterHeight - sm.columnHeight;
+    final cur = sm.currentCellPosition;
+    final last = sm.refRows.length - 1;
+    if (d.globalPosition.dy >= headTop && d.globalPosition.dy < body - sm.columnFilterHeight) {
+      if (c == 0) return;
+      final from = (cur?.columnIdx ?? 0) > 0 ? cur!.columnIdx! : c;
+      HapticFeedback.selectionClick();
+      _selectRange(0, from, last, c);
+      return;
+    }
+    if (d.globalPosition.dy < body) return;
+    final r = sm.getRowIdxByOffset(d.globalPosition.dy);
+    if (r == null) return;
+    if (c == 0) {
+      HapticFeedback.selectionClick();
+      _selectRange(cur?.rowIdx ?? r, 1, r, _gridCols);
+      return;
+    }
+    HapticFeedback.selectionClick();
+    final cell = sm.refRows[r].cells[sm.refColumns[sm.columnIndexesByShowFrozen[c]].field];
+    if (sm.isEditing) sm.setEditing(false, notify: false);
+    sm.clearCurrentSelecting(notify: false);
+    sm.setCurrentCell(cell, r, notify: false);
+    sm.setSelecting(true);
+    _touchSel = true;
+  }
+
+  void _touchSelMove(LongPressMoveUpdateDetails d) {
+    final sm = _sm;
+    if (!_touchSel || sm == null) return;
+    sm.setCurrentSelectingPositionWithOffset(d.globalPosition);
+    sm.eventManager?.addEvent(PlutoGridScrollUpdateEvent(offset: d.globalPosition));
+  }
+
+  void _touchSelEnd() {
+    final sm = _sm;
+    if (!_touchSel || sm == null) return;
+    _touchSel = false;
+    sm.setSelecting(false);
+    PlutoGridScrollUpdateEvent.stopScroll(sm, PlutoGridScrollUpdateDirection.all);
+    sm.setKeepFocus(true);
   }
 
   void _gridPointerMove(PointerMoveEvent e) {
@@ -920,7 +978,9 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
     final sm = _sm;
     final pending = _pendingSel;
     _pendingSel = null;
-    if (pending != null && e is PointerUpEvent) Future(pending);
+    // a finger that moved was scrolling, not tapping a column letter / row number
+    final moved = _downAt != null && (e.position - _downAt!).distance > 12;
+    if (pending != null && e is PointerUpEvent && !moved) Future(pending);
     if (_dragSel && sm != null) {
       sm.setSelecting(false);
       PlutoGridScrollUpdateEvent.stopScroll(sm, PlutoGridScrollUpdateDirection.all);
@@ -1566,6 +1626,13 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                     Expanded(
                       child: OfficeRightClick(
                         onMenu: _rightClick,
+                        child: GestureDetector(
+                        // phones and tablets: long-press, then drag to select cells
+                        supportedDevices: const {PointerDeviceKind.touch, PointerDeviceKind.stylus},
+                        onLongPressStart: _touchSelStart,
+                        onLongPressMoveUpdate: _touchSelMove,
+                        onLongPressEnd: (_) => _touchSelEnd(),
+                        onLongPressCancel: _touchSelEnd,
                         child: Listener(
                         onPointerDown: _gridPointerDown,
                         onPointerMove: _gridPointerMove,
@@ -1647,6 +1714,7 @@ class _SpreadsheetScreenState extends State<SpreadsheetScreen> {
                                     columnTextStyle: GoogleFonts.merriweather(fontSize: 10 * _zoom.clamp(0.9, 2.0).toDouble(), fontWeight: FontWeight.bold, color: AppPalette.fg(Colors.black87)),
                                   ),
                           ),
+                        ),
                         ),
                         ),
                       ),

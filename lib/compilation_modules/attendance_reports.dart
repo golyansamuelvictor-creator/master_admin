@@ -1,16 +1,15 @@
 import 'dart:math' as math;
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:material_ui/material_ui.dart' hide Text;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../core/app_palette.dart';
-import '../core/chart_kit.dart';
 import '../core/compilation_rules.dart';
 import '../core/i18n.dart';
 import '../core/rep_table.dart';
 import '../core/security.dart';
+import '../widgets/bar3d_chart.dart';
 import '../widgets/zoom_box.dart';
 
 /// Service Attendance tables in the church's own Excel layout, for the
@@ -260,6 +259,18 @@ class _AttendanceReportsState extends State<AttendanceReports> {
   bool _deptView = false; // region report: SUMMARY or DEPT
   late String _group = _initialGroup();
   String _bol = 'Summary';
+  bool _wide = false; // the Kampala / Village / Abroad columns
+
+  /// Without the regional columns unless they are expanded.
+  RepBlock _shown(RepBlock b) {
+    if (_wide || b.cols.length <= 11) return b;
+    return RepBlock(
+      title: b.title,
+      corner: b.corner,
+      cols: b.cols.sublist(0, 11),
+      rows: [for (final r in b.rows) RepRow(r.section, r.label, r.vals.length > 11 ? r.vals.sublist(0, 11) : r.vals, total: r.total, sub: r.sub)],
+    );
+  }
 
   String _initialGroup() {
     final l = widget.lockedGroup;
@@ -402,58 +413,11 @@ class _AttendanceReportsState extends State<AttendanceReports> {
   Widget _ratesChart(RepBlock b, String section) {
     final rows = b.rows.where((r) => r.section == section && (r.vals.first ?? 0) > 0).toList();
     if (rows.isEmpty) return const SizedBox.shrink();
-    const att = Color(0xFF4A148C), ip = Color(0xFF26A69A);
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _chartTitle("Attendance % and In-person % — ${b.corner}"),
-        SizedBox(
-          height: 250,
-          child: chartScroll(
-            bars: rows.length * 2,
-            slot: 26,
-            child: BarChart(BarChartData(
-              maxY: 100,
-              minY: 0,
-              gridData: const FlGridData(show: true, drawVerticalLine: false),
-              borderData: FlBorderData(show: false),
-              barTouchData: BarTouchData(
-                touchTooltipData: BarTouchTooltipData(
-                  getTooltipItem: (g, gi, rod, ri) => BarTooltipItem(
-                    "${rows[g.x].label}\n${ri == 0 ? tr('Attendance') : tr('In-person')}: ${repFmt(rod.toY, true)}",
-                    const TextStyle(color: Colors.white, fontSize: 11),
-                  ),
-                ),
-              ),
-              titlesData: FlTitlesData(
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(showTitles: true, reservedSize: 34, interval: 20, getTitlesWidget: (v, m) => Text.rich(TextSpan(text: "${v.toInt()}%"), style: const TextStyle(fontSize: 9))),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: kTiltedAxisReserve,
-                    getTitlesWidget: (v, m) {
-                      final i = v.toInt();
-                      if (i < 0 || i >= rows.length) return const SizedBox.shrink();
-                      return axisLabel(rows[i].label, m, count: rows.length);
-                    },
-                  ),
-                ),
-              ),
-              barGroups: [
-                for (int i = 0; i < rows.length; i++)
-                  BarChartGroupData(x: i, barsSpace: 3, barRods: [
-                    BarChartRodData(toY: (rows[i].vals[2] ?? 0).clamp(0, 100).toDouble(), color: att, width: 11, borderRadius: BorderRadius.circular(3)),
-                    BarChartRodData(toY: (rows[i].vals[4] ?? 0).clamp(0, 100).toDouble(), color: ip, width: 11, borderRadius: BorderRadius.circular(3)),
-                  ]),
-              ],
-            )),
-          ),
-        ),
-        Wrap(spacing: 14, children: [_legend("Attendance %", att), _legend("In-person %", ip)]),
+    return _chartCard(
+      "Attendance % and In-person % — ${b.corner}",
+      Bar3DChart(labels: [for (final r in rows) r.label], height: 270, series: [
+        Bar3DSeries(tr("Attendance %"), kLightSeries[0], [for (final r in rows) (r.vals[2] ?? 0).clamp(0, 100).toDouble()], pct: true),
+        Bar3DSeries(tr("In-person %"), kLightSeries[3], [for (final r in rows) (r.vals[4] ?? 0).clamp(0, 100).toDouble()], pct: true),
       ]),
     );
   }
@@ -461,79 +425,40 @@ class _AttendanceReportsState extends State<AttendanceReports> {
   /// Online, Call and Other ways (Meet, Summary) for Kampala / Village / Abroad.
   Widget _methodChart(RepBlock b) {
     final t = b.rows.first.vals;
-    const on = Color(0xFF42A5F5), cl = Color(0xFFFFA726), ot = Color(0xFF8D6E63);
     double v(int i) => (t.length > i ? (t[i] ?? 0) : 0).toDouble();
     final groups = <(String, double, double, double)>[
       for (int r = 0; r < kAttResidences.length; r++) (kAttResidences[r], v(11 + r * 11 + 1), v(11 + r * 11 + 2), v(11 + r * 11 + 3) + v(11 + r * 11 + 4)),
     ];
     final maxY = groups.map((g) => math.max(g.$2, math.max(g.$3, g.$4))).fold<double>(0, math.max);
     if (maxY <= 0) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _chartTitle("Other ways of attending, by residence — ${b.corner}"),
-        SizedBox(
-          height: 210,
-          child: BarChart(BarChartData(
-            maxY: maxY * 1.15,
-            gridData: const FlGridData(show: true, drawVerticalLine: false),
-            borderData: FlBorderData(show: false),
-            titlesData: FlTitlesData(
-              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              leftTitles: AxisTitles(
-                sideTitles: SideTitles(showTitles: true, reservedSize: 34, getTitlesWidget: (x, m) => Text.rich(TextSpan(text: CompPeriod.fmt(x)), style: const TextStyle(fontSize: 9))),
-              ),
-              bottomTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 26,
-                  getTitlesWidget: (x, m) {
-                    final i = x.toInt();
-                    if (i < 0 || i >= groups.length) return const SizedBox.shrink();
-                    return axisLabel(tr(groups[i].$1), m, count: groups.length);
-                  },
-                ),
-              ),
-            ),
-            barGroups: [
-              for (int i = 0; i < groups.length; i++)
-                BarChartGroupData(x: i, barsSpace: 4, barRods: [
-                  BarChartRodData(toY: groups[i].$2, color: on, width: 16, borderRadius: BorderRadius.circular(3)),
-                  BarChartRodData(toY: groups[i].$3, color: cl, width: 16, borderRadius: BorderRadius.circular(3)),
-                  BarChartRodData(toY: groups[i].$4, color: ot, width: 16, borderRadius: BorderRadius.circular(3)),
-                ]),
-            ],
-          )),
-        ),
-        Wrap(spacing: 14, children: [_legend("Online", on), _legend("Call", cl), _legend("Other ways (Meet, Summary)", ot)]),
+    return _chartCard(
+      "Other ways of attending, by residence — ${b.corner}",
+      Bar3DChart(labels: [for (final g in groups) tr(g.$1)], height: 240, series: [
+        Bar3DSeries(tr("Online"), kLightSeries[1], [for (final g in groups) g.$2]),
+        Bar3DSeries(tr("Call"), kLightSeries[4], [for (final g in groups) g.$3]),
+        Bar3DSeries(tr("Other ways (Meet, Summary)"), kLightSeries[2], [for (final g in groups) g.$4]),
       ]),
     );
   }
 
+  /// A chart in its own card, apart from the tables.
+  Widget _chartCard(String title, Widget chart) => Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+        decoration: BoxDecoration(
+          color: AppPalette.bg(Colors.white),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppPalette.line(const Color(0x224A148C))),
+        ),
+        child: Column(children: [_chartTitle(title), chart]),
+      );
+
   Widget _chartTitle(String t) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
-        child: Text.rich(TextSpan(text: t), style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w900, color: AppPalette.fg(_purple))),
+        child: Text.rich(TextSpan(text: t), textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 11.5, fontWeight: FontWeight.w900, color: AppPalette.fg(_purple))),
       );
-
-  Widget _legend(String t, Color c) => Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(width: 4),
-        Text(t, style: const TextStyle(fontSize: 10.5)),
-      ]);
 
   // ---------------------------------------------------------------- UI
-
-  Widget _chip(String label, bool on, VoidCallback tap) => Padding(
-        padding: const EdgeInsets.only(right: 6, bottom: 6),
-        child: ChoiceChip(
-          label: Text.rich(TextSpan(text: tr(label)), style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: on ? Colors.white : AppPalette.fg(_purple))),
-          selected: on,
-          showCheckmark: false,
-          selectedColor: _purple,
-          onSelected: (_) => tap(),
-        ),
-      );
 
   Widget _dropdown(List<String> items, String value, ValueChanged<String> on, {String Function(String)? label}) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -557,20 +482,29 @@ class _AttendanceReportsState extends State<AttendanceReports> {
         ),
       );
 
+  Widget _gap(Widget w) => Padding(padding: const EdgeInsets.only(right: 8, bottom: 8), child: w);
+
+  /// Service day, Real-time / Pre, the regional columns, then [extra].
   Widget _toolbar(List<Widget> extra) => Wrap(
+        alignment: WrapAlignment.center,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          ...extra,
-          if (!_current) ...[
-            _chip('Sunday', _day == 'Sun', () => setState(() => _day = 'Sun')),
-            _chip('Wednesday', _day == 'Wed', () => setState(() => _day = 'Wed')),
-          ],
-          _chip('Real-time', !_pre, () => setState(() => _pre = false)),
-          _chip('Pre-attendance', _pre, () => setState(() => _pre = true)),
+          for (final w in extra.take(extra.length - 1)) _gap(w),
+          if (!_current) _gap(_dropdown(const ['Sun', 'Wed'], _day, (v) => setState(() => _day = v), label: (d) => d == 'Sun' ? tr('Sunday service') : tr('Wednesday service'))),
+          _gap(_dropdown(const ['rt', 'pre'], _pre ? 'pre' : 'rt', (v) => setState(() => _pre = v == 'pre'), label: (d) => d == 'pre' ? tr('Pre-attendance') : tr('Real-time'))),
+          _gap(TextButton.icon(
+            onPressed: () => setState(() => _wide = !_wide),
+            icon: Icon(_wide ? Icons.close_fullscreen : Icons.open_in_full, size: 14),
+            label: Text(_wide ? "Collapse regional grid" : "Expand regional grid", style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(_purple))),
+          )),
+          if (extra.isNotEmpty) extra.last,
         ],
       );
 
-  Widget _blockCard(RepBlock b, {List<Widget> below = const [], void Function(RepRow)? onTap}) => RepCard(
+  Widget _blockCard(RepBlock full, {List<Widget> below = const [], void Function(RepRow)? onTap}) {
+    final b = _shown(full);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      RepCard(
         title: b.title,
         actions: [
           repAction(Icons.fullscreen_rounded, 'Full screen', () {
@@ -579,17 +513,21 @@ class _AttendanceReportsState extends State<AttendanceReports> {
               MaterialPageRoute(
                 builder: (c) => Scaffold(
                   appBar: AppBar(title: Text.rich(TextSpan(text: b.title))),
-                  body: SingleChildScrollView(padding: const EdgeInsets.all(10), child: ZoomBox(child: RepTable(block: b))),
+                  body: SingleChildScrollView(padding: const EdgeInsets.all(10), child: ZoomBox(child: _rep(b))),
                 ),
               ),
             );
           }),
         ],
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          ZoomBox(child: RepTable(block: b, onTapRow: onTap)),
-          ...below,
-        ]),
-      );
+        child: ZoomBox(child: _rep(b, onTap: onTap)),
+      ),
+      ...below,
+      if (below.isNotEmpty) const SizedBox(height: 6),
+    ]);
+  }
+
+  Widget _rep(RepBlock b, {void Function(RepRow)? onTap}) =>
+      RepTable(block: b, onTapRow: onTap, fill: true, labelW: 150, sectionW: 84, cellW: 58, maxCell: 120, fontSize: 11, rowH: 26, headH: 30);
 
   @override
   Widget build(BuildContext context) {
@@ -613,9 +551,8 @@ class _AttendanceReportsState extends State<AttendanceReports> {
         final regions = AttEngine.regionOrder(all).where((r) => r != 'Other').toList();
         _region ??= (widget.region != null && regions.contains(widget.region)) ? widget.region : (regions.isEmpty ? null : regions.first);
         children.add(_toolbar([
-          if (regions.isNotEmpty) Padding(padding: const EdgeInsets.only(right: 8, bottom: 6), child: _dropdown(regions, _region!, (v) => setState(() => _region = v))),
-          _chip('SUMMARY', !_deptView, () => setState(() => _deptView = false)),
-          _chip('DEPT', _deptView, () => setState(() => _deptView = true)),
+          if (regions.isNotEmpty) _dropdown(regions, _region!, (v) => setState(() => _region = v)),
+          _dropdown(const ['s', 'd'], _deptView ? 'd' : 's', (v) => setState(() => _deptView = v == 'd'), label: (d) => d == 'd' ? 'DEPT' : 'SUMMARY'),
           download,
         ]));
         if (_region != null) {
@@ -627,11 +564,7 @@ class _AttendanceReportsState extends State<AttendanceReports> {
       case AttReportKind.currentDept: {
         final locked = widget.lockedGroup != null;
         children.add(_toolbar([
-          if (!locked)
-            Padding(
-              padding: const EdgeInsets.only(right: 8, bottom: 6),
-              child: _dropdown(kAttGroups.map((g) => g.$2).toList(), _group, (v) => setState(() => _group = v), label: _groupName),
-            ),
+          if (!locked) _dropdown(kAttGroups.map((g) => g.$2).toList(), _group, (v) => setState(() => _group = v), label: _groupName),
           download,
         ]));
         final blocks = _groupBlocks(e, all, _group);
@@ -645,7 +578,7 @@ class _AttendanceReportsState extends State<AttendanceReports> {
       }
       case AttReportKind.bookOfLife: {
         children.add(_toolbar([
-          for (final g in ['Summary', ...CompLevel.orderedBOLGroups]) _chip(g, _bol == g, () => setState(() => _bol = g)),
+          _dropdown(['Summary', ...CompLevel.orderedBOLGroups], _bol, (v) => setState(() => _bol = v), label: (g) => tr(g)),
           download,
         ]));
         if (_bol == 'Summary') {
@@ -676,14 +609,11 @@ class _AttendanceReportsState extends State<AttendanceReports> {
         border: Border.all(color: AppPalette.line(const Color(0x334A148C))),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Row(children: [
-          const Icon(Icons.table_view_rounded, color: _purple, size: 20),
-          const SizedBox(width: 8),
-          Expanded(child: Text(title, style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: AppPalette.fg(_purple)))),
-        ]),
+        Text(title, textAlign: TextAlign.center, style: GoogleFonts.merriweather(fontSize: 14.5, fontWeight: FontWeight.w900, color: AppPalette.fg(_purple))),
         const SizedBox(height: 4),
         Text(
           "Laid out like the church's Excel sheets. Non-registered members (보고예정자) are not counted here; they have their own list.",
+          textAlign: TextAlign.center,
           style: TextStyle(fontSize: 11, color: AppPalette.fg(Colors.grey.shade700)),
         ),
         const SizedBox(height: 10),
@@ -822,7 +752,7 @@ class _NonRegisteredListScreenState extends State<NonRegisteredListScreen> {
       body: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-          child: Wrap(spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          child: Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
             SizedBox(
               width: 240,
               child: TextField(
@@ -845,12 +775,18 @@ class _NonRegisteredListScreenState extends State<NonRegisteredListScreen> {
           ]),
         ),
         Expanded(
-          child: Scrollbar(
+          child: LayoutBuilder(builder: (_, bc) {
+            // centred when it is narrower than the screen
+            final tableW = widths.fold<double>(0, (a, b) => a + b) + (dates.isEmpty ? 140 : dates.length * 70) + 24;
+            return Scrollbar(
                   thumbVisibility: true,
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: SizedBox(
-                      width: widths.fold<double>(0, (a, b) => a + b) + (dates.isEmpty ? 140 : dates.length * 70) + 24,
+                      width: tableW < bc.maxWidth ? bc.maxWidth : tableW,
+                      child: Center(
+                      child: SizedBox(
+                      width: tableW,
                       child: ListView.builder(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
                         // with nobody to list, the table still shows its headers and empty rows
@@ -885,8 +821,11 @@ class _NonRegisteredListScreenState extends State<NonRegisteredListScreen> {
                         },
                       ),
                     ),
+                    ),
+                    ),
                   ),
-                ),
+                );
+          }),
         ),
       ]),
     );

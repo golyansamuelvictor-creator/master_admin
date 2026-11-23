@@ -736,19 +736,10 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
                       child: FittedBox(
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Text("${widget.dualTitle}  ", style: GoogleFonts.merriweather(fontSize: 12, fontWeight: FontWeight.bold, color: AppPalette.fg(const Color(0xFF4A148C)))),
-                          SegmentedButton<bool>(
-                            showSelectedIcon: false,
-                            style: const ButtonStyle(visualDensity: VisualDensity.compact),
-                            segments: [
-                              ButtonSegment(value: true, label: Text(widget.dualLabels.$1)),
-                              ButtonSegment(value: false, label: Text(widget.dualLabels.$2)),
-                            ],
-                            selected: {_wide},
-                            onSelectionChanged: (v) {
-                              setState(() => _wide = v.first);
-                              _load();
-                            },
-                          ),
+                          _mini<bool>(_wide, [(true, widget.dualLabels.$1), (false, widget.dualLabels.$2)], (v) {
+                            setState(() => _wide = v);
+                            _load();
+                          }),
                         ]),
                       ),
                     ),
@@ -812,89 +803,52 @@ class _UniversalInterventionScreenState extends State<UniversalInterventionScree
 
   // ---- the bar above the table: period, search and the duty's toggles
 
-  Widget _chip(String label, bool on, VoidCallback onTap, {String? tip}) => Padding(
-        padding: const EdgeInsets.only(right: 4),
-        child: Tooltip(
-          message: tip ?? label,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(7),
-            onTap: onTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppPalette.bg(on ? headerDarkNavy : Colors.white),
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(color: AppPalette.line(on ? headerDarkNavy : gridLineColor)),
-              ),
-              child: Text(label, style: GoogleFonts.merriweather(fontSize: 10.5, fontWeight: FontWeight.bold, color: AppPalette.fg(on ? Colors.white : headerDarkNavy))),
-            ),
-          ),
-        ),
-      );
-
-  Widget _group(List<Widget> children) => Container(
-        margin: const EdgeInsets.only(left: 8),
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: AppPalette.bg(letterBg),
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: AppPalette.line(gridLineColor)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: children),
-      );
-
   void _set(VoidCallback f) {
     setState(f);
     _load();
   }
 
-  List<Widget> _dutyToggles() {
-    final out = <Widget>[];
-    if (_isSA) {
-      out.add(_group([
-        _chip("Real time", !_pre, () => _set(() => _pre = false)),
-        _chip("Pre-attendance", _pre, () => _set(() => _pre = true)),
-      ]));
-    }
-    final days = AbsenteeLogic.daysOf(widget.duty);
-    if (days.isNotEmpty && !_isVisit) {
-      String short(String d) => d == 'Sunday' ? 'Sun' : d == 'Wednesday' ? 'Wed' : d;
-      out.add(_group([
-        _chip(_isSA || widget.duty == 'All Saints Education' ? "Both" : "All days", _day == null, () => _set(() => _day = null)),
-        for (final d in days) _chip(short(d), _day == d, () => _set(() => _day = d), tip: d),
-      ]));
-    }
-    if (_hasAverage) {
-      out.add(_group([
-        _chip("Count", !_avg, () => setState(() => _avg = false), tip: "Times missed in the period"),
-        _chip("Weekly average", _avg, () => setState(() => _avg = true), tip: "Times missed per week, on average"),
-      ]));
-    }
-    if (_isOffering) {
-      out.add(Container(
+  /// A small dropdown for the top bar (instead of a row of buttons).
+  Widget _mini<T>(T value, List<(T, String)> items, ValueChanged<T> on) => Container(
         margin: const EdgeInsets.only(left: 8),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         height: 30,
         decoration: BoxDecoration(color: AppPalette.bg(Colors.white), borderRadius: BorderRadius.circular(8), border: Border.all(color: AppPalette.line(gridLineColor))),
         child: DropdownButtonHideUnderline(
-          child: DropdownButton<String?>(
-            value: _offCol,
+          child: DropdownButton<T>(
+            value: value,
             isDense: true,
             style: GoogleFonts.merriweather(fontSize: 11, fontWeight: FontWeight.bold, color: AppPalette.fg(headerDarkNavy)),
-            items: [
-              const DropdownMenuItem<String?>(value: null, child: Text("Any offering")),
-              for (final c in OfferingCategories.list) DropdownMenuItem<String?>(value: c.column, child: Text(c.label)),
-            ],
-            onChanged: (v) => _set(() => _offCol = v),
+            items: [for (final i in items) DropdownMenuItem<T>(value: i.$1, child: Text(i.$2))],
+            onChanged: (v) => on(v as T),
           ),
         ),
-      ));
-      out.add(_group([
-        _chip("All weeks", _offWeek == null, () => _set(() => _offWeek = null)),
-        for (int w = 1; w <= 5; w++)
-          _chip("W$w", _offWeek == w, () => _set(() => _offWeek = w),
-              tip: "Week $w${_offCol != null && _offCol != 'offering_weekly' ? ' (counts what was given in weeks 1–$w)' : ''}"),
-      ]));
+      );
+
+  List<Widget> _dutyToggles() {
+    final out = <Widget>[];
+    if (_isSA) {
+      out.add(_mini<bool>(_pre, const [(false, "Real time"), (true, "Pre-attendance")], (v) => _set(() => _pre = v)));
+    }
+    final days = AbsenteeLogic.daysOf(widget.duty);
+    if (days.isNotEmpty && !_isVisit) {
+      out.add(_mini<String?>(_day, [
+        (null, _isSA || widget.duty == 'All Saints Education' ? "Both days" : "All days"),
+        for (final d in days) (d, d),
+      ], (v) => _set(() => _day = v)));
+    }
+    if (_hasAverage) {
+      out.add(_mini<bool>(_avg, const [(false, "Count"), (true, "Weekly average")], (v) => setState(() => _avg = v)));
+    }
+    if (_isOffering) {
+      out.add(_mini<String?>(_offCol, [
+        (null, "Any offering"),
+        for (final c in OfferingCategories.list) (c.column, c.label),
+      ], (v) => _set(() => _offCol = v)));
+      out.add(_mini<int?>(_offWeek, [
+        (null, "All weeks"),
+        for (int w = 1; w <= 5; w++) (w, "Week $w"),
+      ], (v) => _set(() => _offWeek = v)));
     }
     return out;
   }

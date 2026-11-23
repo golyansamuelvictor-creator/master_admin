@@ -126,20 +126,37 @@ class RepTable extends StatelessWidget {
 
   static const Color _purple = Color(0xFF4A148C);
 
+  /// No section column when no row has a section.
+  double get _sectionW => block.rows.every((r) => r.section.isEmpty) ? 0 : sectionW;
+
+  /// The narrowest value column that shows every header on one line.
+  double get _headFit {
+    double w = cellW;
+    final cw = fontSize * 0.66;
+    for (final h in repHeads(block.cols)) {
+      final span = h.c2 - h.c1 + 1;
+      final need = (tr(h.text).length * cw + 12) / span;
+      if (need > w) w = need;
+    }
+    return math.min(w, math.max(cellW, 220));
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (!fill || block.cols.isEmpty) return _build(context, cellW);
+    final base = _headFit;
+    if (!fill || block.cols.isEmpty) return _build(context, base);
     return LayoutBuilder(builder: (ctx, bc) {
-      double cw = cellW;
+      double cw = base;
       if (bc.maxWidth.isFinite) {
-        final want = (bc.maxWidth - 4 - sectionW - labelW) / block.cols.length;
-        if (want > cw) cw = math.min(want, maxCell);
+        final want = (bc.maxWidth - 4 - _sectionW - labelW) / block.cols.length;
+        if (want > cw) cw = math.min(want, math.max(maxCell, base));
       }
       return _build(ctx, cw);
     });
   }
 
   Widget _build(BuildContext context, double cellW) {
+    final sectionW = _sectionW;
     final double hh = headH, rh = rowH;
     final cols = block.cols;
     final lines = repHeadLines(cols);
@@ -170,14 +187,14 @@ class RepTable extends StatelessWidget {
         box(0, 0, lead, lines * hh, Text.rich(TextSpan(text: block.corner), style: hs, textAlign: TextAlign.center), CompStyle.headerBg),
         for (final h in heads)
           box(lead + h.c1 * cellW, h.r1 * hh, (h.c2 - h.c1 + 1) * cellW, (h.r2 - h.r1 + 1) * hh,
-              Text.rich(TextSpan(text: tr(h.text)), style: hs, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis), CompStyle.headerBg),
+              Text.rich(TextSpan(text: tr(h.text)), style: hs, textAlign: TextAlign.center, maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis), CompStyle.headerBg),
       ]),
     );
 
     // the section column: one merged cell per run of the same section
     final rows = block.rows;
     final sectionCells = <Widget>[];
-    int i = 0;
+    int i = sectionW == 0 ? rows.length : 0;
     while (i < rows.length) {
       int j = i;
       while (j + 1 < rows.length && rows[j + 1].section == rows[i].section && rows[i].section.isNotEmpty) {
@@ -203,13 +220,14 @@ class RepTable extends StatelessWidget {
             child: InkWell(
               onTap: onTapRow == null ? null : () => onTapRow!(rows[r]),
               child: Container(
-                alignment: Alignment.centerLeft,
-                padding: EdgeInsets.only(left: rows[r].sub ? 14 : 6, right: 4),
+                alignment: rows[r].sub ? Alignment.centerLeft : Alignment.center,
+                padding: EdgeInsets.only(left: rows[r].sub ? 14 : 4, right: 4),
                 decoration: BoxDecoration(
                     color: AppPalette.bg(rows[r].total ? CompStyle.totalBg : (rows[r].sub ? Colors.white : CompStyle.labelBg)),
                     border: Border.all(color: line, width: 0.5)),
                 child: Text.rich(TextSpan(text: rows[r].label),
                     maxLines: 1,
+                    textAlign: rows[r].sub ? TextAlign.left : TextAlign.center,
                     overflow: TextOverflow.ellipsis,
                     style: cs.copyWith(
                         fontWeight: rows[r].sub ? FontWeight.normal : FontWeight.bold,
@@ -239,12 +257,18 @@ class RepTable extends StatelessWidget {
       ]),
     );
 
-    return Scrollbar(
-      thumbVisibility: true,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [header, body]),
+    // centred when narrower than the room it has; scrolls sideways when wider
+    return LayoutBuilder(
+      builder: (_, bc) => Scrollbar(
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.only(bottom: 10),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: bc.maxWidth.isFinite ? bc.maxWidth : 0),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.center, children: [header, body]),
+          ),
+        ),
       ),
     );
   }
@@ -271,18 +295,18 @@ class RepCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Container(
-            padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+            padding: const EdgeInsets.fromLTRB(10, 3, 6, 3),
             decoration: BoxDecoration(
               gradient: LinearGradient(colors: [AppPalette.bg(const Color(0xFFF1E9FC))!, AppPalette.bg(const Color(0xFFE8EEFB))!]),
               border: Border(bottom: BorderSide(color: AppPalette.line(const Color(0x224A148C)))),
             ),
             child: Row(children: [
               // same room on the left as the buttons take, so the title is centred
-              SizedBox(width: 40.0 * actions.length),
+              SizedBox(width: 34.0 * actions.length),
               Expanded(
                 child: Column(children: [
                   Text.rich(TextSpan(text: tr(title)),
-                      textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(const Color(0xFF3B0764)), fontWeight: FontWeight.w900, fontSize: 14)),
+                      textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(const Color(0xFF3B0764)), fontWeight: FontWeight.w900, fontSize: 13)),
                   if ((subtitle ?? '').isNotEmpty)
                     Text.rich(TextSpan(text: subtitle), textAlign: TextAlign.center, style: GoogleFonts.merriweather(color: AppPalette.fg(Colors.grey.shade700), fontSize: 11)),
                 ]),
@@ -298,7 +322,10 @@ class RepCard extends StatelessWidget {
 /// Icon button for a [RepCard] header.
 Widget repAction(IconData icon, String tip, VoidCallback? onTap) => IconButton(
       tooltip: tr(tip),
-      icon: Icon(icon, color: AppPalette.fg(const Color(0xFF4A148C)), size: 20),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 34, height: 28),
+      icon: Icon(icon, color: AppPalette.fg(const Color(0xFF4A148C)), size: 18),
       onPressed: onTap,
     );
 
